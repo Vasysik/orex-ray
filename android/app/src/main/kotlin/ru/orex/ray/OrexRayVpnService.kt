@@ -20,8 +20,6 @@ import go.Seq
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -61,7 +59,6 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         private const val NOTIFICATION_CHANNEL_ID = "orexray_vpn"
         private const val NOTIFICATION_ID = 7701
         private const val STOP_REQUEST_CODE = 7702
-        private const val RESTART_STATE_KEY = "service_restart_state_v1"
     }
 
     private data class TrafficDelta(val download: Long, val upload: Long)
@@ -94,6 +91,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var restartServiceOnKill = true
     private var activeAppRoutingMode = APP_ROUTING_ALL
     private var activeAppPackages = emptyList<String>()
+    private var activeStartIntent: Intent? = null
 
     @Volatile
     private var stopping = false
@@ -126,6 +124,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 activeLatencyMs = commandIntent.getIntExtra(EXTRA_LATENCY_MS, -1)
                     .takeIf { it >= 0 }
                 if (restartServiceOnKill) updateRestartMetadata()
+                if (activeMode == MODE_VPN) updateQuickTileMetadata()
                 if (coreController?.isRunning == true) updateRunningNotification()
                 return restartMode()
             }
@@ -201,6 +200,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     clearRestartState()
                 }
 
+                activeStartIntent = Intent(commandIntent)
                 activeMode = mode
                 startInForeground(
                     if (mode == MODE_VPN) {
@@ -306,6 +306,12 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             }
 
             startedAtElapsedMs = SystemClock.elapsedRealtime()
+            if (mode == MODE_VPN) {
+                activeStartIntent?.let { intent ->
+                    runCatching { OrexRayStartIntentStore.saveQuickTileVpn(this, intent) }
+                        .onFailure { Log.w(TAG, "Could not save Quick Settings VPN state", it) }
+                }
+            }
             emitConnected()
             startStatsLoop()
             updateRunningNotification()
@@ -328,133 +334,30 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     }
 
     private fun persistRestartIntent(intent: Intent) {
-        val json = JSONObject()
-            .put(EXTRA_CONFIG, intent.getStringExtra(EXTRA_CONFIG).orEmpty())
-            .put(EXTRA_MODE, intent.getStringExtra(EXTRA_MODE).orEmpty())
-            .put(EXTRA_TARGET_NAME, intent.getStringExtra(EXTRA_TARGET_NAME).orEmpty())
-            .put(EXTRA_LATENCY_MS, intent.getIntExtra(EXTRA_LATENCY_MS, -1))
-            .put(EXTRA_MTU, intent.getIntExtra(EXTRA_MTU, 1500))
-            .put(EXTRA_SOCKS_PORT, intent.getIntExtra(EXTRA_SOCKS_PORT, 20808))
-            .put(EXTRA_HTTP_PORT, intent.getIntExtra(EXTRA_HTTP_PORT, 20809))
-            .put(
-                EXTRA_LOCAL_PROXY_IN_VPN,
-                intent.getBooleanExtra(EXTRA_LOCAL_PROXY_IN_VPN, true),
-            )
-            .put(
-                EXTRA_STATS_INTERVAL_SECONDS,
-                intent.getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, 2),
-            )
-            .put(
-                EXTRA_SHOW_NOTIFICATION_SPEED,
-                intent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_SPEED, true),
-            )
-            .put(
-                EXTRA_SHOW_NOTIFICATION_PING,
-                intent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_PING, true),
-            )
-            .put(EXTRA_RESTART_SERVICE, true)
-            .put(
-                EXTRA_APP_ROUTING_MODE,
-                intent.getStringExtra(EXTRA_APP_ROUTING_MODE).orEmpty(),
-            )
-            .put(
-                EXTRA_STATS_OUTBOUND_TAGS,
-                JSONArray(intent.getStringArrayListExtra(EXTRA_STATS_OUTBOUND_TAGS).orEmpty()),
-            )
-            .put(
-                EXTRA_DNS_SERVERS,
-                JSONArray(intent.getStringArrayListExtra(EXTRA_DNS_SERVERS).orEmpty()),
-            )
-            .put(
-                EXTRA_APP_PACKAGES,
-                JSONArray(intent.getStringArrayListExtra(EXTRA_APP_PACKAGES).orEmpty()),
-            )
-        secureStore.write(RESTART_STATE_KEY, json.toString())
+        OrexRayStartIntentStore.saveRestart(this, intent)
     }
 
-    private fun restoreRestartIntent(): Intent? {
-        val payload = runCatching { secureStore.read(RESTART_STATE_KEY) }
-            .onFailure {
-                Log.e(TAG, "Could not read encrypted restart state", it)
-                clearRestartState()
-            }
-            .getOrNull()
-            ?: return null
-
-        return runCatching {
-            val json = JSONObject(payload)
-            val config = json.optString(EXTRA_CONFIG)
-            if (config.isBlank()) return@runCatching null
-            Intent(this, OrexRayVpnService::class.java)
-                .setAction(ACTION_START)
-                .putExtra(EXTRA_CONFIG, config)
-                .putExtra(EXTRA_MODE, json.optString(EXTRA_MODE, MODE_VPN))
-                .putExtra(EXTRA_TARGET_NAME, json.optString(EXTRA_TARGET_NAME, "OrexRay"))
-                .putExtra(EXTRA_LATENCY_MS, json.optInt(EXTRA_LATENCY_MS, -1))
-                .putStringArrayListExtra(
-                    EXTRA_STATS_OUTBOUND_TAGS,
-                    json.optJSONArray(EXTRA_STATS_OUTBOUND_TAGS).toStringArrayList(),
-                )
-                .putExtra(EXTRA_MTU, json.optInt(EXTRA_MTU, 1500))
-                .putStringArrayListExtra(
-                    EXTRA_DNS_SERVERS,
-                    json.optJSONArray(EXTRA_DNS_SERVERS).toStringArrayList(),
-                )
-                .putExtra(EXTRA_SOCKS_PORT, json.optInt(EXTRA_SOCKS_PORT, 20808))
-                .putExtra(EXTRA_HTTP_PORT, json.optInt(EXTRA_HTTP_PORT, 20809))
-                .putExtra(
-                    EXTRA_LOCAL_PROXY_IN_VPN,
-                    json.optBoolean(EXTRA_LOCAL_PROXY_IN_VPN, true),
-                )
-                .putExtra(
-                    EXTRA_STATS_INTERVAL_SECONDS,
-                    json.optInt(EXTRA_STATS_INTERVAL_SECONDS, 2),
-                )
-                .putExtra(
-                    EXTRA_SHOW_NOTIFICATION_SPEED,
-                    json.optBoolean(EXTRA_SHOW_NOTIFICATION_SPEED, true),
-                )
-                .putExtra(
-                    EXTRA_SHOW_NOTIFICATION_PING,
-                    json.optBoolean(EXTRA_SHOW_NOTIFICATION_PING, true),
-                )
-                .putExtra(EXTRA_RESTART_SERVICE, true)
-                .putExtra(
-                    EXTRA_APP_ROUTING_MODE,
-                    json.optString(EXTRA_APP_ROUTING_MODE, APP_ROUTING_ALL),
-                )
-                .putStringArrayListExtra(
-                    EXTRA_APP_PACKAGES,
-                    json.optJSONArray(EXTRA_APP_PACKAGES).toStringArrayList(),
-                )
-        }.onFailure {
-            Log.e(TAG, "Encrypted restart state is invalid", it)
-            clearRestartState()
-        }.getOrNull()
-    }
-
-    private fun JSONArray?.toStringArrayList(): ArrayList<String> {
-        if (this == null) return arrayListOf()
-        val values = ArrayList<String>(length())
-        for (index in 0 until length()) {
-            optString(index).takeIf { it.isNotBlank() }?.let(values::add)
-        }
-        return values
-    }
+    private fun restoreRestartIntent(): Intent? =
+        OrexRayStartIntentStore.loadRestart(this)
 
     private fun updateRestartMetadata() {
-        val payload = runCatching { secureStore.read(RESTART_STATE_KEY) }.getOrNull() ?: return
-        runCatching {
-            val json = JSONObject(payload)
-                .put(EXTRA_TARGET_NAME, activeTargetName)
-                .put(EXTRA_LATENCY_MS, activeLatencyMs ?: -1)
-            secureStore.write(RESTART_STATE_KEY, json.toString())
-        }.onFailure { Log.w(TAG, "Could not update encrypted restart metadata", it) }
+        OrexRayStartIntentStore.updateRestartMetadata(
+            this,
+            activeTargetName,
+            activeLatencyMs,
+        )
+    }
+
+    private fun updateQuickTileMetadata() {
+        OrexRayStartIntentStore.updateQuickTileMetadata(
+            this,
+            activeTargetName,
+            activeLatencyMs,
+        )
     }
 
     private fun clearRestartState() {
-        runCatching { secureStore.delete(RESTART_STATE_KEY) }
-            .onFailure { Log.w(TAG, "Could not clear encrypted restart state", it) }
+        OrexRayStartIntentStore.clearRestart(this)
     }
 
     private fun buildVpnInterface(): ParcelFileDescriptor? {
@@ -537,8 +440,13 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         return TrafficDelta(download, upload)
     }
 
+    private fun emitTunnelEvent(value: Map<String, Any?>) {
+        OrexRayTunnelEvents.emit(value)
+        OrexRayQuickSettingsTileService.requestRefresh(this)
+    }
+
     private fun emitConnecting(message: String, mode: String = activeMode) {
-        OrexRayTunnelEvents.emit(
+        emitTunnelEvent(
             OrexRayTunnelEvents.event(
                 status = "connecting",
                 mode = mode,
@@ -548,7 +456,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     }
 
     private fun emitConnected() {
-        OrexRayTunnelEvents.emit(
+        emitTunnelEvent(
             OrexRayTunnelEvents.event(
                 status = "connected",
                 mode = activeMode,
@@ -569,9 +477,10 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private fun stopTunnel() {
         if (stopping) return
         stopping = true
+        activeStartIntent = null
         clearRestartState()
 
-        OrexRayTunnelEvents.emit(
+        emitTunnelEvent(
             OrexRayTunnelEvents.event(
                 status = "disconnecting",
                 mode = activeMode,
@@ -596,7 +505,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         vpnInterface = null
         stopForegroundCompat()
 
-        OrexRayTunnelEvents.emit(
+        emitTunnelEvent(
             OrexRayTunnelEvents.event(
                 status = "disconnected",
                 mode = activeMode,
@@ -607,6 +516,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     }
 
     private fun cleanupAfterFailure() {
+        activeStartIntent = null
         statsTask?.cancel(false)
         statsTask = null
         val controller = coreController
@@ -622,7 +532,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     }
 
     private fun emitError(message: String, mode: String = activeMode) {
-        OrexRayTunnelEvents.emit(
+        emitTunnelEvent(
             OrexRayTunnelEvents.event(
                 status = "error",
                 mode = mode,

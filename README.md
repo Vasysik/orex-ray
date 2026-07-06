@@ -5,7 +5,7 @@
 профили VLESS, балансировщики и per-app маршрутизацию в одном интерфейсе в
 визуальном стиле Orex.
 
-Текущая версия: `0.6.2+2`.
+Текущая версия задаётся только в `pubspec.yaml` в поле `version`.
 
 OrexRay сейчас находится в стадии **private beta / dogfood**. Android VPN уже
 пропускает реальный TCP/UDP-трафик через Xray, работает в фоне и может
@@ -205,6 +205,13 @@ Xray работает внутри foreground `VpnService` независимо 
 Частота обновления статистики настраивается. OrexRay не держит постоянный wake
 lock только ради счётчиков.
 
+На Android 7+ доступна системная плитка **OrexRay VPN** для панели быстрых
+настроек рядом с Bluetooth и фонариком. Она включает последний VPN, который
+успешно запускался из приложения, и отключает активный VPN без открытия Flutter
+UI. Конфиг для повторного запуска хранится в том же Keystore-backed encrypted
+storage, что и restart state. Если VPN ещё ни разу не запускался или системе
+нужно первое разрешение, плитка открывает только необходимый системный flow.
+
 ## 9. DNS, маршрутизация и GeoData
 
 DNS можно оставить системным или задать вручную через готовые варианты и
@@ -281,9 +288,12 @@ lib/
     widgets/            reusable Orex components
 
 android/app/src/main/kotlin/ru/orex/ray/
-  MainActivity.kt       MethodChannel/EventChannel bridge
-  OrexRayVpnService.kt  foreground VPN service
-  SecureStateStore.kt   Android Keystore-backed state
+  MainActivity.kt                       MethodChannel/EventChannel bridge
+  OrexRayVpnService.kt                  foreground VPN service
+  OrexRayQuickSettingsTileService.kt    Quick Settings VPN toggle
+  OrexRayVpnPermissionActivity.kt       first-run native permission bridge
+  OrexRayStartIntentStore.kt            encrypted reconnect state
+  AndroidSecureStore.kt                 Android Keystore-backed storage
 ```
 
 Главный принцип: `ProfilesController` хранит маршруты, `XrayConfigBuilder`
@@ -310,12 +320,25 @@ Android release собирается тем же способом, что Orex M
 flutter build apk --release --split-per-abi --no-pub
 ```
 
+Windows release и установщик собираются по той же схеме, что Orex Messenger:
+
+```powershell
+flutter build windows --release --no-pub
+# затем собрать Inno Setup installer по командам из docs/release-builds.md
+```
+
+Готовый установщик:
+
+```text
+build\windows\x64\installer\OrexRay-Setup-<version-from-pubspec>.exe
+```
+
 По умолчанию Dart obfuscation не используется. Release автоматически подписывается
 Gradle через `android/key.properties` или `OREX_ANDROID_*`. Для private beta
 распространяется подписанный APK и его SHA-256; release keystore хранится отдельно
 от репозитория и не пересоздаётся между версиями.
 
-## 13. Текущий статус `0.6.2+2`
+## 13. Текущий статус
 
 В этой версии основной фокус — не новая подсистема, а доведение текущего UX:
 
@@ -329,7 +352,9 @@ Gradle через `android/key.properties` или `OREX_ANDROID_*`. Для priva
 - экран профилей свёрнут до двух основных действий;
 - import получил вставку из буфера обмена;
 - корень репозитория очищен от накопившихся milestone/hotfix/update заметок;
-- release-инструкция перенесена в один документ `docs/release-builds.md`.
+- release-инструкция перенесена в один документ `docs/release-builds.md`;
+- добавлена системная плитка OrexRay VPN в быстрые настройки Android;
+- добавлен Windows `.exe` установщик на Inno Setup по схеме Orex Messenger.
 
 Следующий шаг перед раздачей сборки товарищам — зелёные `flutter analyze` и
 `flutter test`, затем smoke-проверка подписанного release APK на реальном

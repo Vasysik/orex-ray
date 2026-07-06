@@ -52,15 +52,9 @@ keyPassword=ВАШ_KEY_PASSWORD
 нужен именно прежний сертификат OrexRay. Если публичной цепочки обновлений ещё
 нет, один общий Orex release key упрощает дальнейшие локальные сборки.
 
-Перед локальной release-сборкой убери compile-only escape hatch, если он остался
-в окружении после CI-проверок:
-
-```powershell
-Remove-Item Env:OREX_ALLOW_UNSIGNED_ANDROID_RELEASE -ErrorAction SilentlyContinue
-```
-
 Без настроенной подписи release должен завершиться ошибкой, а не тихо стать
-артефактом для раздачи.
+артефактом для раздачи. Android отклоняет unsigned release APK как
+недействительный или повреждённый пакет.
 
 ## 3. Android release APK — так же, как Orex Messenger
 
@@ -147,7 +141,7 @@ ru.orex.ray.debug
 ## 6. Подготовить папку для раздачи
 
 ```powershell
-$Version = "0.6.2+2"
+$Version = (Select-String -Path pubspec.yaml -Pattern "^version:\s*(.+)$").Matches[0].Groups[1].Value.Trim()
 $Out = "dist\android\$Version"
 New-Item -ItemType Directory -Force $Out
 
@@ -163,9 +157,7 @@ $Hash = (Get-FileHash `
   Set-Content "$Out\SHA256SUMS.txt" -Encoding ascii
 ```
 
-Для автоматической подготовки всех трёх ABI можно использовать
-`tool/release_android.ps1`; внутри он вызывает тот же Flutter build command без
-obfuscation.
+Если нужны все три ABI для раздачи, повтори тот же блок `Copy-Item` для `app-armeabi-v7a-release.apk` и `app-x86_64-release.apk`. Отдельные helper-скрипты не нужны: release-процесс выше полностью описывает, что именно собирается и куда копируется.
 
 ## 7. Android smoke-проверка
 
@@ -190,6 +182,10 @@ split tunneling: кроме выбранных
 балансировщик с profile fallback
 disconnect из приложения
 disconnect из notification action
+добавление плитки OrexRay VPN через редактирование быстрых настроек
+quick tile: connect последнего успешно запущенного VPN
+quick tile: disconnect активного VPN
+quick tile: первый запуск корректно запрашивает системное разрешение VPN
 перезапуск приложения -> профили и настройки восстановлены
 ```
 
@@ -204,7 +200,7 @@ adb logcat -v time OrexRay:I GoLog:I AndroidRuntime:E libc:F "*:S"
 
 Минимально:
 
-- `OrexRay-0.6.2+2-android-arm64-v8a.apk`;
+- `OrexRay-<version-from-pubspec>-android-arm64-v8a.apk`;
 - `SHA256SUMS.txt`;
 - короткий текст: версия, что изменилось, какие сценарии особенно проверить.
 
@@ -219,10 +215,72 @@ flutter test --no-pub
 flutter build windows --release --no-pub
 ```
 
-Передавать нужно всю папку:
+Готовое приложение находится в:
 
 ```text
 build\windows\x64\runner\Release\
 ```
 
-а не один `.exe`, потому что рядом лежат Flutter runtime и native DLL.
+Один `orex_ray.exe` отдельно не переносится: рядом нужны Flutter runtime и
+native DLL.
+
+## 10. Windows installer вместо zip
+
+Схема повторяет Orex Messenger: Inno Setup забирает **всю** release-папку и
+собирает один user-level `.exe` установщик.
+
+Установить Inno Setup один раз:
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e `
+  --accept-package-agreements `
+  --accept-source-agreements
+```
+
+После успешной Windows release-сборки задай версию из `pubspec.yaml` и передай её в Inno Setup:
+
+```powershell
+$VersionLine = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)\s*$').Matches[0]
+$Version = '{0}.{1}.{2}+{3}' -f `
+  $VersionLine.Groups[1].Value, `
+  $VersionLine.Groups[2].Value, `
+  $VersionLine.Groups[3].Value, `
+  $VersionLine.Groups[4].Value
+$VersionInfo = '{0}.{1}.{2}.{3}' -f `
+  $VersionLine.Groups[1].Value, `
+  $VersionLine.Groups[2].Value, `
+  $VersionLine.Groups[3].Value, `
+  $VersionLine.Groups[4].Value
+
+$Iscc = @(
+  "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+  "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+  "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+& $Iscc `
+  "/DMyAppVersion=$Version" `
+  "/DMyAppVersionInfo=$VersionInfo" `
+  windows\installer\orexray.iss
+```
+
+Артефакт:
+
+```text
+build\windows\x64\installer\OrexRay-Setup-<version-from-pubspec>.exe
+```
+
+Установщик:
+
+- ставит OrexRay в `%LOCALAPPDATA%\Programs\OrexRay`;
+- не требует админских прав для самой установки;
+- создаёт пункт в меню «Пуск»;
+- предлагает необязательный ярлык на рабочем столе;
+- забирает все DLL и данные из `build\windows\x64\runner\Release\`;
+- запускает OrexRay после установки, если пользователь не снял галочку.
+
+Режим Windows VPN/TUN всё равно может потребовать запуск самого OrexRay с
+правами администратора. Это не причина делать весь установщик системным или
+требующим UAC: системный и локальный proxy-режимы работают без elevation.
+
+При смене версии обновляй только `pubspec.yaml`. Команды выше читают эту строку и передают в Inno Setup Flutter-вид `x.y.z+n` для имени установщика и Windows-вид `x.y.z.n` для version resource.

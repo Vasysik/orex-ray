@@ -103,9 +103,6 @@ val hasReleaseSigning = listOf(
     releaseKeyPassword,
     releaseStorePassword,
 ).all { !it.isNullOrEmpty() }
-val allowUnsignedRelease = System.getenv("OREX_ALLOW_UNSIGNED_ANDROID_RELEASE")
-    ?.equals("true", ignoreCase = true) == true
-
 if (hasReleaseSigning && !rootProject.file(releaseStoreFile!!).isFile) {
     throw GradleException(
         "Android release keystore was not found: " +
@@ -117,7 +114,7 @@ val validateReleaseSigning = tasks.register("validateReleaseSigning") {
     group = "verification"
     description = "Checks that Android release signing is configured."
     doLast {
-        if (!hasReleaseSigning && !allowUnsignedRelease) {
+        if (!hasReleaseSigning) {
             throw GradleException(
                 "Android release signing is not configured. Create android/key.properties " +
                     "or set OREX_ANDROID_STORE_FILE, OREX_ANDROID_STORE_PASSWORD, " +
