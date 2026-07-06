@@ -13,6 +13,8 @@ import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.provider.Settings
+import android.util.Base64
 import android.util.Log
 import go.Seq
 import libv2ray.CoreCallbackHandler
@@ -29,6 +31,10 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val ACTION_STOP = "ru.orex.ray.action.STOP"
         const val EXTRA_CONFIG = "xray_config"
         const val EXTRA_MODE = "connection_mode"
+        const val EXTRA_MTU = "vpn_mtu"
+        const val EXTRA_DNS_SERVERS = "vpn_dns_servers"
+        const val EXTRA_SOCKS_PORT = "socks_port"
+        const val EXTRA_HTTP_PORT = "http_port"
 
         const val MODE_VPN = "vpn_tun"
         const val MODE_LOCAL_PROXY = "local_proxy"
@@ -46,6 +52,10 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var downloadBytes = 0L
     private var uploadBytes = 0L
     private var activeMode = MODE_VPN
+    private var activeMtu = 1500
+    private var activeDnsServers = listOf("1.1.1.1", "8.8.8.8")
+    private var activeSocksPort = 20808
+    private var activeHttpPort = 20809
 
     @Volatile
     private var stopping = false
@@ -62,6 +72,14 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             ACTION_START -> {
                 val config = intent.getStringExtra(EXTRA_CONFIG)
                 val mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_VPN
+                activeMtu = intent.getIntExtra(EXTRA_MTU, 1500).coerceIn(1280, 9000)
+                activeDnsServers = intent.getStringArrayListExtra(EXTRA_DNS_SERVERS)
+                    ?.filter { it.isNotBlank() }
+                    ?.take(4)
+                    .orEmpty()
+                    .ifEmpty { listOf("1.1.1.1", "8.8.8.8") }
+                activeSocksPort = intent.getIntExtra(EXTRA_SOCKS_PORT, 20808).coerceIn(1, 65535)
+                activeHttpPort = intent.getIntExtra(EXTRA_HTTP_PORT, 20809).coerceIn(1, 65535)
                 if (config.isNullOrBlank()) {
                     emitError("Не передан Xray-конфиг", mode)
                     stopSelf()
@@ -117,11 +135,23 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         Log.i(TAG, "Initializing Xray core")
         Seq.setContext(applicationContext)
         val envDir = File(filesDir, "xray").apply { mkdirs() }
-        Libv2ray.initCoreEnv(envDir.absolutePath, "orexray")
+        Libv2ray.initCoreEnv(envDir.absolutePath, xudpBaseKey())
         return Libv2ray.newCoreController(this).also {
             coreController = it
             Log.i(TAG, "Xray core initialized")
         }
+    }
+
+    private fun xudpBaseKey(): String {
+        val androidId = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ANDROID_ID,
+        ).orEmpty()
+        val raw = androidId.toByteArray(Charsets.UTF_8).copyOf(32)
+        return Base64.encodeToString(
+            raw,
+            Base64.NO_PADDING or Base64.NO_WRAP or Base64.URL_SAFE,
+        )
     }
 
     private fun startTunnel(config: String, mode: String) {
@@ -172,7 +202,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 if (mode == MODE_VPN) {
                     "VPN защищает трафик"
                 } else {
-                    "SOCKS 127.0.0.1:20808 · HTTP 127.0.0.1:20809"
+                    "SOCKS 127.0.0.1:$activeSocksPort · HTTP 127.0.0.1:$activeHttpPort"
                 },
             )
             Log.i(TAG, "Xray started successfully mode=$mode")
@@ -188,11 +218,11 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private fun buildVpnInterface(): ParcelFileDescriptor? {
         val builder = Builder()
             .setSession("OrexRay")
-            .setMtu(1500)
+            .setMtu(activeMtu)
             .addAddress("10.77.0.1", 24)
             .addRoute("0.0.0.0", 0)
-            .addDnsServer("1.1.1.1")
-            .addDnsServer("8.8.8.8")
+
+        activeDnsServers.forEach { builder.addDnsServer(it) }
 
         // Xray lives in this application. Excluding the app keeps its outbound
         // sockets outside the VPN and prevents the VPN from tunnelling itself.

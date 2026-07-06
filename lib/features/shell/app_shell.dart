@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../../core/profiles/profiles_controller.dart';
+import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/theme_controller.dart';
-import '../../shared/widgets/squirrel_mascot.dart';
+import '../about/about_screen.dart';
+import '../appearance/appearance_screen.dart';
+import '../connection/connection_screen.dart';
 import '../home/home_screen.dart';
 import '../home/tunnel_controller.dart';
+import '../network/network_screen.dart';
 import '../profiles/profiles_screen.dart';
-import '../settings/settings_screen.dart';
+import '../settings/more_screen.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -15,25 +19,36 @@ class AppShell extends StatefulWidget {
     required this.tunnel,
     required this.profiles,
     required this.theme,
+    required this.settings,
   });
 
   final TunnelController tunnel;
   final ProfilesController profiles;
   final ThemeController theme;
+  final ConnectionSettingsController settings;
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
+  static const _moreIndex = 6;
   int _index = 0;
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
+    final pages = <Widget>[
       HomeScreen(tunnel: widget.tunnel),
       ProfilesScreen(profiles: widget.profiles),
-      SettingsScreen(theme: widget.theme, tunnel: widget.tunnel),
+      ConnectionScreen(tunnel: widget.tunnel, settings: widget.settings),
+      NetworkScreen(settings: widget.settings),
+      AppearanceScreen(theme: widget.theme),
+      const AboutScreen(),
+      MoreScreen(
+        onOpenNetwork: () => setState(() => _index = 3),
+        onOpenAppearance: () => setState(() => _index = 4),
+        onOpenAbout: () => setState(() => _index = 5),
+      ),
     ];
 
     return AmbientBackground(
@@ -44,6 +59,7 @@ class _AppShellState extends State<AppShell> {
             builder: (context, constraints) {
               final desktop = constraints.maxWidth >= 900;
               if (desktop) {
+                final desktopIndex = _index == _moreIndex ? 3 : _index;
                 return Padding(
                   padding: const EdgeInsets.all(12),
                   child: Row(
@@ -51,16 +67,13 @@ class _AppShellState extends State<AppShell> {
                       GlassPanel(
                         borderRadius: 24,
                         child: SizedBox(
-                          width: 98,
+                          width: 112,
                           child: NavigationRail(
-                            selectedIndex: _index,
+                            selectedIndex: desktopIndex,
                             onDestinationSelected: (value) =>
                                 setState(() => _index = value),
                             labelType: NavigationRailLabelType.all,
-                            leading: const Padding(
-                              padding: EdgeInsets.only(bottom: 16),
-                              child: SquirrelMascot(size: 50, compact: true),
-                            ),
+                            groupAlignment: -0.72,
                             destinations: const [
                               NavigationRailDestination(
                                 icon: Icon(Icons.power_settings_new_rounded),
@@ -71,8 +84,20 @@ class _AppShellState extends State<AppShell> {
                                 label: Text('Профили'),
                               ),
                               NavigationRailDestination(
-                                icon: Icon(Icons.tune_rounded),
-                                label: Text('Настройки'),
+                                icon: Icon(Icons.route_rounded),
+                                label: Text('Подключение'),
+                              ),
+                              NavigationRailDestination(
+                                icon: Icon(Icons.public_rounded),
+                                label: Text('Сеть'),
+                              ),
+                              NavigationRailDestination(
+                                icon: Icon(Icons.palette_outlined),
+                                label: Text('Интерфейс'),
+                              ),
+                              NavigationRailDestination(
+                                icon: Icon(Icons.info_outline_rounded),
+                                label: Text('О приложении'),
                               ),
                             ],
                           ),
@@ -83,7 +108,10 @@ class _AppShellState extends State<AppShell> {
                         child: GlassPanel(
                           borderRadius: 24,
                           opacity: 0.30,
-                          child: IndexedStack(index: _index, children: pages),
+                          child: IndexedStack(
+                            index: desktopIndex,
+                            children: pages.take(6).toList(growable: false),
+                          ),
                         ),
                       ),
                     ],
@@ -91,6 +119,7 @@ class _AppShellState extends State<AppShell> {
                 );
               }
 
+              final mobileSelected = _index <= 2 ? _index : 3;
               return Column(
                 children: [
                   Expanded(child: IndexedStack(index: _index, children: pages)),
@@ -99,9 +128,10 @@ class _AppShellState extends State<AppShell> {
                     child: GlassPanel(
                       borderRadius: 22,
                       child: NavigationBar(
-                        selectedIndex: _index,
-                        onDestinationSelected: (value) =>
-                            setState(() => _index = value),
+                        selectedIndex: mobileSelected,
+                        onDestinationSelected: (value) {
+                          setState(() => _index = value == 3 ? _moreIndex : value);
+                        },
                         destinations: const [
                           NavigationDestination(
                             icon: Icon(Icons.power_settings_new_rounded),
@@ -112,8 +142,12 @@ class _AppShellState extends State<AppShell> {
                             label: 'Профили',
                           ),
                           NavigationDestination(
-                            icon: Icon(Icons.tune_rounded),
-                            label: 'Настройки',
+                            icon: Icon(Icons.route_rounded),
+                            label: 'Подключение',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.more_horiz_rounded),
+                            label: 'Ещё',
                           ),
                         ],
                       ),

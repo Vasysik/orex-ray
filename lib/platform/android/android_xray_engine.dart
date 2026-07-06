@@ -2,13 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../core/xray/xray_config_builder.dart';
 
 class AndroidXrayEngine implements TunnelEngine {
-  AndroidXrayEngine({XrayConfigBuilder? configBuilder})
-      : _configBuilder = configBuilder ?? const XrayConfigBuilder() {
+  AndroidXrayEngine({
+    required ConnectionSettingsController settings,
+    XrayConfigBuilder? configBuilder,
+  })  : _settings = settings,
+        _configBuilder = configBuilder ?? const XrayConfigBuilder() {
     _eventSubscription = _events.receiveBroadcastStream().listen(
       _onNativeEvent,
       onError: _onNativeStreamError,
@@ -19,6 +23,7 @@ class AndroidXrayEngine implements TunnelEngine {
   static const _channel = MethodChannel('ru.orex.ray/tunnel');
   static const _events = EventChannel('ru.orex.ray/tunnel_events');
 
+  final ConnectionSettingsController _settings;
   final XrayConfigBuilder _configBuilder;
   final _snapshots = StreamController<TunnelSnapshot>.broadcast();
   late final StreamSubscription<dynamic> _eventSubscription;
@@ -66,11 +71,29 @@ class AndroidXrayEngine implements TunnelEngine {
 
     try {
       final config = mode == ConnectionMode.vpnTun
-          ? _configBuilder.buildAndroidTun(profile)
-          : _configBuilder.buildLocalProxy(profile);
+          ? _configBuilder.buildAndroidTun(
+              profile,
+              mtu: _settings.mtu,
+              bypassPrivateNetworks: _settings.bypassPrivateNetworks,
+              sniffingEnabled: _settings.sniffingEnabled,
+              logLevel: _settings.logLevel,
+            )
+          : _configBuilder.buildLocalProxy(
+              profile,
+              socksPort: _settings.socksPort,
+              httpPort: _settings.httpPort,
+              allowLan: _settings.allowLan,
+              bypassPrivateNetworks: _settings.bypassPrivateNetworks,
+              sniffingEnabled: _settings.sniffingEnabled,
+              logLevel: _settings.logLevel,
+            );
       await _channel.invokeMethod<void>('start', <String, Object?>{
         'config': config,
         'mode': mode.storageValue,
+        'mtu': _settings.mtu,
+        'dnsServers': _settings.dnsServers,
+        'socksPort': _settings.socksPort,
+        'httpPort': _settings.httpPort,
       });
     } on PlatformException catch (error) {
       _emitError(error.message ?? error.code, mode: mode);

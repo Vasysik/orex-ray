@@ -26,7 +26,7 @@ enum ConnectionMode {
         ConnectionMode.systemProxy =>
           'Приложения Windows, использующие системный прокси',
         ConnectionMode.localProxy =>
-          'SOCKS5 127.0.0.1:20808 · HTTP 127.0.0.1:20809',
+          'Локальные SOCKS5 и HTTP точки входа для выбранных приложений',
       };
 
   static ConnectionMode? fromStorageValue(String? value) => switch (value) {

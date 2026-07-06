@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../core/xray/xray_config_builder.dart';
@@ -12,10 +13,12 @@ import 'xray_core_manager.dart';
 
 class WindowsXrayEngine implements TunnelEngine {
   WindowsXrayEngine({
+    required ConnectionSettingsController settings,
     XrayCoreManager? coreManager,
     XrayConfigBuilder? configBuilder,
     WindowsSystemProxyController? systemProxyController,
-  })  : _coreManager = coreManager ?? XrayCoreManager(),
+  })  : _settings = settings,
+        _coreManager = coreManager ?? XrayCoreManager(),
         _configBuilder = configBuilder ?? const XrayConfigBuilder(),
         _systemProxy =
             systemProxyController ?? WindowsSystemProxyController(),
@@ -28,12 +31,11 @@ class WindowsXrayEngine implements TunnelEngine {
     _proxyRecovery = _systemProxy.recoverIfNeeded();
   }
 
-  static const _systemProxyAddress =
-      '127.0.0.1:${XrayConfigBuilder.httpPort}';
   static const _proxyBypass =
       '<local>;localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;'
       '172.2*;172.3*;192.168.*';
 
+  final ConnectionSettingsController _settings;
   final XrayCoreManager _coreManager;
   final XrayConfigBuilder _configBuilder;
   final WindowsSystemProxyController _systemProxy;
@@ -126,9 +128,24 @@ class WindowsXrayEngine implements TunnelEngine {
 
       final configFile = File(p.join(install.directory.path, 'orexray-config.json'));
       final config = switch (mode) {
-        ConnectionMode.vpnTun => _configBuilder.buildWindowsTun(profile),
+        ConnectionMode.vpnTun => _configBuilder.buildWindowsTun(
+            profile,
+            mtu: _settings.mtu,
+            dnsServers: _settings.dnsServers,
+            bypassPrivateNetworks: _settings.bypassPrivateNetworks,
+            sniffingEnabled: _settings.sniffingEnabled,
+            logLevel: _settings.logLevel,
+          ),
         ConnectionMode.systemProxy || ConnectionMode.localProxy =>
-          _configBuilder.buildLocalProxy(profile),
+          _configBuilder.buildLocalProxy(
+            profile,
+            socksPort: _settings.socksPort,
+            httpPort: _settings.httpPort,
+            allowLan: _settings.allowLan,
+            bypassPrivateNetworks: _settings.bypassPrivateNetworks,
+            sniffingEnabled: _settings.sniffingEnabled,
+            logLevel: _settings.logLevel,
+          ),
       };
       await configFile.writeAsString(config, flush: true);
 
@@ -172,7 +189,7 @@ class WindowsXrayEngine implements TunnelEngine {
           message: 'Включаем системный прокси Windows…',
         );
         await _systemProxy.enable(
-          server: _systemProxyAddress,
+          server: '127.0.0.1:${_settings.httpPort}',
           bypass: _proxyBypass,
         );
       }

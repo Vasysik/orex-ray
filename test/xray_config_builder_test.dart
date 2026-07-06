@@ -49,18 +49,30 @@ void main() {
     expect(system['statsOutboundDownlink'], isTrue);
   });
 
-
-  test('builds local SOCKS and HTTP proxy inbounds', () {
+  test('builds configurable local SOCKS and HTTP proxy inbounds', () {
     final json = jsonDecode(
-      const XrayConfigBuilder().buildLocalProxy(profile),
+      const XrayConfigBuilder().buildLocalProxy(
+        profile,
+        socksPort: 31080,
+        httpPort: 31081,
+        allowLan: true,
+        sniffingEnabled: false,
+        bypassPrivateNetworks: false,
+        logLevel: 'info',
+      ),
     ) as Map<String, dynamic>;
     final inbounds = json['inbounds'] as List<dynamic>;
+    final routing = json['routing'] as Map<String, dynamic>;
+    final rules = routing['rules'] as List<dynamic>;
 
     expect(inbounds, hasLength(2));
     expect(inbounds[0]['protocol'], 'socks');
-    expect(inbounds[0]['listen'], '127.0.0.1');
-    expect(inbounds[0]['port'], XrayConfigBuilder.socksPort);
+    expect(inbounds[0]['listen'], '0.0.0.0');
+    expect(inbounds[0]['port'], 31080);
+    expect(inbounds[0]['sniffing']['enabled'], isFalse);
     expect(inbounds[1]['protocol'], 'http');
-    expect(inbounds[1]['port'], XrayConfigBuilder.httpPort);
+    expect(inbounds[1]['port'], 31081);
+    expect(json['log']['loglevel'], 'info');
+    expect(rules, hasLength(1));
   });
 }

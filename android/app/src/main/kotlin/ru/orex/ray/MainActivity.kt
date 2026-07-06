@@ -18,10 +18,17 @@ class MainActivity : FlutterActivity() {
         private const val VPN_PERMISSION_REQUEST = 7711
         private const val MODE_VPN = "vpn_tun"
         private const val MODE_LOCAL_PROXY = "local_proxy"
+        private const val DEFAULT_MTU = 1500
+        private const val DEFAULT_SOCKS_PORT = 20808
+        private const val DEFAULT_HTTP_PORT = 20809
     }
 
     private var pendingConfig: String? = null
     private var pendingMode: String? = null
+    private var pendingMtu = DEFAULT_MTU
+    private var pendingDnsServers = listOf("1.1.1.1", "8.8.8.8")
+    private var pendingSocksPort = DEFAULT_SOCKS_PORT
+    private var pendingHttpPort = DEFAULT_HTTP_PORT
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -32,6 +39,14 @@ class MainActivity : FlutterActivity() {
                     "start" -> {
                         val config = call.argument<String>("config")
                         val mode = call.argument<String>("mode") ?: MODE_VPN
+                        val mtu = call.argument<Int>("mtu") ?: DEFAULT_MTU
+                        val dnsServers = call.argument<List<String>>("dnsServers")
+                            ?.filter { it.isNotBlank() }
+                            ?.take(4)
+                            .orEmpty()
+                        val socksPort = call.argument<Int>("socksPort") ?: DEFAULT_SOCKS_PORT
+                        val httpPort = call.argument<Int>("httpPort") ?: DEFAULT_HTTP_PORT
+
                         if (config.isNullOrBlank()) {
                             result.error("invalid_config", "Xray config is empty", null)
                             return@setMethodCallHandler
@@ -41,7 +56,16 @@ class MainActivity : FlutterActivity() {
                             return@setMethodCallHandler
                         }
 
-                        runCatching { startRequestedMode(config, mode) }
+                        runCatching {
+                            startRequestedMode(
+                                config = config,
+                                mode = mode,
+                                mtu = mtu.coerceIn(1280, 9000),
+                                dnsServers = dnsServers.ifEmpty { listOf("1.1.1.1", "8.8.8.8") },
+                                socksPort = socksPort.coerceIn(1, 65535),
+                                httpPort = httpPort.coerceIn(1, 65535),
+                            )
+                        }
                             .onSuccess { result.success(null) }
                             .onFailure { error ->
                                 Log.e(TAG, "Could not start OrexRay", error)
@@ -83,16 +107,27 @@ class MainActivity : FlutterActivity() {
             })
     }
 
-    private fun startRequestedMode(config: String, mode: String) {
+    private fun startRequestedMode(
+        config: String,
+        mode: String,
+        mtu: Int,
+        dnsServers: List<String>,
+        socksPort: Int,
+        httpPort: Int,
+    ) {
         if (mode == MODE_LOCAL_PROXY) {
-            pendingConfig = null
-            pendingMode = null
-            startCoreService(config, mode)
+            clearPendingStart()
+            startCoreService(config, mode, mtu, dnsServers, socksPort, httpPort)
             return
         }
 
         pendingConfig = config
         pendingMode = mode
+        pendingMtu = mtu
+        pendingDnsServers = dnsServers
+        pendingSocksPort = socksPort
+        pendingHttpPort = httpPort
+
         val permissionIntent = VpnService.prepare(this)
         if (permissionIntent != null) {
             OrexRayTunnelEvents.emit(
@@ -106,9 +141,21 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        pendingConfig = null
-        pendingMode = null
-        startCoreService(config, mode)
+        val configToStart = pendingConfig ?: return
+        val modeToStart = pendingMode ?: MODE_VPN
+        val mtuToStart = pendingMtu
+        val dnsToStart = pendingDnsServers
+        val socksToStart = pendingSocksPort
+        val httpToStart = pendingHttpPort
+        clearPendingStart()
+        startCoreService(
+            configToStart,
+            modeToStart,
+            mtuToStart,
+            dnsToStart,
+            socksToStart,
+            httpToStart,
+        )
     }
 
     @Deprecated("The platform callback is required for the VPN permission activity")
@@ -118,21 +165,25 @@ class MainActivity : FlutterActivity() {
 
         val config = pendingConfig
         val mode = pendingMode ?: MODE_VPN
-        pendingConfig = null
-        pendingMode = null
+        val mtu = pendingMtu
+        val dnsServers = pendingDnsServers
+        val socksPort = pendingSocksPort
+        val httpPort = pendingHttpPort
+        clearPendingStart()
 
         if (resultCode == Activity.RESULT_OK && !config.isNullOrBlank()) {
-            runCatching { startCoreService(config, mode) }
-                .onFailure { error ->
-                    Log.e(TAG, "Could not start VPN service after permission", error)
-                    OrexRayTunnelEvents.emit(
-                        OrexRayTunnelEvents.event(
-                            status = "error",
-                            mode = mode,
-                            errorMessage = error.message ?: error.javaClass.simpleName,
-                        ),
-                    )
-                }
+            runCatching {
+                startCoreService(config, mode, mtu, dnsServers, socksPort, httpPort)
+            }.onFailure { error ->
+                Log.e(TAG, "Could not start VPN service after permission", error)
+                OrexRayTunnelEvents.emit(
+                    OrexRayTunnelEvents.event(
+                        status = "error",
+                        mode = mode,
+                        errorMessage = error.message ?: error.javaClass.simpleName,
+                    ),
+                )
+            }
         } else {
             OrexRayTunnelEvents.emit(
                 OrexRayTunnelEvents.event(
@@ -144,11 +195,22 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startCoreService(config: String, mode: String) {
+    private fun startCoreService(
+        config: String,
+        mode: String,
+        mtu: Int,
+        dnsServers: List<String>,
+        socksPort: Int,
+        httpPort: Int,
+    ) {
         val intent = Intent(this, OrexRayVpnService::class.java)
             .setAction(OrexRayVpnService.ACTION_START)
             .putExtra(OrexRayVpnService.EXTRA_CONFIG, config)
             .putExtra(OrexRayVpnService.EXTRA_MODE, mode)
+            .putExtra(OrexRayVpnService.EXTRA_MTU, mtu)
+            .putStringArrayListExtra(OrexRayVpnService.EXTRA_DNS_SERVERS, ArrayList(dnsServers))
+            .putExtra(OrexRayVpnService.EXTRA_SOCKS_PORT, socksPort)
+            .putExtra(OrexRayVpnService.EXTRA_HTTP_PORT, httpPort)
 
         Log.i(TAG, "Starting core service in mode=$mode")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -159,10 +221,18 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopCoreService() {
-        pendingConfig = null
-        pendingMode = null
+        clearPendingStart()
         val intent = Intent(this, OrexRayVpnService::class.java)
             .setAction(OrexRayVpnService.ACTION_STOP)
         startService(intent)
+    }
+
+    private fun clearPendingStart() {
+        pendingConfig = null
+        pendingMode = null
+        pendingMtu = DEFAULT_MTU
+        pendingDnsServers = listOf("1.1.1.1", "8.8.8.8")
+        pendingSocksPort = DEFAULT_SOCKS_PORT
+        pendingHttpPort = DEFAULT_HTTP_PORT
     }
 }

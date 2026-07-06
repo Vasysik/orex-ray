@@ -53,4 +53,34 @@ void main() {
 
     settings.dispose();
   });
+
+
+  test('connection settings persist proxy, DNS and routing options', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+
+    await settings.setSocksPort(31080);
+    await settings.setHttpPort(31081);
+    await settings.setMtu(1420);
+    await settings.setAllowLan(true);
+    await settings.setBypassPrivateNetworks(false);
+    await settings.setSniffingEnabled(false);
+    await settings.setLogLevel('info');
+    await settings.setCustomDns('9.9.9.9, 149.112.112.112');
+    await settings.setDnsPreset(DnsPreset.custom);
+
+    expect(settings.socksPort, 31080);
+    expect(settings.httpPort, 31081);
+    expect(settings.mtu, 1420);
+    expect(settings.allowLan, isTrue);
+    expect(settings.bypassPrivateNetworks, isFalse);
+    expect(settings.sniffingEnabled, isFalse);
+    expect(settings.logLevel, 'info');
+    expect(settings.dnsServers, ['9.9.9.9', '149.112.112.112']);
+
+    settings.dispose();
+  });
+
 }

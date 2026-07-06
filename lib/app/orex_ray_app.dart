@@ -26,7 +26,7 @@ class OrexRayApp extends StatefulWidget {
 
 class _OrexRayAppState extends State<OrexRayApp> {
   late final TunnelController _tunnel = TunnelController(
-    engine: createTunnelEngine(),
+    engine: createTunnelEngine(settings: widget.connectionSettings),
     profiles: widget.profiles,
     settings: widget.connectionSettings,
   );
@@ -58,6 +58,7 @@ class _OrexRayAppState extends State<OrexRayApp> {
         tunnel: _tunnel,
         profiles: widget.profiles,
         theme: widget.theme,
+        settings: widget.connectionSettings,
       ),
     );
   }

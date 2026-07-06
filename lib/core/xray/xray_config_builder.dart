@@ -8,7 +8,14 @@ class XrayConfigBuilder {
   static const int socksPort = 20808;
   static const int httpPort = 20809;
 
-  String buildWindowsTun(TunnelProfile profile) {
+  String buildWindowsTun(
+    TunnelProfile profile, {
+    int mtu = 1500,
+    List<String> dnsServers = const ['1.1.1.1', '8.8.8.8'],
+    bool bypassPrivateNetworks = true,
+    bool sniffingEnabled = true,
+    String logLevel = 'error',
+  }) {
     return _encode(
       profile,
       inbounds: [
@@ -17,19 +24,27 @@ class XrayConfigBuilder {
           'protocol': 'tun',
           'settings': {
             'name': 'OrexRay',
-            'mtu': 1500,
+            'mtu': mtu,
             'gateway': ['10.77.0.1/24'],
-            'dns': ['1.1.1.1', '8.8.8.8'],
+            if (dnsServers.isNotEmpty) 'dns': dnsServers,
             'autoSystemRoutingTable': ['0.0.0.0/0'],
             'autoOutboundsInterface': 'auto',
           },
-          'sniffing': _sniffing,
+          'sniffing': _sniffing(sniffingEnabled),
         },
       ],
+      bypassPrivateNetworks: bypassPrivateNetworks,
+      logLevel: logLevel,
     );
   }
 
-  String buildAndroidTun(TunnelProfile profile) {
+  String buildAndroidTun(
+    TunnelProfile profile, {
+    int mtu = 1500,
+    bool bypassPrivateNetworks = true,
+    bool sniffingEnabled = true,
+    String logLevel = 'error',
+  }) {
     return _encode(
       profile,
       inbounds: [
@@ -38,49 +53,76 @@ class XrayConfigBuilder {
           'protocol': 'tun',
           'settings': {
             'name': 'OrexRay',
-            'mtu': 1500,
+            'mtu': mtu,
           },
-          'sniffing': _sniffing,
+          'sniffing': _sniffing(sniffingEnabled),
         },
       ],
+      bypassPrivateNetworks: bypassPrivateNetworks,
+      logLevel: logLevel,
     );
   }
 
-  String buildLocalProxy(TunnelProfile profile) {
+  String buildLocalProxy(
+    TunnelProfile profile, {
+    int socksPort = XrayConfigBuilder.socksPort,
+    int httpPort = XrayConfigBuilder.httpPort,
+    bool allowLan = false,
+    bool bypassPrivateNetworks = true,
+    bool sniffingEnabled = true,
+    String logLevel = 'error',
+  }) {
+    final listen = allowLan ? '0.0.0.0' : '127.0.0.1';
     return _encode(
       profile,
       inbounds: [
         {
           'tag': 'orexray-socks',
-          'listen': '127.0.0.1',
+          'listen': listen,
           'port': socksPort,
           'protocol': 'socks',
           'settings': {
             'udp': true,
           },
-          'sniffing': _sniffing,
+          'sniffing': _sniffing(sniffingEnabled),
         },
         {
           'tag': 'orexray-http',
-          'listen': '127.0.0.1',
+          'listen': listen,
           'port': httpPort,
           'protocol': 'http',
           'settings': <String, Object?>{},
-          'sniffing': _sniffing,
+          'sniffing': _sniffing(sniffingEnabled),
         },
       ],
+      bypassPrivateNetworks: bypassPrivateNetworks,
+      logLevel: logLevel,
     );
   }
 
   String _encode(
     TunnelProfile profile, {
     required List<Map<String, Object?>> inbounds,
+    required bool bypassPrivateNetworks,
+    required String logLevel,
   }) {
+    final rules = <Map<String, Object?>>[
+      if (bypassPrivateNetworks)
+        {
+          'type': 'field',
+          'ip': _privateNetworks,
+          'outboundTag': 'direct',
+        },
+      {
+        'type': 'field',
+        'network': 'tcp,udp',
+        'outboundTag': 'proxy',
+      },
+    ];
+
     final config = <String, Object?>{
       'log': {
-        // Keep normal app runs quiet. Detailed Xray output is still captured by
-        // the platform engine and surfaced when a connection actually fails.
-        'loglevel': 'error',
+        'loglevel': logLevel,
       },
       'inbounds': inbounds,
       'outbounds': [
@@ -96,18 +138,7 @@ class XrayConfigBuilder {
       ],
       'routing': {
         'domainStrategy': 'IPIfNonMatch',
-        'rules': [
-          {
-            'type': 'field',
-            'ip': _privateNetworks,
-            'outboundTag': 'direct',
-          },
-          {
-            'type': 'field',
-            'network': 'tcp,udp',
-            'outboundTag': 'proxy',
-          },
-        ],
+        'rules': rules,
       },
       'policy': {
         'system': {
@@ -192,10 +223,10 @@ class XrayConfigBuilder {
     return settings;
   }
 
-  static const _sniffing = <String, Object?>{
-    'enabled': true,
-    'destOverride': ['http', 'tls', 'quic'],
-  };
+  static Map<String, Object?> _sniffing(bool enabled) => {
+        'enabled': enabled,
+        if (enabled) 'destOverride': ['http', 'tls', 'quic'],
+      };
 
   static const _privateNetworks = <String>[
     '10.0.0.0/8',
