@@ -62,12 +62,36 @@ class TunnelController extends ChangeNotifier {
 
   bool get refreshingLatency => _profiles.refreshingLatency;
 
-  bool get canChangeTarget =>
-      !_engineSnapshot.isBusy && !_engineSnapshot.isConnected;
+  bool get canChangeTarget => !_engineSnapshot.isBusy;
 
   Future<void> selectTarget(String id) async {
     if (!canChangeTarget) return;
+    final next = _profiles.targetById(id);
+    if (next == null) return;
+
+    final activeId = _engineSnapshot.profile?.id;
+    final selectedId = _profiles.selectedTarget?.id;
+    if (selectedId == id &&
+        (!_engineSnapshot.isConnected || activeId == id)) {
+      return;
+    }
+
+    final reconnect = _engineSnapshot.isConnected;
+    final activeMode = _engineSnapshot.mode;
+    if (reconnect) {
+      await _engine.stop();
+      _syncFromEngine();
+    }
+
     await _profiles.select(id);
+
+    if (reconnect) {
+      final selected = _profiles.selectedTarget;
+      if (selected != null) {
+        await _engine.start(selected, activeMode);
+        _syncFromEngine();
+      }
+    }
   }
 
   Future<void> refreshSelectedLatency() async {

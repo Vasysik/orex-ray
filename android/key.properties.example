@@ -1,0 +1,6 @@
+# Copy to android/key.properties and replace the placeholders.
+# This file is intentionally tracked; android/key.properties is gitignored.
+storeFile=secrets/orexray-release.jks
+storePassword=YOUR_STORE_PASSWORD
+keyAlias=orexray
+keyPassword=YOUR_KEY_PASSWORD

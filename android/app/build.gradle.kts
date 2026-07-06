@@ -102,6 +102,30 @@ val hasReleaseSigning = listOf(
     releaseKeyPassword,
     releaseStorePassword,
 ).all { !it.isNullOrEmpty() }
+val allowUnsignedRelease = System.getenv("OREX_ALLOW_UNSIGNED_ANDROID_RELEASE")
+    ?.equals("true", ignoreCase = true) == true
+
+if (hasReleaseSigning && !rootProject.file(releaseStoreFile!!).isFile) {
+    throw GradleException(
+        "Android release keystore was not found: " +
+            rootProject.file(releaseStoreFile).absolutePath,
+    )
+}
+
+gradle.taskGraph.whenReady { graph ->
+    val buildsReleaseArtifact = graph.allTasks.any { task ->
+        val name = task.name.lowercase()
+        name == "assemblerelease" || name == "bundlerelease" ||
+            name == "packagerelease"
+    }
+    if (buildsReleaseArtifact && !hasReleaseSigning && !allowUnsignedRelease) {
+        throw GradleException(
+            "Android release signing is not configured. Create android/key.properties " +
+                "or set OREX_ANDROID_STORE_FILE, OREX_ANDROID_STORE_PASSWORD, " +
+                "OREX_ANDROID_KEY_ALIAS and OREX_ANDROID_KEY_PASSWORD.",
+        )
+    }
+}
 
 android {
     namespace = "ru.orex.ray"
@@ -138,6 +162,8 @@ android {
 
     buildTypes {
         release {
+            isDebuggable = false
+            isJniDebuggable = false
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }

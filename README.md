@@ -1,74 +1,328 @@
 # OrexRay
 
-OrexRay is a Flutter Xray client for Windows and Android with the Orex visual language and squirrel mascot.
+Тёплый Xray-клиент на **Flutter** для **Android** и **Windows**. OrexRay
+объединяет системный VPN, системный прокси, локальные SOCKS5/HTTP-прокси,
+профили VLESS, балансировщики и per-app маршрутизацию в одном интерфейсе в
+визуальном стиле Orex.
 
-Current milestone: **0.6.1**.
+Текущая версия: `0.6.2+1`.
 
-## What works
+OrexRay сейчас находится в стадии **private beta / dogfood**. Android VPN уже
+пропускает реальный TCP/UDP-трафик через Xray, работает в фоне и может
+одновременно поднимать локальные SOCKS5/HTTP-прокси. Windows-часть поддерживает
+системный прокси, локальный прокси и отдельный TUN-режим. Это уже рабочий
+клиент, но перед широкой раздачей ещё нужны длительные тесты на разных
+прошивках, сетях и профилях.
 
-### Windows
+## 1. Продуктовый фокус
 
-- **System Proxy** — default, no admin rights; applies OrexRay's local HTTP proxy to Windows for the current user.
-- **VPN / TUN** — full-device routing; requires elevation.
-- **Local Proxy** — configurable SOCKS5 and HTTP listeners.
-- VPN mode can keep the local SOCKS5/HTTP listeners active in parallel.
+OrexRay не строится как «одна большая кнопка TUN». Режим подключения является
+отдельной частью продукта, потому что разным приложениям и платформам нужны
+разные способы маршрутизации.
+
+Главные принципы:
+
+- единая Flutter-кодовая база для Android и Windows;
+- нативный Android `VpnService` для полного системного VPN;
+- системный прокси как основной мягкий режим Windows;
+- локальные SOCKS5 и HTTP-прокси для ручной настройки приложений;
+- VLESS/REALITY и другие параметры Xray-профиля без искусственного упрощения;
+- честное разделение UI, профилей, Xray-конфига и платформенных движков;
+- Orex UX: тёплые стеклянные панели, медные акценты и белочка в защитной
+  скорлупе на фоне мировой сети.
+
+## 2. Режимы подключения
 
 ### Android
 
-- **VPN** — foreground `VpnService` + Xray external TUN file descriptor.
-- **Local Proxy** — Xray without TUN.
-- VPN mode can expose the local SOCKS5/HTTP listeners at the same time.
-- background tunnel independent from the Flutter activity;
-- live traffic speed and ping notification with Disconnect action;
-- configurable statistics interval;
-- per-app VPN routing: all, exclude selected, only selected;
-- app icons plus optional system-app visibility.
+Поддерживаются два пользовательских режима:
 
-## Profiles and routing
+- **VPN** — весь выбранный трафик проходит через Android `VpnService` и TUN;
+- **Локальный прокси** — Xray поднимает SOCKS5/HTTP без системного VPN.
 
-- import `vless://`;
-- create and edit profiles inside OrexRay;
-- automatic and manual TCP latency checks;
-- tap ping on Home to refresh it;
-- quick profile/balancer switch from Home;
-- create and edit balancers and select them like profiles;
-- strategies: random, round robin, least ping;
-- persistent DNS, private-network bypass, sniffing and Xray log-level settings.
+В VPN-режиме OrexRay по умолчанию также поднимает локальные прокси. Это нужно,
+например, когда приложение исключено из TUN, но настроено на локальный SOCKS5
+вручную.
 
-Supported profile combinations currently include:
+```text
+Android apps
+    │
+    ├── VpnService / TUN ──────────┐
+    │                              │
+    ├── SOCKS5 127.0.0.1:20808 ───┤
+    └── HTTP   127.0.0.1:20809 ───┤
+                                   ▼
+                               Xray Core
+                                   │
+                              VLESS / TLS /
+                                 REALITY
+```
 
-- security: none, TLS, REALITY;
-- transport: RAW/TCP, WebSocket, gRPC, XHTTP, HTTPUpgrade.
+### Windows
 
-## GeoData
+Поддерживаются три режима:
 
-The GeoData page can inspect, update and import `geoip.dat` and `geosite.dat` in the active Xray asset directory. GeoData can be used by real `geoip:` / `geosite:` route rules for block, direct and proxy decisions. Downloads are verified with SHA-256 before replacement.
+- **Системный прокси** — OrexRay поднимает локальный HTTP proxy и подключает к
+  нему настройки Windows;
+- **VPN / TUN** — режим для полного трафика;
+- **Локальный прокси** — SOCKS5/HTTP без изменения системных настроек.
 
-## Run
+Системный прокси остаётся самым лёгким режимом Windows: он не требует TUN для
+приложений, которые умеют использовать системные proxy-настройки.
+
+## 3. Профили VLESS
+
+Профиль можно:
+
+- импортировать из `vless://`;
+- создать вручную внутри приложения;
+- редактировать после создания;
+- удалить;
+- проверить ping;
+- быстро выбрать с главной страницы.
+
+Редактор поддерживает основные параметры, которые уже используются текущим
+Xray config builder:
+
+- адрес, порт и UUID;
+- flow;
+- security: `none`, `tls`, `reality`;
+- transport: RAW/TCP, WebSocket, gRPC, XHTTP, HTTPUpgrade;
+- SNI, fingerprint, ALPN;
+- REALITY public key/password и short ID;
+- path, host и gRPC service name;
+- `allowInsecure` для явно проблемных TLS-профилей.
+
+Добавление нового профиля **не переключает активный маршрут автоматически**.
+При первом профиле он становится выбранным, потому что другого маршрута ещё
+нет.
+
+## 4. Быстрая смена маршрута
+
+Название активного маршрута на главной открывает Orex choice sheet — ту же
+визуальную модель, что быстрый выбор аудиоустройств в Orex Messenger.
+
+Во время активного соединения смена профиля разрешена. OrexRay выполняет
+контролируемое переподключение:
+
+```text
+активный профиль A
+        ↓
+выбор профиля B
+        ↓
+остановка текущего core
+        ↓
+сохранение B как активного
+        ↓
+запуск в том же режиме
+        ↓
+активный профиль B
+```
+
+Режим подключения при этом сохраняется: VPN остаётся VPN, локальный proxy —
+локальным proxy.
+
+## 5. Балансировщики
+
+Балансировщик создаётся прямо в OrexRay и используется как обычный маршрут.
+Можно выбрать минимум два профиля и одну из стратегий:
+
+- Random;
+- Round Robin;
+- Least Ping.
+
+Для наблюдения за доступностью настраиваются probe URL и интервал проверки.
+
+Поддерживается fallback:
+
+- без fallback;
+- `direct`;
+- `block`;
+- отдельный VLESS-профиль.
+
+Fallback-профиль не включается в основной selector балансировщика. Он получает
+отдельный outbound и используется только как запасной маршрут.
+
+## 6. Ping и статистика
+
+Ping можно обновить:
+
+- для всех профилей на странице профилей;
+- для одного профиля;
+- нажатием прямо на показатель ping на главной.
+
+Текущая проверка измеряет TCP latency до адреса и порта сервера. Это быстрый
+показатель доступности, а не полный VLESS/REALITY handshake.
+
+Во время соединения UI показывает:
+
+- текущую скорость скачивания;
+- текущую скорость отдачи;
+- ping активного маршрута;
+- общий входящий и исходящий трафик;
+- длительность соединения.
+
+В Android foreground notification отображаются профиль, скорости и задержка в
+компактном виде, например:
+
+```text
+↓ 4.8 MB/s · ↑ 620 KB/s · 52 мс
+```
+
+## 7. Split tunneling Android
+
+OrexRay умеет строить per-app VPN в трёх режимах:
+
+- все приложения;
+- все, кроме выбранных;
+- только выбранные.
+
+Список приложений поддерживает:
+
+- поиск по названию и package name;
+- фильтр системных приложений;
+- фильтр только выбранных;
+- иконки приложений.
+
+Чтобы не блокировать интерфейс на устройствах с большим количеством пакетов,
+метаданные и иконки разделены: список загружается без огромного batch из
+bitmap-данных, а иконки запрашиваются лениво для видимых строк.
+
+## 8. Фоновая работа Android
+
+Xray работает внутри foreground `VpnService` независимо от Flutter Activity.
+Закрытие интерфейса не должно останавливать активный VPN.
+
+Фоновая часть отвечает за:
+
+- жизненный цикл Xray core;
+- TUN file descriptor;
+- статистику трафика;
+- обновление уведомления;
+- кнопку отключения из уведомления;
+- восстановление последнего соединения после пересоздания service.
+
+Частота обновления статистики настраивается. OrexRay не держит постоянный wake
+lock только ради счётчиков.
+
+## 9. DNS, маршрутизация и GeoData
+
+DNS можно оставить системным или задать вручную через готовые варианты и
+пользовательский список серверов.
+
+Маршрутизация поддерживает:
+
+- private networks напрямую;
+- protocol sniffing;
+- GeoData rules для `direct`, `proxy` и `block`.
+
+GeoData-раздел умеет:
+
+- показывать состояние `geoip.dat` и `geosite.dat`;
+- обновлять официальные файлы;
+- проверять SHA-256 перед заменой;
+- импортировать собственный `geoip.dat` или `geosite.dat`;
+- включать автообновление.
+
+Пользовательские `.dat` считаются доверенным вводом пользователя: OrexRay не
+пытается «исправлять» их содержимое и передаёт их Xray при следующем запуске
+core.
+
+## 10. Безопасность и границы private beta
+
+В Android-подготовке к первой раздаче сделаны базовые защитные меры:
+
+- release-сборка не должна молча подписываться debug-ключом;
+- VLESS/REALITY-профили на Android сохраняются через Keystore-backed encrypted
+  storage;
+- restart state foreground service хранится зашифрованно;
+- Android backup для чувствительных app data отключён;
+- cleartext traffic для сетевого стека приложения запрещён;
+- VPN service не экспортируется;
+- release-логи OrexRay сокращены;
+- локальные прокси слушают `127.0.0.1` по умолчанию.
+
+Остаточные границы:
+
+- режим LAN proxy открывает порт на `0.0.0.0` и требует осознанного включения;
+- `allowInsecure` снижает TLS-защиту и по умолчанию выключен;
+- пользовательская GeoData доверяется Xray parser;
+- сторонний Xray core остаётся частью доверенной вычислительной базы;
+- Windows-профили ещё требуют отдельного прохода по защищённому локальному
+  хранению перед более широкой desktop-раздачей.
+
+## 11. Архитектура
+
+```text
+lib/
+  app/                  bootstrap и корневое приложение
+  core/
+    apps/               per-app routing state
+    geodata/            обновление и импорт GeoData
+    profiles/           профили, persistence, ping
+    settings/           режимы, DNS, proxy и background settings
+    tunnel/             модели и интерфейсы движка
+    xray/               генератор Xray JSON
+  features/
+    home/               подключение, статистика, быстрый выбор
+    profiles/           профили и балансировщики
+    connection/         режимы и порты
+    apps/               split tunneling
+    network/            DNS и routing
+    geodata/            GeoData UI
+    background/         foreground-service settings
+    appearance/         тема
+    about/              информация о сборке
+  platform/
+    android/            Flutter ↔ Android engine bridge
+    windows/            Xray process и Windows modes
+  shared/
+    theme/              Orex glass UI
+    widgets/            reusable Orex components
+
+android/app/src/main/kotlin/ru/orex/ray/
+  MainActivity.kt       MethodChannel/EventChannel bridge
+  OrexRayVpnService.kt  foreground VPN service
+  SecureStateStore.kt   Android Keystore-backed state
+```
+
+Главный принцип: `ProfilesController` хранит маршруты, `XrayConfigBuilder`
+строит mode-specific конфиг, а `TunnelController` управляет жизненным циклом
+подключения. UI не должен напрямую запускать native core.
+
+## 12. Проверка и сборки
+
+Практическая инструкция для локальной release-сборки Android и Windows лежит в:
+
+[docs/release-builds.md](docs/release-builds.md)
+
+Базовый quality gate:
 
 ```powershell
-flutter clean
 flutter pub get
-flutter analyze
-flutter test
+flutter analyze --no-pub
+flutter test --no-pub
 ```
 
-Windows:
+Для private beta распространяется подписанный APK и его SHA-256. Release
+keystore хранится отдельно от репозитория и не пересоздаётся между версиями.
 
-```powershell
-flutter run -d windows
-```
+## 13. Текущий статус `0.6.2+1`
 
-Android:
+В этой версии основной фокус — не новая подсистема, а доведение текущего UX:
 
-```powershell
-flutter run -d <device-id>
-```
+- исправлена компиляция lazy app icons;
+- portrait header не показывает верхний статус подключения;
+- быстрые selector-ы приведены к Orex choice sheet;
+- выбранные иконки нижней навигации используют медный акцент;
+- смена профиля во время соединения делает автоматическое переподключение;
+- новый профиль не перехватывает текущий выбор;
+- балансировщики получили fallback;
+- экран профилей свёрнут до двух основных действий;
+- import получил вставку из буфера обмена;
+- корень репозитория очищен от накопившихся milestone/hotfix/update заметок;
+- release-инструкция перенесена в один документ `docs/release-builds.md`.
 
-Filtered Android logs:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tool\log_android.ps1
-```
-
-See `UPDATE_0.6.1.md` for the complete milestone notes.
+Следующий шаг перед раздачей сборки товарищам — зелёные `flutter analyze` и
+`flutter test`, затем smoke-проверка подписанного release APK на реальном
+устройстве.

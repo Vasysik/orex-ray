@@ -41,14 +41,12 @@ class AndroidAppInfo {
     required this.label,
     required this.isSystem,
     required this.hasLauncher,
-    this.iconBytes,
   });
 
   final String packageName;
   final String label;
   final bool isSystem;
   final bool hasLauncher;
-  final Uint8List? iconBytes;
 }
 
 class AppRoutingController extends ChangeNotifier {
@@ -66,6 +64,7 @@ class AppRoutingController extends ChangeNotifier {
   static const _modeKey = 'orex_ray_app_routing_mode_v1';
   static const _packagesKey = 'orex_ray_app_routing_packages_v1';
   static const _showSystemAppsKey = 'orex_ray_show_system_apps_v1';
+  static const _maxCachedIcons = 192;
 
   final SharedPreferences _preferences;
   AppRoutingMode _mode;
@@ -74,6 +73,11 @@ class AppRoutingController extends ChangeNotifier {
   List<AndroidAppInfo> _apps = const [];
   bool _loading = false;
   String? _error;
+  bool _disposed = false;
+
+  final Map<String, ValueNotifier<Uint8List?>> _iconNotifiers = {};
+  final Set<String> _iconLoads = {};
+  final Set<String> _missingIcons = {};
 
   static Future<AppRoutingController> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -93,21 +97,25 @@ class AppRoutingController extends ChangeNotifier {
   String? get error => _error;
   bool get supported => Platform.isAndroid;
 
+  ValueListenable<Uint8List?> iconListenableFor(String packageName) =>
+      _iconNotifiers.putIfAbsent(packageName, () => ValueNotifier(null));
+
   Future<void> setMode(AppRoutingMode value) async {
-    if (_mode == value) return;
+    if (_mode == value || _disposed) return;
     _mode = value;
     await _preferences.setString(_modeKey, value.storageValue);
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> setShowSystemApps(bool value) async {
-    if (_showSystemApps == value) return;
+    if (_showSystemApps == value || _disposed) return;
     _showSystemApps = value;
     await _preferences.setBool(_showSystemAppsKey, value);
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> togglePackage(String packageName) async {
+    if (_disposed) return;
     if (_selectedPackages.contains(packageName)) {
       _selectedPackages.remove(packageName);
     } else {
@@ -117,16 +125,20 @@ class AppRoutingController extends ChangeNotifier {
       _packagesKey,
       _selectedPackages.toList()..sort(),
     );
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> loadApps({bool force = false}) async {
-    if (!Platform.isAndroid || _loading || (_apps.isNotEmpty && !force)) return;
+    if (!Platform.isAndroid || _disposed || _loading) return;
+    if (_apps.isNotEmpty && !force) return;
+
     _loading = true;
     _error = null;
-    notifyListeners();
+    _notifyListeners();
     try {
       final raw = await _channel.invokeListMethod<dynamic>('listApps') ?? const [];
+      if (_disposed) return;
+
       final apps = <AndroidAppInfo>[];
       for (final item in raw) {
         if (item is! Map) continue;
@@ -134,21 +146,11 @@ class AppRoutingController extends ChangeNotifier {
         final packageName = (map['packageName'] as String? ?? '').trim();
         final label = (map['label'] as String? ?? packageName).trim();
         if (packageName.isEmpty) continue;
-        Uint8List? iconBytes;
-        final rawIcon = map['iconBase64'];
-        if (rawIcon is String && rawIcon.isNotEmpty) {
-          try {
-            iconBytes = base64Decode(rawIcon);
-          } on FormatException {
-            iconBytes = null;
-          }
-        }
         apps.add(AndroidAppInfo(
           packageName: packageName,
           label: label.isEmpty ? packageName : label,
           isSystem: map['isSystem'] == true,
           hasLauncher: map['hasLauncher'] == true,
-          iconBytes: iconBytes,
         ));
       }
       apps.sort((a, b) {
@@ -156,13 +158,89 @@ class AppRoutingController extends ChangeNotifier {
         return byLabel == 0 ? a.packageName.compareTo(b.packageName) : byLabel;
       });
       _apps = apps;
+
+      final installed = apps.map((app) => app.packageName).toSet();
+      final stale = _iconNotifiers.keys.where((key) => !installed.contains(key)).toList();
+      for (final key in stale) {
+        _iconNotifiers.remove(key)?.dispose();
+        _iconLoads.remove(key);
+        _missingIcons.remove(key);
+      }
     } on PlatformException catch (error) {
-      _error = error.message ?? error.code;
+      if (!_disposed) _error = error.message ?? error.code;
     } on Object catch (error) {
-      _error = error.toString();
+      if (!_disposed) _error = error.toString();
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (!_disposed) {
+        _loading = false;
+        _notifyListeners();
+      }
     }
+  }
+
+  Future<void> loadIcon(String packageName) async {
+    if (!Platform.isAndroid || _disposed) return;
+    final notifier = _iconNotifiers.putIfAbsent(
+      packageName,
+      () => ValueNotifier<Uint8List?>(null),
+    );
+    if (notifier.value != null ||
+        _iconLoads.contains(packageName) ||
+        _missingIcons.contains(packageName)) {
+      return;
+    }
+
+    _iconLoads.add(packageName);
+    try {
+      final raw = await _channel.invokeMethod<String>(
+        'loadAppIcon',
+        {'packageName': packageName},
+      );
+      if (_disposed) return;
+      if (raw == null || raw.isEmpty) {
+        _missingIcons.add(packageName);
+        return;
+      }
+
+      final bytes = base64Decode(raw);
+      if (bytes.isEmpty) {
+        _missingIcons.add(packageName);
+        return;
+      }
+
+      _evictOldIconIfNeeded(except: packageName);
+      notifier.value = bytes;
+    } on FormatException {
+      if (!_disposed) _missingIcons.add(packageName);
+    } on PlatformException {
+      if (!_disposed) _missingIcons.add(packageName);
+    } finally {
+      _iconLoads.remove(packageName);
+    }
+  }
+
+  void _evictOldIconIfNeeded({required String except}) {
+    final loaded = _iconNotifiers.entries
+        .where((entry) => entry.key != except && entry.value.value != null)
+        .toList(growable: false);
+    if (loaded.length < _maxCachedIcons) return;
+    loaded.first.value.value = null;
+  }
+
+  void _notifyListeners() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    for (final notifier in _iconNotifiers.values) {
+      notifier.dispose();
+    }
+    _iconNotifiers.clear();
+    _iconLoads.clear();
+    _missingIcons.clear();
+    super.dispose();
   }
 }

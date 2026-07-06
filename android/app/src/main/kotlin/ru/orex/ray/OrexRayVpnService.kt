@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
@@ -14,13 +15,13 @@ import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
-import android.provider.Settings
-import android.util.Base64
 import android.util.Log
 import go.Seq
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -60,6 +61,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         private const val NOTIFICATION_CHANNEL_ID = "orexray_vpn"
         private const val NOTIFICATION_ID = 7701
         private const val STOP_REQUEST_CODE = 7702
+        private const val RESTART_STATE_KEY = "service_restart_state_v1"
     }
 
     private data class TrafficDelta(val download: Long, val upload: Long)
@@ -68,6 +70,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private val notificationLargeIcon by lazy {
         BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
     }
+    private val secureStore by lazy { AndroidSecureStore(applicationContext) }
     private var coreController: CoreController? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var statsTask: ScheduledFuture<*>? = null
@@ -98,74 +101,77 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        Log.i(TAG, "Core service created")
+        debugInfo("Core service created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        val commandIntent = intent ?: restoreRestartIntent() ?: run {
+            stopSelf()
+            return Service.START_NOT_STICKY
+        }
+
+        when (commandIntent.action) {
             ACTION_STOP -> {
                 restartServiceOnKill = false
+                clearRestartState()
                 worker.execute { stopTunnel() }
                 return Service.START_NOT_STICKY
             }
 
             ACTION_UPDATE_METADATA -> {
-                intent.getStringExtra(EXTRA_TARGET_NAME)
+                commandIntent.getStringExtra(EXTRA_TARGET_NAME)
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
                     ?.let { activeTargetName = it }
-                activeLatencyMs = intent.getIntExtra(EXTRA_LATENCY_MS, -1)
+                activeLatencyMs = commandIntent.getIntExtra(EXTRA_LATENCY_MS, -1)
                     .takeIf { it >= 0 }
+                if (restartServiceOnKill) updateRestartMetadata()
                 if (coreController?.isRunning == true) updateRunningNotification()
-                return if (restartServiceOnKill) {
-                    Service.START_REDELIVER_INTENT
-                } else {
-                    Service.START_NOT_STICKY
-                }
+                return restartMode()
             }
 
             ACTION_START -> {
-                val config = intent.getStringExtra(EXTRA_CONFIG)
-                val mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_VPN
-                activeTargetName = intent.getStringExtra(EXTRA_TARGET_NAME)
+                val config = commandIntent.getStringExtra(EXTRA_CONFIG)
+                val mode = commandIntent.getStringExtra(EXTRA_MODE) ?: MODE_VPN
+                activeTargetName = commandIntent.getStringExtra(EXTRA_TARGET_NAME)
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
                     ?: "OrexRay"
-                activeLatencyMs = intent.getIntExtra(EXTRA_LATENCY_MS, -1)
+                activeLatencyMs = commandIntent.getIntExtra(EXTRA_LATENCY_MS, -1)
                     .takeIf { it >= 0 }
-                activeStatsOutboundTags = intent.getStringArrayListExtra(EXTRA_STATS_OUTBOUND_TAGS)
+                activeStatsOutboundTags = commandIntent.getStringArrayListExtra(EXTRA_STATS_OUTBOUND_TAGS)
                     ?.map { it.trim() }
-                    ?.filter { it == "proxy" || it.matches(Regex("proxy-\\d+")) }
+                    ?.filter { it == "proxy" || it == "fallback-proxy" || it.matches(Regex("proxy-\\d+")) }
                     ?.distinct()
                     .orEmpty()
                     .ifEmpty { listOf("proxy") }
-                activeMtu = intent.getIntExtra(EXTRA_MTU, 1500).coerceIn(1280, 9000)
-                activeDnsServers = intent.getStringArrayListExtra(EXTRA_DNS_SERVERS)
+                activeMtu = commandIntent.getIntExtra(EXTRA_MTU, 1500).coerceIn(1280, 9000)
+                activeDnsServers = commandIntent.getStringArrayListExtra(EXTRA_DNS_SERVERS)
                     ?.filter { it.isNotBlank() }
                     ?.take(4)
                     .orEmpty()
-                activeSocksPort = intent.getIntExtra(EXTRA_SOCKS_PORT, 20808)
+                activeSocksPort = commandIntent.getIntExtra(EXTRA_SOCKS_PORT, 20808)
                     .coerceIn(1, 65535)
-                activeHttpPort = intent.getIntExtra(EXTRA_HTTP_PORT, 20809)
+                activeHttpPort = commandIntent.getIntExtra(EXTRA_HTTP_PORT, 20809)
                     .coerceIn(1, 65535)
                 activeLocalProxyInVpn =
-                    intent.getBooleanExtra(EXTRA_LOCAL_PROXY_IN_VPN, true)
-                activeStatsIntervalSeconds = intent
+                    commandIntent.getBooleanExtra(EXTRA_LOCAL_PROXY_IN_VPN, true)
+                activeStatsIntervalSeconds = commandIntent
                     .getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, 2)
                     .let { if (it in setOf(1, 2, 5, 10)) it else 2 }
                 showNotificationSpeed =
-                    intent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_SPEED, true)
+                    commandIntent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_SPEED, true)
                 showNotificationPing =
-                    intent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_PING, true)
-                restartServiceOnKill = intent.getBooleanExtra(EXTRA_RESTART_SERVICE, true)
-                activeAppRoutingMode = intent.getStringExtra(EXTRA_APP_ROUTING_MODE)
+                    commandIntent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_PING, true)
+                restartServiceOnKill = commandIntent.getBooleanExtra(EXTRA_RESTART_SERVICE, true)
+                activeAppRoutingMode = commandIntent.getStringExtra(EXTRA_APP_ROUTING_MODE)
                     ?.takeIf {
                         it == APP_ROUTING_ALL ||
                             it == APP_ROUTING_EXCLUDE ||
                             it == APP_ROUTING_ONLY
                     }
                     ?: APP_ROUTING_ALL
-                activeAppPackages = intent.getStringArrayListExtra(EXTRA_APP_PACKAGES)
+                activeAppPackages = commandIntent.getStringArrayListExtra(EXTRA_APP_PACKAGES)
                     ?.filter { it.isNotBlank() }
                     ?.distinct()
                     .orEmpty()
@@ -189,6 +195,12 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     return Service.START_NOT_STICKY
                 }
 
+                if (restartServiceOnKill) {
+                    persistRestartIntent(commandIntent)
+                } else {
+                    clearRestartState()
+                }
+
                 activeMode = mode
                 startInForeground(
                     if (mode == MODE_VPN) {
@@ -201,24 +213,21 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             }
         }
 
-        return if (restartServiceOnKill) {
-            Service.START_REDELIVER_INTENT
-        } else {
-            Service.START_NOT_STICKY
-        }
+        return restartMode()
     }
 
     override fun onBind(intent: Intent?): IBinder? = super.onBind(intent)
 
     override fun onRevoke() {
-        Log.i(TAG, "VPN permission revoked")
+        debugInfo("VPN permission revoked")
         restartServiceOnKill = false
+        clearRestartState()
         worker.execute { stopTunnel() }
         super.onRevoke()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.i(TAG, "UI task removed; core service keeps running")
+        debugInfo("UI task removed; core service keeps running")
         super.onTaskRemoved(rootIntent)
     }
 
@@ -231,40 +240,33 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         runCatching { vpnInterface?.close() }
         vpnInterface = null
         worker.shutdownNow()
-        Log.i(TAG, "Core service destroyed")
+        debugInfo("Core service destroyed")
         super.onDestroy()
     }
 
     private fun ensureCoreController(): CoreController {
         coreController?.let { return it }
 
-        Log.i(TAG, "Initializing Xray core")
+        debugInfo("Initializing Xray core")
         Seq.setContext(applicationContext)
         val envDir = File(filesDir, "xray").apply { mkdirs() }
         Libv2ray.initCoreEnv(envDir.absolutePath, xudpBaseKey())
         return Libv2ray.newCoreController(this).also {
             coreController = it
-            Log.i(TAG, "Xray core initialized")
+            debugInfo("Xray core initialized")
         }
     }
 
-    private fun xudpBaseKey(): String {
-        val androidId = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ANDROID_ID,
-        ).orEmpty()
-        val raw = androidId.toByteArray(Charsets.UTF_8).copyOf(32)
-        return Base64.encodeToString(
-            raw,
-            Base64.NO_PADDING or Base64.NO_WRAP or Base64.URL_SAFE,
-        )
-    }
+    private fun xudpBaseKey(): String =
+        secureStore.getOrCreateRandomUrlSafeToken("xudp_base_key_v1", 32)
 
     private fun startTunnel(config: String, mode: String) {
         val controller = try {
             ensureCoreController()
         } catch (error: Throwable) {
             Log.e(TAG, "Xray core initialization failed", error)
+            restartServiceOnKill = false
+            clearRestartState()
             emitError("Не удалось инициализировать Xray: ${safeMessage(error)}", mode)
             stopForegroundCompat()
             stopSelf()
@@ -297,7 +299,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             }
 
             emitConnecting("Запускаем Xray Core…", mode)
-            Log.i(TAG, "Starting Xray mode=$mode tunFd=$tunFd")
+            debugInfo("Starting Xray mode=$mode tunFd=$tunFd")
             controller.startLoop(config, tunFd)
             if (!controller.isRunning) {
                 error("Xray Core завершился сразу после запуска")
@@ -307,14 +309,152 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             emitConnected()
             startStatsLoop()
             updateRunningNotification()
-            Log.i(TAG, "Xray started successfully mode=$mode")
+            debugInfo("Xray started successfully mode=$mode")
         } catch (error: Throwable) {
             Log.e(TAG, "Could not start Xray mode=$mode", error)
             cleanupAfterFailure()
+            restartServiceOnKill = false
+            clearRestartState()
             emitError(safeMessage(error), mode)
             stopForegroundCompat()
             stopSelf()
         }
+    }
+
+    private fun restartMode(): Int = if (restartServiceOnKill) {
+        Service.START_STICKY
+    } else {
+        Service.START_NOT_STICKY
+    }
+
+    private fun persistRestartIntent(intent: Intent) {
+        val json = JSONObject()
+            .put(EXTRA_CONFIG, intent.getStringExtra(EXTRA_CONFIG).orEmpty())
+            .put(EXTRA_MODE, intent.getStringExtra(EXTRA_MODE).orEmpty())
+            .put(EXTRA_TARGET_NAME, intent.getStringExtra(EXTRA_TARGET_NAME).orEmpty())
+            .put(EXTRA_LATENCY_MS, intent.getIntExtra(EXTRA_LATENCY_MS, -1))
+            .put(EXTRA_MTU, intent.getIntExtra(EXTRA_MTU, 1500))
+            .put(EXTRA_SOCKS_PORT, intent.getIntExtra(EXTRA_SOCKS_PORT, 20808))
+            .put(EXTRA_HTTP_PORT, intent.getIntExtra(EXTRA_HTTP_PORT, 20809))
+            .put(
+                EXTRA_LOCAL_PROXY_IN_VPN,
+                intent.getBooleanExtra(EXTRA_LOCAL_PROXY_IN_VPN, true),
+            )
+            .put(
+                EXTRA_STATS_INTERVAL_SECONDS,
+                intent.getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, 2),
+            )
+            .put(
+                EXTRA_SHOW_NOTIFICATION_SPEED,
+                intent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_SPEED, true),
+            )
+            .put(
+                EXTRA_SHOW_NOTIFICATION_PING,
+                intent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_PING, true),
+            )
+            .put(EXTRA_RESTART_SERVICE, true)
+            .put(
+                EXTRA_APP_ROUTING_MODE,
+                intent.getStringExtra(EXTRA_APP_ROUTING_MODE).orEmpty(),
+            )
+            .put(
+                EXTRA_STATS_OUTBOUND_TAGS,
+                JSONArray(intent.getStringArrayListExtra(EXTRA_STATS_OUTBOUND_TAGS).orEmpty()),
+            )
+            .put(
+                EXTRA_DNS_SERVERS,
+                JSONArray(intent.getStringArrayListExtra(EXTRA_DNS_SERVERS).orEmpty()),
+            )
+            .put(
+                EXTRA_APP_PACKAGES,
+                JSONArray(intent.getStringArrayListExtra(EXTRA_APP_PACKAGES).orEmpty()),
+            )
+        secureStore.write(RESTART_STATE_KEY, json.toString())
+    }
+
+    private fun restoreRestartIntent(): Intent? {
+        val payload = runCatching { secureStore.read(RESTART_STATE_KEY) }
+            .onFailure {
+                Log.e(TAG, "Could not read encrypted restart state", it)
+                clearRestartState()
+            }
+            .getOrNull()
+            ?: return null
+
+        return runCatching {
+            val json = JSONObject(payload)
+            val config = json.optString(EXTRA_CONFIG)
+            if (config.isBlank()) return@runCatching null
+            Intent(this, OrexRayVpnService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_CONFIG, config)
+                .putExtra(EXTRA_MODE, json.optString(EXTRA_MODE, MODE_VPN))
+                .putExtra(EXTRA_TARGET_NAME, json.optString(EXTRA_TARGET_NAME, "OrexRay"))
+                .putExtra(EXTRA_LATENCY_MS, json.optInt(EXTRA_LATENCY_MS, -1))
+                .putStringArrayListExtra(
+                    EXTRA_STATS_OUTBOUND_TAGS,
+                    json.optJSONArray(EXTRA_STATS_OUTBOUND_TAGS).toStringArrayList(),
+                )
+                .putExtra(EXTRA_MTU, json.optInt(EXTRA_MTU, 1500))
+                .putStringArrayListExtra(
+                    EXTRA_DNS_SERVERS,
+                    json.optJSONArray(EXTRA_DNS_SERVERS).toStringArrayList(),
+                )
+                .putExtra(EXTRA_SOCKS_PORT, json.optInt(EXTRA_SOCKS_PORT, 20808))
+                .putExtra(EXTRA_HTTP_PORT, json.optInt(EXTRA_HTTP_PORT, 20809))
+                .putExtra(
+                    EXTRA_LOCAL_PROXY_IN_VPN,
+                    json.optBoolean(EXTRA_LOCAL_PROXY_IN_VPN, true),
+                )
+                .putExtra(
+                    EXTRA_STATS_INTERVAL_SECONDS,
+                    json.optInt(EXTRA_STATS_INTERVAL_SECONDS, 2),
+                )
+                .putExtra(
+                    EXTRA_SHOW_NOTIFICATION_SPEED,
+                    json.optBoolean(EXTRA_SHOW_NOTIFICATION_SPEED, true),
+                )
+                .putExtra(
+                    EXTRA_SHOW_NOTIFICATION_PING,
+                    json.optBoolean(EXTRA_SHOW_NOTIFICATION_PING, true),
+                )
+                .putExtra(EXTRA_RESTART_SERVICE, true)
+                .putExtra(
+                    EXTRA_APP_ROUTING_MODE,
+                    json.optString(EXTRA_APP_ROUTING_MODE, APP_ROUTING_ALL),
+                )
+                .putStringArrayListExtra(
+                    EXTRA_APP_PACKAGES,
+                    json.optJSONArray(EXTRA_APP_PACKAGES).toStringArrayList(),
+                )
+        }.onFailure {
+            Log.e(TAG, "Encrypted restart state is invalid", it)
+            clearRestartState()
+        }.getOrNull()
+    }
+
+    private fun JSONArray?.toStringArrayList(): ArrayList<String> {
+        if (this == null) return arrayListOf()
+        val values = ArrayList<String>(length())
+        for (index in 0 until length()) {
+            optString(index).takeIf { it.isNotBlank() }?.let(values::add)
+        }
+        return values
+    }
+
+    private fun updateRestartMetadata() {
+        val payload = runCatching { secureStore.read(RESTART_STATE_KEY) }.getOrNull() ?: return
+        runCatching {
+            val json = JSONObject(payload)
+                .put(EXTRA_TARGET_NAME, activeTargetName)
+                .put(EXTRA_LATENCY_MS, activeLatencyMs ?: -1)
+            secureStore.write(RESTART_STATE_KEY, json.toString())
+        }.onFailure { Log.w(TAG, "Could not update encrypted restart metadata", it) }
+    }
+
+    private fun clearRestartState() {
+        runCatching { secureStore.delete(RESTART_STATE_KEY) }
+            .onFailure { Log.w(TAG, "Could not clear encrypted restart state", it) }
     }
 
     private fun buildVpnInterface(): ParcelFileDescriptor? {
@@ -429,6 +569,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private fun stopTunnel() {
         if (stopping) return
         stopping = true
+        clearRestartState()
 
         OrexRayTunnelEvents.emit(
             OrexRayTunnelEvents.event(
@@ -461,7 +602,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 mode = activeMode,
             ),
         )
-        Log.i(TAG, "Xray stopped mode=$activeMode")
+        debugInfo("Xray stopped mode=$activeMode")
         stopSelf()
     }
 
@@ -519,7 +660,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             parts += "↑ ${formatSpeed(uploadBytesPerSecond)}"
         }
         if (showNotificationPing) {
-            activeLatencyMs?.let { parts += "Ping $it мс" }
+            activeLatencyMs?.let { parts += "$it мс" }
         }
         if (parts.isEmpty()) {
             parts += if (activeMode == MODE_VPN) {
@@ -615,13 +756,21 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
 
+    private fun debugInfo(message: String) {
+        if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) Log.i(TAG, message)
+    }
+
+    private fun debugLog(message: String) {
+        if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) Log.d(TAG, message)
+    }
+
     override fun startup(): Long = 0L
 
     override fun shutdown(): Long = 0L
 
     override fun onEmitStatus(code: Long, message: String?): Long {
         if (!message.isNullOrBlank()) {
-            Log.d(TAG, "Core status code=$code message=$message")
+            debugLog("Core status code=$code message=$message")
         }
         return 0L
     }

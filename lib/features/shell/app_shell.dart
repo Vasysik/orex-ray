@@ -5,6 +5,7 @@ import '../../core/geodata/geodata_controller.dart';
 import '../../core/profiles/profiles_controller.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/glass.dart';
+import '../../shared/theme/orex_theme.dart';
 import '../../shared/theme/theme_controller.dart';
 import '../about/about_screen.dart';
 import '../appearance/appearance_screen.dart';
@@ -55,7 +56,7 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomeScreen(tunnel: widget.tunnel),
-      ProfilesScreen(profiles: widget.profiles),
+      ProfilesScreen(profiles: widget.profiles, tunnel: widget.tunnel),
       ConnectionScreen(tunnel: widget.tunnel, settings: widget.settings),
       AppsScreen(controller: widget.appRouting),
       NetworkScreen(settings: widget.settings),
@@ -169,18 +170,34 @@ class _AppShellState extends State<AppShell> {
                         destinations: const [
                           NavigationDestination(
                             icon: Icon(Icons.power_settings_new_rounded),
+                            selectedIcon: Icon(
+                              Icons.power_settings_new_rounded,
+                              color: OrexColors.copper,
+                            ),
                             label: 'Главная',
                           ),
                           NavigationDestination(
                             icon: Icon(Icons.storage_rounded),
+                            selectedIcon: Icon(
+                              Icons.storage_rounded,
+                              color: OrexColors.copper,
+                            ),
                             label: 'Профили',
                           ),
                           NavigationDestination(
                             icon: Icon(Icons.route_rounded),
+                            selectedIcon: Icon(
+                              Icons.route_rounded,
+                              color: OrexColors.copper,
+                            ),
                             label: 'Подключение',
                           ),
                           NavigationDestination(
                             icon: Icon(Icons.more_horiz_rounded),
+                            selectedIcon: Icon(
+                              Icons.more_horiz_rounded,
+                              color: OrexColors.copper,
+                            ),
                             label: 'Ещё',
                           ),
                         ],

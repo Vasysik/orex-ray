@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/profiles/profiles_controller.dart';
 import 'package:orex_ray/core/settings/connection_settings_controller.dart';
 import 'package:orex_ray/core/tunnel/mock_tunnel_engine.dart';
+import 'package:orex_ray/core/tunnel/tunnel_engine.dart';
 import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:orex_ray/features/home/tunnel_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,7 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   test('controller connects selected imported profile in selected mode', () async {
     SharedPreferences.setMockInitialValues({});
-    final profiles = await ProfilesController.load();
+    final profiles = await ProfilesController.load(
+      automaticLatencyRefresh: false,
+    );
     final settings = await ConnectionSettingsController.load(
       operatingSystem: 'windows',
     );
@@ -24,6 +27,11 @@ void main() {
       profiles: profiles,
       settings: settings,
     );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
 
     expect(controller.snapshot.status, TunnelStatus.disconnected);
     expect(controller.snapshot.profile?.name, 'Test');
@@ -35,10 +43,6 @@ void main() {
 
     await controller.toggle();
     expect(controller.snapshot.status, TunnelStatus.disconnected);
-
-    controller.dispose();
-    profiles.dispose();
-    settings.dispose();
   });
 
   test('Android defaults to VPN and supports local proxy', () async {
@@ -55,7 +59,6 @@ void main() {
 
     settings.dispose();
   });
-
 
   test('connection settings persist proxy, DNS and routing options', () async {
     SharedPreferences.setMockInitialValues({});
@@ -101,4 +104,109 @@ void main() {
     settings.dispose();
   });
 
+  test('first release defaults stay conservative', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    addTearDown(settings.dispose);
+
+    expect(settings.allowLan, isFalse);
+    expect(settings.logLevel, 'error');
+    expect(settings.dnsPreset, DnsPreset.system);
+    expect(settings.localProxyInVpn, isTrue);
+    expect(settings.showNotificationPing, isTrue);
+  });
+
+  test('switching profile while connected restarts the active tunnel', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load(
+      automaticLatencyRefresh: false,
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final first = await profiles.importVlessLink(
+      'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@first.example:443'
+      '?encryption=none&security=none&type=tcp#First',
+    );
+    final second = await profiles.createProfile(
+      TunnelProfile(
+        id: 'second-profile',
+        name: 'Second',
+        address: 'second.example',
+        port: 443,
+        userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      ),
+    );
+    final engine = _RecordingTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    expect(profiles.selectedTarget?.id, first.id);
+    await controller.toggle();
+    expect(controller.snapshot.isConnected, isTrue);
+
+    await controller.selectTarget(second.id);
+
+    expect(engine.stopCalls, 1);
+    expect(engine.startedTargets, [first.id, second.id]);
+    expect(controller.snapshot.isConnected, isTrue);
+    expect(controller.snapshot.profile?.id, second.id);
+    expect(controller.snapshot.mode, ConnectionMode.vpnTun);
+  });
+}
+
+class _RecordingTunnelEngine implements TunnelEngine {
+  TunnelSnapshot _current = const TunnelSnapshot(
+    status: TunnelStatus.disconnected,
+    stats: TrafficStats(),
+  );
+  final List<String> startedTargets = <String>[];
+  int stopCalls = 0;
+
+  @override
+  TunnelSnapshot get current => _current;
+
+  @override
+  Stream<TunnelSnapshot> get snapshots => const Stream.empty();
+
+  @override
+  Set<ConnectionMode> get supportedModes => const {
+        ConnectionMode.vpnTun,
+        ConnectionMode.localProxy,
+      };
+
+  @override
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    startedTargets.add(profile.id);
+    _current = TunnelSnapshot(
+      status: TunnelStatus.connected,
+      mode: mode,
+      profile: profile,
+      stats: const TrafficStats(),
+    );
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls += 1;
+    _current = TunnelSnapshot(
+      status: TunnelStatus.disconnected,
+      mode: _current.mode,
+      profile: _current.profile,
+      stats: const TrafficStats(),
+    );
+  }
+
+  @override
+  Future<void> dispose() async {}
 }

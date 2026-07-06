@@ -290,7 +290,12 @@ class BalancerProfile {
     this.strategy = BalancerStrategy.leastPing,
     this.probeUrl = 'https://www.gstatic.com/generate_204',
     this.probeIntervalSeconds = 30,
+    this.fallbackTarget,
   });
+
+  static const fallbackDirect = 'direct';
+  static const fallbackBlock = 'block';
+  static const fallbackProfilePrefix = 'profile:';
 
   final String id;
   final String name;
@@ -299,6 +304,21 @@ class BalancerProfile {
   final String probeUrl;
   final int probeIntervalSeconds;
 
+  /// App-level fallback selector. Values are `direct`, `block`, or
+  /// `profile:<profile-id>`. It is translated to Xray's official
+  /// `BalancerObject.fallbackTag` when the config is built.
+  final String? fallbackTarget;
+
+  String? get fallbackProfileId {
+    final value = fallbackTarget;
+    if (value == null || !value.startsWith(fallbackProfilePrefix)) return null;
+    final id = value.substring(fallbackProfilePrefix.length).trim();
+    return id.isEmpty ? null : id;
+  }
+
+  static String fallbackProfile(String profileId) =>
+      '$fallbackProfilePrefix$profileId';
+
   BalancerProfile copyWith({
     String? id,
     String? name,
@@ -306,6 +326,8 @@ class BalancerProfile {
     BalancerStrategy? strategy,
     String? probeUrl,
     int? probeIntervalSeconds,
+    String? fallbackTarget,
+    bool clearFallback = false,
   }) {
     return BalancerProfile(
       id: id ?? this.id,
@@ -314,6 +336,8 @@ class BalancerProfile {
       strategy: strategy ?? this.strategy,
       probeUrl: probeUrl ?? this.probeUrl,
       probeIntervalSeconds: probeIntervalSeconds ?? this.probeIntervalSeconds,
+      fallbackTarget:
+          clearFallback ? null : (fallbackTarget ?? this.fallbackTarget),
     );
   }
 
@@ -324,6 +348,7 @@ class BalancerProfile {
         'strategy': strategy.storageValue,
         'probeUrl': probeUrl,
         'probeIntervalSeconds': probeIntervalSeconds,
+        if (fallbackTarget != null) 'fallbackTarget': fallbackTarget,
       };
 
   factory BalancerProfile.fromJson(Map<String, Object?> json) {
@@ -337,13 +362,19 @@ class BalancerProfile {
     if (id.isEmpty || name.isEmpty || members.length < 2) {
       throw const FormatException('Некорректный балансировщик');
     }
+    final fallbackTarget = (json['fallbackTarget'] as String?)?.trim();
     return BalancerProfile(
       id: id,
       name: name,
       memberIds: members,
       strategy: BalancerStrategy.fromStorageValue(json['strategy'] as String?),
-      probeUrl: (json['probeUrl'] as String? ?? 'https://www.gstatic.com/generate_204').trim(),
+      probeUrl: (json['probeUrl'] as String? ??
+              'https://www.gstatic.com/generate_204')
+          .trim(),
       probeIntervalSeconds: interval.clamp(5, 3600).toInt(),
+      fallbackTarget: fallbackTarget == null || fallbackTarget.isEmpty
+          ? null
+          : fallbackTarget,
     );
   }
 }
@@ -354,6 +385,7 @@ class TunnelTarget {
     required this.name,
     required this.profiles,
     this.balancer,
+    this.fallbackProfile,
   });
 
   factory TunnelTarget.single(TunnelProfile profile) => TunnelTarget._(
@@ -364,18 +396,21 @@ class TunnelTarget {
 
   factory TunnelTarget.balancer(
     BalancerProfile balancer,
-    List<TunnelProfile> profiles,
-  ) => TunnelTarget._(
+    List<TunnelProfile> profiles, {
+    TunnelProfile? fallbackProfile,
+  }) => TunnelTarget._(
         id: balancer.id,
         name: balancer.name,
         profiles: List.unmodifiable(profiles),
         balancer: balancer,
+        fallbackProfile: fallbackProfile,
       );
 
   final String id;
   final String name;
   final List<TunnelProfile> profiles;
   final BalancerProfile? balancer;
+  final TunnelProfile? fallbackProfile;
 
   bool get isBalancer => balancer != null;
   TunnelProfile get primaryProfile => profiles.first;

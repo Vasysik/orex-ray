@@ -91,6 +91,35 @@ void main() {
     expect(inbounds[2]['protocol'], 'http');
   });
 
+  test('keeps parallel VPN proxies loopback-only by default', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(
+        target,
+        socksPort: 30808,
+        httpPort: 30809,
+      ),
+    ) as Map<String, dynamic>;
+    final inbounds = (json['inbounds'] as List).cast<Map<String, dynamic>>();
+
+    expect(inbounds[1]['listen'], '127.0.0.1');
+    expect(inbounds[1]['port'], 30808);
+    expect(inbounds[2]['listen'], '127.0.0.1');
+    expect(inbounds[2]['port'], 30809);
+  });
+
+  test('opens parallel VPN proxies on LAN only when explicitly requested', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(
+        target,
+        allowLan: true,
+      ),
+    ) as Map<String, dynamic>;
+    final inbounds = (json['inbounds'] as List).cast<Map<String, dynamic>>();
+
+    expect(inbounds[1]['listen'], '0.0.0.0');
+    expect(inbounds[2]['listen'], '0.0.0.0');
+  });
+
   test('can disable local proxy in VPN mode', () {
     final json = jsonDecode(
       const XrayConfigBuilder().buildAndroidTun(
@@ -161,4 +190,70 @@ void main() {
     expect((routing['balancers'] as List).single['tag'], 'orexray-balancer');
     expect(json['observatory'], isA<Map>());
   });
+
+  test('uses official Xray direct fallbackTag for balancers', () {
+    final second = profile.copyWith(
+      id: 'second-fallback-direct',
+      name: 'Second',
+      address: 'second.example.com',
+    );
+    final balancer = BalancerProfile(
+      id: 'balancer-direct-fallback',
+      name: 'Fallback direct',
+      memberIds: [profile.id, second.id],
+      strategy: BalancerStrategy.random,
+      fallbackTarget: BalancerProfile.fallbackDirect,
+    );
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(
+        TunnelTarget.balancer(balancer, [profile, second]),
+      ),
+    ) as Map<String, dynamic>;
+    final routing = json['routing'] as Map<String, dynamic>;
+    final balancerConfig =
+        (routing['balancers'] as List).single as Map<String, dynamic>;
+
+    expect(balancerConfig['fallbackTag'], 'direct');
+    expect(json['observatory'], isA<Map>());
+  });
+
+  test('uses a separate outbound for profile fallback', () {
+    final second = profile.copyWith(
+      id: 'second-fallback-profile',
+      name: 'Second',
+      address: 'second.example.com',
+    );
+    final fallback = profile.copyWith(
+      id: 'fallback-profile',
+      name: 'Fallback',
+      address: 'fallback.example.com',
+    );
+    final balancer = BalancerProfile(
+      id: 'balancer-profile-fallback',
+      name: 'Profile fallback',
+      memberIds: [profile.id, second.id],
+      strategy: BalancerStrategy.roundRobin,
+      fallbackTarget: BalancerProfile.fallbackProfile(fallback.id),
+    );
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(
+        TunnelTarget.balancer(
+          balancer,
+          [profile, second],
+          fallbackProfile: fallback,
+        ),
+      ),
+    ) as Map<String, dynamic>;
+    final outbounds = (json['outbounds'] as List).cast<Map<String, dynamic>>();
+    final routing = json['routing'] as Map<String, dynamic>;
+    final balancerConfig =
+        (routing['balancers'] as List).single as Map<String, dynamic>;
+
+    expect(balancerConfig['fallbackTag'], 'fallback-proxy');
+    expect(
+      outbounds.any((outbound) => outbound['tag'] == 'fallback-proxy'),
+      isTrue,
+    );
+  });
+
 }

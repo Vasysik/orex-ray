@@ -200,6 +200,14 @@ class XrayConfigBuilder {
             _proxyOutbound(target.primaryProfile, tag: 'proxy'),
           ];
 
+    final fallbackTag = target.isBalancer ? _balancerFallbackTag(target) : null;
+    final fallbackProfile = target.fallbackProfile;
+    if (target.isBalancer && fallbackProfile != null) {
+      proxyOutbounds.add(
+        _proxyOutbound(fallbackProfile, tag: 'fallback-proxy'),
+      );
+    }
+
     final routing = <String, Object?>{
       'domainStrategy': 'IPIfNonMatch',
       'rules': rules,
@@ -208,6 +216,7 @@ class XrayConfigBuilder {
           {
             'tag': 'orexray-balancer',
             'selector': ['proxy-'],
+            if (fallbackTag != null) 'fallbackTag': fallbackTag,
             'strategy': {
               'type': target.balancer!.strategy.storageValue,
             },
@@ -224,7 +233,8 @@ class XrayConfigBuilder {
         {'tag': 'block', 'protocol': 'blackhole'},
       ],
       'routing': routing,
-      if (target.balancer?.strategy == BalancerStrategy.leastPing)
+      if (target.balancer?.strategy == BalancerStrategy.leastPing ||
+          fallbackTag != null)
         'observatory': {
           'subjectSelector': ['proxy-'],
           'probeURL': target.balancer!.probeUrl,
@@ -241,6 +251,18 @@ class XrayConfigBuilder {
     };
 
     return const JsonEncoder.withIndent('  ').convert(config);
+  }
+
+  String? _balancerFallbackTag(TunnelTarget target) {
+    final fallback = target.balancer?.fallbackTarget;
+    if (fallback == null || fallback.isEmpty) return null;
+    if (fallback == BalancerProfile.fallbackDirect) return 'direct';
+    if (fallback == BalancerProfile.fallbackBlock) return 'block';
+
+    final profileId = target.balancer?.fallbackProfileId;
+    if (profileId == null) return null;
+    if (target.fallbackProfile?.id == profileId) return 'fallback-proxy';
+    return null;
   }
 
   List<Map<String, Object?>> _geoRules(

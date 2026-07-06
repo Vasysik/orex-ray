@@ -108,7 +108,9 @@ class NetworkScreen extends StatelessWidget {
                     DropdownMenuItem(value: 'debug', child: Text('Отладка')),
                   ],
                   onChanged: (value) {
-                    if (value != null) settings.setLogLevel(value);
+                    if (value != null) {
+                      _setLogLevel(context, settings, value);
+                    }
                   },
                 ),
               ),
@@ -118,6 +120,41 @@ class NetworkScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+
+Future<void> _setLogLevel(
+  BuildContext context,
+  ConnectionSettingsController settings,
+  String value,
+) async {
+  if (value == 'info' || value == 'debug') {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            icon: const Icon(Icons.visibility_outlined),
+            title: const Text('Подробные сетевые логи'),
+            content: const Text(
+              'На уровнях «Информация» и «Отладка» Xray может писать в logcat '
+              'адреса назначения и другую сетевую диагностику. Используй эти '
+              'режимы только временно при поиске проблемы.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Отмена'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Включить'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+  }
+  await settings.setLogLevel(value);
 }
 
 Future<void> _editCustomDns(

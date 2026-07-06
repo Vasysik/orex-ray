@@ -106,7 +106,9 @@ class ConnectionScreen extends StatelessWidget {
                   title: const Text('Доступ из локальной сети'),
                   subtitle: const Text('Слушать 0.0.0.0 вместо только localhost'),
                   value: settings.allowLan,
-                  onChanged: locked ? null : settings.setAllowLan,
+                  onChanged: locked
+                      ? null
+                      : (value) => _setAllowLan(context, settings, value),
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
@@ -148,6 +150,44 @@ class ConnectionScreen extends StatelessWidget {
       },
     );
   }
+}
+
+
+Future<void> _setAllowLan(
+  BuildContext context,
+  ConnectionSettingsController settings,
+  bool value,
+) async {
+  if (!value) {
+    await settings.setAllowLan(false);
+    return;
+  }
+
+  final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded),
+          title: const Text('Открыть прокси в локальную сеть?'),
+          content: const Text(
+            'SOCKS5 и HTTP-прокси OrexRay сейчас не требуют пароль. '
+            'После включения другие устройства в этой локальной сети смогут '
+            'использовать твой прокси, если соединение не блокирует firewall. '
+            'Включай это только в доверенной сети.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Открыть доступ'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+  if (confirmed) await settings.setAllowLan(true);
 }
 
 Future<void> _editNumber(

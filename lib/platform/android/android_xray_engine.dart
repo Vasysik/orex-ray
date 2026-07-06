@@ -112,6 +112,7 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink {
             ? [
                 for (var index = 0; index < target.profiles.length; index++)
                   'proxy-$index',
+                if (target.fallbackProfile != null) 'fallback-proxy',
               ]
             : const ['proxy'],
         'mtu': _settings.mtu,

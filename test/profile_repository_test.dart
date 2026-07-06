@@ -24,4 +24,26 @@ void main() {
     expect(profiles, hasLength(1));
     expect(profiles.single.name, 'Valid');
   });
+
+  test('saves profiles and selected target without changing credentials', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profile = const VlessLinkParser().parse(
+      'vless://22222222-2222-4222-8222-222222222222@secure.example:8443'
+      '?encryption=none&security=reality&sni=secure.example&fp=chrome'
+      '&pbk=secret-public-key&sid=abcd&type=tcp#Secure',
+    );
+
+    final repository = await ProfileRepository.load();
+    await repository.saveProfiles([profile]);
+    await repository.saveSelectedId(profile.id);
+
+    final reloaded = await ProfileRepository.load();
+    expect(reloaded.readProfiles().single.userId, profile.userId);
+    expect(
+      reloaded.readProfiles().single.realityPassword,
+      profile.realityPassword,
+    );
+    expect(reloaded.readSelectedId(), profile.id);
+  });
+
 }

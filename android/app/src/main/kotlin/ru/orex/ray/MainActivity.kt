@@ -17,13 +17,14 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.io.File
-import kotlin.concurrent.thread
+import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
     companion object {
         private const val TAG = "OrexRay"
         private const val METHOD_CHANNEL = "ru.orex.ray/tunnel"
         private const val EVENT_CHANNEL = "ru.orex.ray/tunnel_events"
+        private const val SECURE_CHANNEL = "ru.orex.ray/secure_storage"
         private const val VPN_PERMISSION_REQUEST = 7711
         private const val NOTIFICATION_PERMISSION_REQUEST = 7712
         private const val MODE_VPN = "vpn_tun"
@@ -50,6 +51,11 @@ class MainActivity : FlutterActivity() {
     )
 
     private var pendingStart: StartRequest? = null
+    private val secureStore by lazy { AndroidSecureStore(applicationContext) }
+    private val packageWorker = Executors.newFixedThreadPool(2)
+
+    @Volatile
+    private var activityDestroyed = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -87,7 +93,7 @@ class MainActivity : FlutterActivity() {
                             )
                                 ?.map { it.trim() }
                                 ?.filter {
-                                    it == "proxy" || it.matches(Regex("proxy-\\d+"))
+                                    it == "proxy" || it == "fallback-proxy" || it.matches(Regex("proxy-\\d+"))
                                 }
                                 ?.distinct()
                                 .orEmpty()
@@ -168,6 +174,14 @@ class MainActivity : FlutterActivity() {
                         File(filesDir, "xray").apply { mkdirs() }.absolutePath,
                     )
                     "listApps" -> loadAppsAsync(result)
+                    "loadAppIcon" -> {
+                        val packageName = call.argument<String>("packageName")?.trim().orEmpty()
+                        if (packageName.isEmpty()) {
+                            result.error("invalid_package", "Package name is empty", null)
+                        } else {
+                            loadAppIconAsync(packageName, result)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -185,17 +199,52 @@ class MainActivity : FlutterActivity() {
                     OrexRayTunnelEvents.detach()
                 }
             })
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SECURE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                runCatching {
+                    val key = call.argument<String>("key")?.trim().orEmpty()
+                    require(key.isNotEmpty()) { "Secure storage key is empty" }
+                    when (call.method) {
+                        "read" -> result.success(secureStore.read(key))
+                        "write" -> {
+                            val value = call.argument<String>("value")
+                                ?: error("Secure storage value is missing")
+                            secureStore.write(key, value)
+                            result.success(null)
+                        }
+                        "delete" -> {
+                            secureStore.delete(key)
+                            result.success(null)
+                        }
+                        else -> result.notImplemented()
+                    }
+                }.onFailure { error ->
+                    Log.e(TAG, "Secure storage operation failed", error)
+                    result.error(
+                        "secure_storage_failed",
+                        error.message ?: error.javaClass.simpleName,
+                        null,
+                    )
+                }
+            }
     }
 
     private fun loadAppsAsync(result: MethodChannel.Result) {
-        thread(name = "orexray-app-list") {
+        if (activityDestroyed) return
+        packageWorker.execute {
             runCatching { listInstalledApps() }
                 .onSuccess { apps ->
-                    runOnUiThread { result.success(apps) }
+                    if (!activityDestroyed) {
+                        runOnUiThread {
+                            if (!activityDestroyed) result.success(apps)
+                        }
+                    }
                 }
                 .onFailure { error ->
                     Log.e(TAG, "Could not list installed apps", error)
-                    runOnUiThread {
+                    if (!activityDestroyed) runOnUiThread {
+                        if (activityDestroyed) return@runOnUiThread
                         result.error(
                             "list_apps_failed",
                             error.message ?: error.javaClass.simpleName,
@@ -234,7 +283,6 @@ class MainActivity : FlutterActivity() {
                     "label" to label,
                     "isSystem" to system,
                     "hasLauncher" to launcherPackages.contains(info.packageName),
-                    "iconBase64" to encodeAppIcon(info),
                 )
             }
             .sortedWith(
@@ -245,8 +293,22 @@ class MainActivity : FlutterActivity() {
             .toList()
     }
 
-    private fun encodeAppIcon(info: ApplicationInfo): String? {
+    private fun loadAppIconAsync(packageName: String, result: MethodChannel.Result) {
+        if (activityDestroyed) return
+        packageWorker.execute {
+            val encoded = encodeAppIcon(packageName)
+            if (!activityDestroyed) {
+                runOnUiThread {
+                    if (!activityDestroyed) result.success(encoded)
+                }
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun encodeAppIcon(packageName: String): String? {
         return runCatching {
+            val info = packageManager.getApplicationInfo(packageName, 0)
             val size = (44 * resources.displayMetrics.density)
                 .toInt()
                 .coerceIn(48, 96)
@@ -260,6 +322,20 @@ class MainActivity : FlutterActivity() {
             bitmap.recycle()
             Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
         }.getOrNull()
+    }
+
+    override fun onDestroy() {
+        activityDestroyed = true
+        packageWorker.shutdownNow()
+        super.onDestroy()
+    }
+
+    private fun debugInfo(message: String) {
+        if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) Log.i(TAG, message)
+    }
+
+    private fun debugLog(message: String) {
+        if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) Log.d(TAG, message)
     }
 
     private fun startRequestedMode(request: StartRequest) {
@@ -392,7 +468,7 @@ class MainActivity : FlutterActivity() {
                 ArrayList(request.appPackages),
             )
 
-        Log.i(TAG, "Starting core service in mode=${request.mode}")
+        debugInfo("Starting core service in mode=${request.mode}")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {

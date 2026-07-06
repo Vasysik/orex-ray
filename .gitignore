@@ -21,6 +21,7 @@ android/.gradle/
 android/.cxx/
 android/local.properties
 android/key.properties
+android/secrets/
 android/**/GeneratedPluginRegistrant.java
 **/*.keystore
 **/*.jks
@@ -49,6 +50,9 @@ windows/**/arm64/
 *.iml
 *.ipr
 *.iws
+
+# --- Релизные артефакты ---
+/dist/
 
 # --- Прочее ---
 .DS_Store

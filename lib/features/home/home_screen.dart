@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_choice_sheet.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../../shared/widgets/status_pill.dart';
 import 'tunnel_controller.dart';
@@ -26,7 +27,7 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Header(snapshot: snapshot),
+                  _Header(snapshot: snapshot, showStatus: wide),
                   const SizedBox(height: 20),
                   if (snapshot.errorMessage != null) ...[
                     _ErrorCard(message: snapshot.errorMessage!),
@@ -43,6 +44,7 @@ class HomeScreen extends StatelessWidget {
                           child: _ConnectionHero(
                             snapshot: snapshot,
                             onTap: tunnel.toggle,
+                            showStatusText: true,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -58,7 +60,11 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 16),
                     _TrafficCard(tunnel: tunnel, snapshot: snapshot),
                   ] else ...[
-                    _ConnectionHero(snapshot: snapshot, onTap: tunnel.toggle),
+                    _ConnectionHero(
+                      snapshot: snapshot,
+                      onTap: tunnel.toggle,
+                      showStatusText: false,
+                    ),
                     const SizedBox(height: 12),
                     _MobileStatusCard(tunnel: tunnel, snapshot: snapshot),
                     const SizedBox(height: 16),
@@ -75,9 +81,10 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.snapshot});
+  const _Header({required this.snapshot, required this.showStatus});
 
   final TunnelSnapshot snapshot;
+  final bool showStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -100,30 +107,20 @@ class _Header extends StatelessWidget {
       ],
     );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final label = switch (snapshot.status) {
-          TunnelStatus.connected => 'Защищено',
-          TunnelStatus.connecting => 'Подключение',
-          TunnelStatus.disconnecting => 'Отключение',
-          TunnelStatus.error => 'Ошибка',
-          TunnelStatus.disconnected => 'Не подключено',
-        };
-        final pill = StatusPill(label: label, active: snapshot.isConnected);
-        if (constraints.maxWidth < 520) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [brand, const SizedBox(height: 12), pill],
-          );
-        }
-        return Row(
-          children: [
-            Expanded(child: brand),
-            const SizedBox(width: 16),
-            pill,
-          ],
-        );
-      },
+    if (!showStatus) return brand;
+    final label = switch (snapshot.status) {
+      TunnelStatus.connected => 'Защищено',
+      TunnelStatus.connecting => 'Подключение',
+      TunnelStatus.disconnecting => 'Отключение',
+      TunnelStatus.error => 'Ошибка',
+      TunnelStatus.disconnected => 'Не подключено',
+    };
+    return Row(
+      children: [
+        Expanded(child: brand),
+        const SizedBox(width: 16),
+        StatusPill(label: label, active: snapshot.isConnected),
+      ],
     );
   }
 }
@@ -285,10 +282,15 @@ class _ModeChoice extends StatelessWidget {
 }
 
 class _ConnectionHero extends StatelessWidget {
-  const _ConnectionHero({required this.snapshot, required this.onTap});
+  const _ConnectionHero({
+    required this.snapshot,
+    required this.onTap,
+    required this.showStatusText,
+  });
 
   final TunnelSnapshot snapshot;
   final Future<void> Function() onTap;
+  final bool showStatusText;
 
   @override
   Widget build(BuildContext context) {
@@ -301,8 +303,13 @@ class _ConnectionHero extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       child: Column(
         children: [
-          Text(_statusTitle(snapshot.status), style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 6),
+          if (showStatusText) ...[
+            Text(
+              _statusTitle(snapshot.status),
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 6),
+          ],
           Text(
             snapshot.message ??
                 (hasProfile
@@ -629,40 +636,20 @@ class _QuickInfo extends StatelessWidget {
 
   Future<void> _showTargetPicker(BuildContext context) async {
     final selectedId = snapshot.profile?.id;
-    final id = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 520),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-                child: Text('Быстрая смена профиля', style: Theme.of(context).textTheme.titleLarge),
-              ),
-              for (final target in tunnel.targets)
-                ListTile(
-                  leading: Icon(
-                    target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
-                    color: OrexColors.copper,
-                  ),
-                  title: Text(target.name),
-                  subtitle: Text(
-                    '${target.endpoint} · '
-                    '${target.latencyMs == null ? 'ping —' : '${target.latencyMs} мс'}',
-                  ),
-                  trailing: selectedId == target.id
-                      ? const Icon(Icons.check_rounded, color: OrexColors.online)
-                      : null,
-                  onTap: () => Navigator.pop(context, target.id),
-                ),
-            ],
+    final id = await showOrexChoiceSheet<String>(
+      context,
+      title: 'Быстрая смена профиля',
+      options: [
+        for (final target in tunnel.targets)
+          OrexChoiceSheetOption<String>(
+            value: target.id,
+            icon: target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
+            title: target.name,
+            subtitle: '${target.endpoint} · '
+                '${target.latencyMs == null ? 'ping —' : '${target.latencyMs} мс'}',
+            selected: selectedId == target.id,
           ),
-        ),
-      ),
+      ],
     );
     if (id != null) await tunnel.selectTarget(id);
   }

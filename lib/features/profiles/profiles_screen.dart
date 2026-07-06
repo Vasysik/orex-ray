@@ -1,16 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/profiles/profiles_controller.dart';
 import '../../core/profiles/vless_link_parser.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_choice_sheet.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
+import '../home/tunnel_controller.dart';
+
+enum _ProfileCreateAction { importLink, newProfile, balancer }
 
 class ProfilesScreen extends StatelessWidget {
-  const ProfilesScreen({super.key, required this.profiles});
+  const ProfilesScreen({
+    super.key,
+    required this.profiles,
+    required this.tunnel,
+  });
 
   final ProfilesController profiles;
+  final TunnelController tunnel;
 
   @override
   Widget build(BuildContext context) {
@@ -21,53 +31,11 @@ class ProfilesScreen extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 360),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Профили', style: Theme.of(context).textTheme.headlineSmall),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Серверы, ping и балансировщики Xray',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _showCreateProfileDialog(context),
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('Профиль'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _showBalancerDialog(context),
-                  icon: const Icon(Icons.hub_rounded),
-                  label: const Text('Балансировщик'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: profiles.refreshingLatency || profiles.profiles.isEmpty
-                      ? null
-                      : profiles.refreshAllLatencies,
-                  icon: profiles.refreshingLatency
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.network_ping_rounded),
-                  label: const Text('Проверить ping'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _showImportDialog(context),
-                  icon: const Icon(Icons.add_link_rounded),
-                  label: const Text('Импорт'),
-                ),
-              ],
+            _ProfilesHeader(
+              refreshingLatency: profiles.refreshingLatency,
+              canRefreshLatency: profiles.profiles.isNotEmpty,
+              onOpenProfileMenu: () => _showProfileMenu(context),
+              onRefreshLatency: profiles.refreshAllLatencies,
             ),
             const SizedBox(height: 20),
             if (profiles.profiles.isEmpty)
@@ -84,10 +52,11 @@ class ProfilesScreen extends StatelessWidget {
                   child: _ProfileCard(
                     profile: profile,
                     selected: selected?.id == profile.id,
-                    onSelect: () => profiles.select(profile.id),
+                    onSelect: () => tunnel.selectTarget(profile.id),
                     onRefreshPing: () => profiles.refreshLatency(profile.id),
                     onEdit: () => _showEditProfileDialog(context, profile),
-                    onDelete: () => _deleteTarget(context, profile.id, profile.name),
+                    onDelete: () =>
+                        _deleteTarget(context, profile.id, profile.name),
                   ),
                 ),
               if (profiles.balancers.isNotEmpty) ...[
@@ -107,9 +76,11 @@ class ProfilesScreen extends StatelessWidget {
                           ...profiles.profiles.where((item) => item.id == id),
                       ],
                       selected: selected?.id == balancer.id,
-                      onSelect: () => profiles.select(balancer.id),
-                      onEdit: () => _showBalancerDialog(context, existing: balancer),
-                      onDelete: () => _deleteTarget(context, balancer.id, balancer.name),
+                      onSelect: () => tunnel.selectTarget(balancer.id),
+                      onEdit: () =>
+                          _showBalancerDialog(context, existing: balancer),
+                      onDelete: () =>
+                          _deleteTarget(context, balancer.id, balancer.name),
                     ),
                   ),
               ],
@@ -118,6 +89,44 @@ class ProfilesScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _showProfileMenu(BuildContext context) async {
+    final action = await showOrexChoiceSheet<_ProfileCreateAction>(
+      context,
+      options: const [
+        OrexChoiceSheetOption<_ProfileCreateAction>(
+          value: _ProfileCreateAction.importLink,
+          icon: Icons.add_link_rounded,
+          title: 'Импорт',
+          subtitle: 'Добавить VLESS-ссылку',
+        ),
+        OrexChoiceSheetOption<_ProfileCreateAction>(
+          value: _ProfileCreateAction.newProfile,
+          icon: Icons.add_circle_outline_rounded,
+          title: 'Новый профиль',
+          subtitle: 'Настроить VLESS вручную',
+        ),
+        OrexChoiceSheetOption<_ProfileCreateAction>(
+          value: _ProfileCreateAction.balancer,
+          icon: Icons.hub_rounded,
+          title: 'Балансировщик',
+          subtitle: 'Объединить несколько маршрутов Xray',
+        ),
+      ],
+    );
+    if (action == null || !context.mounted) return;
+    switch (action) {
+      case _ProfileCreateAction.importLink:
+        await _showImportDialog(context);
+        break;
+      case _ProfileCreateAction.newProfile:
+        await _showCreateProfileDialog(context);
+        break;
+      case _ProfileCreateAction.balancer:
+        await _showBalancerDialog(context);
+        break;
+    }
   }
 
   Future<void> _showImportDialog(BuildContext context) async {
@@ -168,7 +177,9 @@ class ProfilesScreen extends StatelessWidget {
   }) async {
     if (existing == null && profiles.profiles.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Для балансировщика нужны минимум два профиля')),
+        const SnackBar(
+          content: Text('Для балансировщика нужны минимум два профиля'),
+        ),
       );
       return;
     }
@@ -188,6 +199,7 @@ class ProfilesScreen extends StatelessWidget {
         strategy: value.strategy,
         probeUrl: value.probeUrl,
         probeIntervalSeconds: value.probeIntervalSeconds,
+        fallbackTarget: value.fallbackTarget,
       );
     } on FormatException catch (error) {
       if (!context.mounted) return;
@@ -220,6 +232,89 @@ class ProfilesScreen extends StatelessWidget {
       ),
     );
     if (confirmed == true) await profiles.delete(id);
+  }
+}
+
+class _ProfilesHeader extends StatelessWidget {
+  const _ProfilesHeader({
+    required this.refreshingLatency,
+    required this.canRefreshLatency,
+    required this.onOpenProfileMenu,
+    required this.onRefreshLatency,
+  });
+
+  final bool refreshingLatency;
+  final bool canRefreshLatency;
+  final VoidCallback onOpenProfileMenu;
+  final Future<void> Function() onRefreshLatency;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Профили', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 4),
+        Text(
+          'Серверы, ping и балансировщики Xray',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+
+    final actions = Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        OutlinedButton.icon(
+          onPressed: onOpenProfileMenu,
+          icon: const Icon(Icons.add_rounded),
+          label: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Профиль'),
+              SizedBox(width: 4),
+              Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+            ],
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: refreshingLatency || !canRefreshLatency
+              ? null
+              : onRefreshLatency,
+          icon: refreshingLatency
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.network_ping_rounded),
+          label: const Text('Проверить ping'),
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 700) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(child: title),
+              const SizedBox(width: 20),
+              actions,
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            title,
+            const SizedBox(height: 14),
+            actions,
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -475,6 +570,21 @@ class _ImportVlessDialogState extends State<_ImportVlessDialog> {
     super.dispose();
   }
 
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    final text = data?.text?.trim() ?? '';
+    if (text.isEmpty) {
+      setState(() => _error = 'В буфере обмена нет текста');
+      return;
+    }
+    setState(() {
+      _controller.text = text;
+      _controller.selection = TextSelection.collapsed(offset: text.length);
+      _error = null;
+    });
+  }
+
   Future<void> _submit() async {
     if (_importing) return;
     setState(() {
@@ -485,9 +595,19 @@ class _ImportVlessDialogState extends State<_ImportVlessDialog> {
       final profile = await widget.profiles.importVlessLink(_controller.text);
       if (mounted) Navigator.of(context).pop(profile);
     } on VlessLinkFormatException catch (error) {
-      if (mounted) setState(() { _importing = false; _error = error.message; });
+      if (mounted) {
+        setState(() {
+          _importing = false;
+          _error = error.message;
+        });
+      }
     } catch (error) {
-      if (mounted) setState(() { _importing = false; _error = 'Не удалось импортировать: $error'; });
+      if (mounted) {
+        setState(() {
+          _importing = false;
+          _error = 'Не удалось импортировать: $error';
+        });
+      }
     }
   }
 
@@ -497,19 +617,34 @@ class _ImportVlessDialogState extends State<_ImportVlessDialog> {
       title: const Text('Импорт VLESS'),
       content: SizedBox(
         width: 560,
-        child: TextField(
-          controller: _controller,
-          minLines: 4,
-          maxLines: 8,
-          autofocus: true,
-          enabled: !_importing,
-          keyboardType: TextInputType.url,
-          autocorrect: false,
-          enableSuggestions: false,
-          decoration: InputDecoration(
-            hintText: 'vless://uuid@server:443?...',
-            errorText: _error,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _controller,
+              minLines: 4,
+              maxLines: 8,
+              autofocus: true,
+              enabled: !_importing,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                hintText: 'vless://uuid@server:443?...',
+                errorText: _error,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _importing ? null : _pasteFromClipboard,
+                icon: const Icon(Icons.content_paste_rounded),
+                label: const Text('Вставить из буфера обмена'),
+              ),
+            ),
+          ],
         ),
       ),
       actions: [
@@ -713,6 +848,7 @@ class _BalancerDraft {
     required this.strategy,
     required this.probeUrl,
     required this.probeIntervalSeconds,
+    required this.fallbackTarget,
   });
 
   final String name;
@@ -720,6 +856,7 @@ class _BalancerDraft {
   final BalancerStrategy strategy;
   final String probeUrl;
   final int probeIntervalSeconds;
+  final String? fallbackTarget;
 }
 
 class _BalancerDialog extends StatefulWidget {
@@ -740,9 +877,29 @@ class _BalancerDialogState extends State<_BalancerDialog> {
   late final TextEditingController _interval = TextEditingController(
     text: '${widget.existing?.probeIntervalSeconds ?? 30}',
   );
-  late final Set<String> _members = widget.existing?.memberIds.toSet() ?? <String>{};
-  late BalancerStrategy _strategy = widget.existing?.strategy ?? BalancerStrategy.random;
+  late final Set<String> _members =
+      widget.existing?.memberIds.toSet() ?? <String>{};
+  late BalancerStrategy _strategy =
+      widget.existing?.strategy ?? BalancerStrategy.random;
+  String _fallbackValue = 'none';
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final fallback = widget.existing?.fallbackTarget;
+    final knownProfileFallback = fallback != null &&
+        fallback.startsWith(BalancerProfile.fallbackProfilePrefix) &&
+        widget.profiles.any(
+          (profile) =>
+              BalancerProfile.fallbackProfile(profile.id) == fallback,
+        );
+    if (fallback == BalancerProfile.fallbackDirect ||
+        fallback == BalancerProfile.fallbackBlock ||
+        knownProfileFallback) {
+      _fallbackValue = fallback!;
+    }
+  }
 
   @override
   void dispose() {
@@ -770,6 +927,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
         strategy: _strategy,
         probeUrl: _probeUrl.text.trim(),
         probeIntervalSeconds: interval,
+        fallbackTarget: _fallbackValue == 'none' ? null : _fallbackValue,
       ),
     );
   }
@@ -796,11 +954,50 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                 decoration: const InputDecoration(labelText: 'Стратегия'),
                 items: [
                   for (final strategy in BalancerStrategy.values)
-                    DropdownMenuItem(value: strategy, child: Text(strategy.title)),
+                    DropdownMenuItem(
+                      value: strategy,
+                      child: Text(strategy.title),
+                    ),
                 ],
-                onChanged: (value) => setState(() => _strategy = value ?? BalancerStrategy.random),
+                onChanged: (value) => setState(
+                  () => _strategy = value ?? BalancerStrategy.random,
+                ),
               ),
-              if (_strategy == BalancerStrategy.leastPing) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _fallbackValue,
+                decoration: const InputDecoration(labelText: 'Fallback'),
+                items: [
+                  const DropdownMenuItem(
+                    value: 'none',
+                    child: Text('Нет fallback'),
+                  ),
+                  const DropdownMenuItem(
+                    value: BalancerProfile.fallbackDirect,
+                    child: Text('Напрямую · direct'),
+                  ),
+                  const DropdownMenuItem(
+                    value: BalancerProfile.fallbackBlock,
+                    child: Text('Блокировать · block'),
+                  ),
+                  for (final profile in widget.profiles)
+                    DropdownMenuItem(
+                      value: BalancerProfile.fallbackProfile(profile.id),
+                      child: Text('Профиль · ${profile.name}'),
+                    ),
+                ],
+                onChanged: (value) => setState(
+                  () => _fallbackValue = value ?? 'none',
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Xray использует fallbackTag, когда по результатам наблюдения '
+                'все маршруты балансировщика недоступны.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (_strategy == BalancerStrategy.leastPing ||
+                  _fallbackValue != 'none') ...[
                 const SizedBox(height: 12),
                 TextField(controller: _probeUrl, decoration: const InputDecoration(labelText: 'URL проверки')),
                 const SizedBox(height: 12),
