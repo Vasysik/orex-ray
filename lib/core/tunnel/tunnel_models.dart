@@ -45,6 +45,36 @@ enum TunnelStatus {
   error,
 }
 
+enum BalancerStrategy {
+  random,
+  roundRobin,
+  leastPing;
+
+  String get storageValue => switch (this) {
+        BalancerStrategy.random => 'random',
+        BalancerStrategy.roundRobin => 'roundRobin',
+        BalancerStrategy.leastPing => 'leastPing',
+      };
+
+  String get title => switch (this) {
+        BalancerStrategy.random => 'Случайный',
+        BalancerStrategy.roundRobin => 'По очереди',
+        BalancerStrategy.leastPing => 'Минимальный ping',
+      };
+
+  String get description => switch (this) {
+        BalancerStrategy.random => 'Каждое новое соединение получает случайный доступный сервер',
+        BalancerStrategy.roundRobin => 'Серверы используются по кругу',
+        BalancerStrategy.leastPing => 'Xray выбирает сервер с минимальной измеренной задержкой',
+      };
+
+  static BalancerStrategy fromStorageValue(String? value) => switch (value) {
+        'roundRobin' => BalancerStrategy.roundRobin,
+        'leastPing' => BalancerStrategy.leastPing,
+        _ => BalancerStrategy.random,
+      };
+}
+
 class TunnelProfile {
   const TunnelProfile({
     required this.id,
@@ -252,16 +282,136 @@ class TunnelProfile {
   }
 }
 
+class BalancerProfile {
+  const BalancerProfile({
+    required this.id,
+    required this.name,
+    required this.memberIds,
+    this.strategy = BalancerStrategy.leastPing,
+    this.probeUrl = 'https://www.gstatic.com/generate_204',
+    this.probeIntervalSeconds = 30,
+  });
+
+  final String id;
+  final String name;
+  final List<String> memberIds;
+  final BalancerStrategy strategy;
+  final String probeUrl;
+  final int probeIntervalSeconds;
+
+  BalancerProfile copyWith({
+    String? id,
+    String? name,
+    List<String>? memberIds,
+    BalancerStrategy? strategy,
+    String? probeUrl,
+    int? probeIntervalSeconds,
+  }) {
+    return BalancerProfile(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      memberIds: memberIds ?? this.memberIds,
+      strategy: strategy ?? this.strategy,
+      probeUrl: probeUrl ?? this.probeUrl,
+      probeIntervalSeconds: probeIntervalSeconds ?? this.probeIntervalSeconds,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'memberIds': memberIds,
+        'strategy': strategy.storageValue,
+        'probeUrl': probeUrl,
+        'probeIntervalSeconds': probeIntervalSeconds,
+      };
+
+  factory BalancerProfile.fromJson(Map<String, Object?> json) {
+    final id = (json['id'] as String? ?? '').trim();
+    final name = (json['name'] as String? ?? '').trim();
+    final rawMembers = json['memberIds'];
+    final members = rawMembers is List
+        ? rawMembers.whereType<String>().where((value) => value.isNotEmpty).toList(growable: false)
+        : const <String>[];
+    final interval = (json['probeIntervalSeconds'] as num?)?.toInt() ?? 30;
+    if (id.isEmpty || name.isEmpty || members.length < 2) {
+      throw const FormatException('Некорректный балансировщик');
+    }
+    return BalancerProfile(
+      id: id,
+      name: name,
+      memberIds: members,
+      strategy: BalancerStrategy.fromStorageValue(json['strategy'] as String?),
+      probeUrl: (json['probeUrl'] as String? ?? 'https://www.gstatic.com/generate_204').trim(),
+      probeIntervalSeconds: interval.clamp(5, 3600).toInt(),
+    );
+  }
+}
+
+class TunnelTarget {
+  const TunnelTarget._({
+    required this.id,
+    required this.name,
+    required this.profiles,
+    this.balancer,
+  });
+
+  factory TunnelTarget.single(TunnelProfile profile) => TunnelTarget._(
+        id: profile.id,
+        name: profile.name,
+        profiles: [profile],
+      );
+
+  factory TunnelTarget.balancer(
+    BalancerProfile balancer,
+    List<TunnelProfile> profiles,
+  ) => TunnelTarget._(
+        id: balancer.id,
+        name: balancer.name,
+        profiles: List.unmodifiable(profiles),
+        balancer: balancer,
+      );
+
+  final String id;
+  final String name;
+  final List<TunnelProfile> profiles;
+  final BalancerProfile? balancer;
+
+  bool get isBalancer => balancer != null;
+  TunnelProfile get primaryProfile => profiles.first;
+  String get endpoint => isBalancer ? '${profiles.length} серверов' : primaryProfile.endpoint;
+  String get protocol => isBalancer ? 'Балансировщик · ${balancer!.strategy.title}' : primaryProfile.protocol;
+  String get transportLabel => isBalancer ? balancer!.strategy.title : primaryProfile.transportLabel;
+  int? get latencyMs {
+    final values = profiles.map((item) => item.latencyMs).whereType<int>().toList();
+    if (values.isEmpty) return null;
+    values.sort();
+    return values.first;
+  }
+}
+
 class TrafficStats {
   const TrafficStats({
     this.downloadBytes = 0,
     this.uploadBytes = 0,
+    this.downloadBytesPerSecond = 0,
+    this.uploadBytesPerSecond = 0,
     this.duration = Duration.zero,
   });
 
   final int downloadBytes;
   final int uploadBytes;
+  final int downloadBytesPerSecond;
+  final int uploadBytesPerSecond;
   final Duration duration;
+
+  TrafficStats copyWithDuration(Duration value) => TrafficStats(
+        downloadBytes: downloadBytes,
+        uploadBytes: uploadBytes,
+        downloadBytesPerSecond: downloadBytesPerSecond,
+        uploadBytesPerSecond: uploadBytesPerSecond,
+        duration: value,
+      );
 }
 
 class TunnelSnapshot {
@@ -276,7 +426,7 @@ class TunnelSnapshot {
 
   final TunnelStatus status;
   final ConnectionMode mode;
-  final TunnelProfile? profile;
+  final TunnelTarget? profile;
   final TrafficStats stats;
   final String? message;
   final String? errorMessage;
@@ -289,7 +439,7 @@ class TunnelSnapshot {
   TunnelSnapshot copyWith({
     TunnelStatus? status,
     ConnectionMode? mode,
-    TunnelProfile? profile,
+    TunnelTarget? profile,
     bool clearProfile = false,
     TrafficStats? stats,
     String? message,

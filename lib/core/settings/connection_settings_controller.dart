@@ -49,6 +49,9 @@ class ConnectionSettingsController extends ChangeNotifier {
     required String logLevel,
     required DnsPreset dnsPreset,
     required String customDns,
+    required int statsIntervalSeconds,
+    required bool showNotificationSpeed,
+    required bool restartServiceOnKill,
   })  : _preferences = preferences,
         _supportedModes = Set.unmodifiable(supportedModes),
         _mode = mode,
@@ -60,7 +63,10 @@ class ConnectionSettingsController extends ChangeNotifier {
         _sniffingEnabled = sniffingEnabled,
         _logLevel = logLevel,
         _dnsPreset = dnsPreset,
-        _customDns = customDns;
+        _customDns = customDns,
+        _statsIntervalSeconds = statsIntervalSeconds,
+        _showNotificationSpeed = showNotificationSpeed,
+        _restartServiceOnKill = restartServiceOnKill;
 
   static const _modeKey = 'orex_ray_connection_mode_v1';
   static const _socksPortKey = 'orex_ray_socks_port_v1';
@@ -72,6 +78,9 @@ class ConnectionSettingsController extends ChangeNotifier {
   static const _logLevelKey = 'orex_ray_log_level_v1';
   static const _dnsPresetKey = 'orex_ray_dns_preset_v1';
   static const _customDnsKey = 'orex_ray_custom_dns_v1';
+  static const _statsIntervalKey = 'orex_ray_stats_interval_v1';
+  static const _notificationSpeedKey = 'orex_ray_notification_speed_v1';
+  static const _restartServiceKey = 'orex_ray_restart_service_v1';
 
   static const int defaultSocksPort = 20808;
   static const int defaultHttpPort = 20809;
@@ -90,6 +99,9 @@ class ConnectionSettingsController extends ChangeNotifier {
   String _logLevel;
   DnsPreset _dnsPreset;
   String _customDns;
+  int _statsIntervalSeconds;
+  bool _showNotificationSpeed;
+  bool _restartServiceOnKill;
 
   static Future<ConnectionSettingsController> load({
     String? operatingSystem,
@@ -113,14 +125,17 @@ class ConnectionSettingsController extends ChangeNotifier {
       httpPort: _validPort(preferences.getInt(_httpPortKey)) ?? defaultHttpPort,
       mtu: _validMtu(preferences.getInt(_mtuKey)) ?? defaultMtu,
       allowLan: preferences.getBool(_allowLanKey) ?? false,
-      bypassPrivateNetworks:
-          preferences.getBool(_bypassPrivateKey) ?? true,
+      bypassPrivateNetworks: preferences.getBool(_bypassPrivateKey) ?? true,
       sniffingEnabled: preferences.getBool(_sniffingKey) ?? true,
       logLevel: _normalizeLogLevel(preferences.getString(_logLevelKey)),
       dnsPreset: DnsPreset.fromStorageValue(
         preferences.getString(_dnsPresetKey),
       ),
       customDns: preferences.getString(_customDnsKey)?.trim() ?? '',
+      statsIntervalSeconds:
+          _validStatsInterval(preferences.getInt(_statsIntervalKey)) ?? 2,
+      showNotificationSpeed: preferences.getBool(_notificationSpeedKey) ?? true,
+      restartServiceOnKill: preferences.getBool(_restartServiceKey) ?? true,
     );
   }
 
@@ -135,15 +150,16 @@ class ConnectionSettingsController extends ChangeNotifier {
   String get logLevel => _logLevel;
   DnsPreset get dnsPreset => _dnsPreset;
   String get customDns => _customDns;
+  int get statsIntervalSeconds => _statsIntervalSeconds;
+  bool get showNotificationSpeed => _showNotificationSpeed;
+  bool get restartServiceOnKill => _restartServiceOnKill;
 
-  List<String> get dnsServers {
-    return switch (_dnsPreset) {
-      DnsPreset.automatic => const ['1.1.1.1', '8.8.8.8'],
-      DnsPreset.cloudflare => const ['1.1.1.1', '1.0.0.1'],
-      DnsPreset.google => const ['8.8.8.8', '8.8.4.4'],
-      DnsPreset.custom => _parseDnsList(_customDns),
-    };
-  }
+  List<String> get dnsServers => switch (_dnsPreset) {
+        DnsPreset.automatic => const ['1.1.1.1', '8.8.8.8'],
+        DnsPreset.cloudflare => const ['1.1.1.1', '1.0.0.1'],
+        DnsPreset.google => const ['8.8.8.8', '8.8.4.4'],
+        DnsPreset.custom => _parseDnsList(_customDns),
+      };
 
   bool supports(ConnectionMode mode) => _supportedModes.contains(mode);
 
@@ -231,34 +247,60 @@ class ConnectionSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
-  static Set<ConnectionMode> supportedModesFor(String operatingSystem) {
-    return switch (operatingSystem) {
-      'windows' => const {
-          ConnectionMode.systemProxy,
-          ConnectionMode.vpnTun,
-          ConnectionMode.localProxy,
-        },
-      'android' => const {
-          ConnectionMode.vpnTun,
-          ConnectionMode.localProxy,
-        },
-      _ => const {ConnectionMode.localProxy},
-    };
+  Future<void> setStatsIntervalSeconds(int value) async {
+    final normalized = _validStatsInterval(value);
+    if (normalized == null) {
+      throw const FormatException('Интервал должен быть 1, 2, 5 или 10 секунд');
+    }
+    if (_statsIntervalSeconds == normalized) return;
+    _statsIntervalSeconds = normalized;
+    await _preferences.setInt(_statsIntervalKey, normalized);
+    notifyListeners();
   }
 
-  static ConnectionMode defaultModeFor(String operatingSystem) {
-    return switch (operatingSystem) {
-      'windows' => ConnectionMode.systemProxy,
-      'android' => ConnectionMode.vpnTun,
-      _ => ConnectionMode.localProxy,
-    };
+  Future<void> setShowNotificationSpeed(bool value) async {
+    if (_showNotificationSpeed == value) return;
+    _showNotificationSpeed = value;
+    await _preferences.setBool(_notificationSpeedKey, value);
+    notifyListeners();
   }
+
+  Future<void> setRestartServiceOnKill(bool value) async {
+    if (_restartServiceOnKill == value) return;
+    _restartServiceOnKill = value;
+    await _preferences.setBool(_restartServiceKey, value);
+    notifyListeners();
+  }
+
+  static Set<ConnectionMode> supportedModesFor(String operatingSystem) =>
+      switch (operatingSystem) {
+        'windows' => const {
+            ConnectionMode.systemProxy,
+            ConnectionMode.vpnTun,
+            ConnectionMode.localProxy,
+          },
+        'android' => const {
+            ConnectionMode.vpnTun,
+            ConnectionMode.localProxy,
+          },
+        _ => const {ConnectionMode.localProxy},
+      };
+
+  static ConnectionMode defaultModeFor(String operatingSystem) =>
+      switch (operatingSystem) {
+        'windows' => ConnectionMode.systemProxy,
+        'android' => ConnectionMode.vpnTun,
+        _ => ConnectionMode.localProxy,
+      };
 
   static int? _validPort(int? value) =>
       value != null && value >= 1 && value <= 65535 ? value : null;
 
   static int? _validMtu(int? value) =>
       value != null && value >= 1280 && value <= 9000 ? value : null;
+
+  static int? _validStatsInterval(int? value) =>
+      const {1, 2, 5, 10}.contains(value) ? value : null;
 
   static String _normalizeLogLevel(String? value) => switch (value) {
         'warning' => 'warning',

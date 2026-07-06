@@ -70,6 +70,9 @@ void main() {
     await settings.setLogLevel('info');
     await settings.setCustomDns('9.9.9.9, 149.112.112.112');
     await settings.setDnsPreset(DnsPreset.custom);
+    await settings.setStatsIntervalSeconds(5);
+    await settings.setShowNotificationSpeed(false);
+    await settings.setRestartServiceOnKill(false);
 
     expect(settings.socksPort, 31080);
     expect(settings.httpPort, 31081);
@@ -79,6 +82,9 @@ void main() {
     expect(settings.sniffingEnabled, isFalse);
     expect(settings.logLevel, 'info');
     expect(settings.dnsServers, ['9.9.9.9', '149.112.112.112']);
+    expect(settings.statsIntervalSeconds, 5);
+    expect(settings.showNotificationSpeed, isFalse);
+    expect(settings.restartServiceOnKill, isFalse);
 
     settings.dispose();
   });

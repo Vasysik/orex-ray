@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/apps/app_routing_controller.dart';
+import '../core/geodata/geodata_controller.dart';
 import '../core/profiles/profiles_controller.dart';
 import '../core/settings/connection_settings_controller.dart';
 import '../shared/theme/glass.dart';
@@ -22,28 +24,39 @@ class _BootstrapData {
     required this.theme,
     required this.profiles,
     required this.settings,
+    required this.appRouting,
+    required this.geoData,
   });
 
   final ThemeController theme;
   final ProfilesController profiles;
   final ConnectionSettingsController settings;
+  final AppRoutingController appRouting;
+  final GeoDataController geoData;
 }
 
 class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
   late final Future<_BootstrapData> _future = _initialize();
 
   Future<_BootstrapData> _initialize() async {
-    final minimumSplash = Future<void>.delayed(const Duration(milliseconds: 720));
+    final minimumSplash =
+        Future<void>.delayed(const Duration(milliseconds: 720));
     final results = await Future.wait<Object>([
       ThemeController.load(),
       ProfilesController.load(),
       ConnectionSettingsController.load(),
+      AppRoutingController.load(),
+      GeoDataController.load(),
     ]);
     await minimumSplash;
+    final geoData = results[4] as GeoDataController;
+    unawaited(geoData.maybeAutoUpdate());
     return _BootstrapData(
       theme: results[0] as ThemeController,
       profiles: results[1] as ProfilesController,
       settings: results[2] as ConnectionSettingsController,
+      appRouting: results[3] as AppRoutingController,
+      geoData: geoData,
     );
   }
 
@@ -65,6 +78,8 @@ class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
           theme: data.theme,
           profiles: data.profiles,
           connectionSettings: data.settings,
+          appRouting: data.appRouting,
+          geoData: data.geoData,
         );
       },
     );
@@ -108,7 +123,7 @@ class OrexRaySplashScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'Версия 0.5.0 · сборка 6',
+                  'Версия 0.6.0 · сборка 7',
                   style: TextStyle(color: OrexColors.cream, fontSize: 13),
                 ),
                 const SizedBox(height: 28),
@@ -144,8 +159,11 @@ class _StartupError extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline_rounded,
-                    color: OrexColors.danger, size: 50),
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: OrexColors.danger,
+                  size: 50,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   'OrexRay не удалось запустить',

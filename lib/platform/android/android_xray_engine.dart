@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../../core/apps/app_routing_controller.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
@@ -10,8 +11,10 @@ import '../../core/xray/xray_config_builder.dart';
 class AndroidXrayEngine implements TunnelEngine {
   AndroidXrayEngine({
     required ConnectionSettingsController settings,
+    required AppRoutingController appRouting,
     XrayConfigBuilder? configBuilder,
   })  : _settings = settings,
+        _appRouting = appRouting,
         _configBuilder = configBuilder ?? const XrayConfigBuilder() {
     _eventSubscription = _events.receiveBroadcastStream().listen(
       _onNativeEvent,
@@ -24,11 +27,12 @@ class AndroidXrayEngine implements TunnelEngine {
   static const _events = EventChannel('ru.orex.ray/tunnel_events');
 
   final ConnectionSettingsController _settings;
+  final AppRoutingController _appRouting;
   final XrayConfigBuilder _configBuilder;
   final _snapshots = StreamController<TunnelSnapshot>.broadcast();
   late final StreamSubscription<dynamic> _eventSubscription;
 
-  TunnelProfile? _activeProfile;
+  TunnelTarget? _activeTarget;
   ConnectionMode _activeMode = ConnectionMode.vpnTun;
   TunnelSnapshot _current = const TunnelSnapshot(
     status: TunnelStatus.disconnected,
@@ -48,20 +52,20 @@ class AndroidXrayEngine implements TunnelEngine {
       };
 
   @override
-  Future<void> start(TunnelProfile profile, ConnectionMode mode) async {
+  Future<void> start(TunnelTarget target, ConnectionMode mode) async {
     if (_current.isBusy || _current.isConnected) return;
     if (!supportedModes.contains(mode)) {
       _emitError('Этот режим не поддерживается на Android.', mode: mode);
       return;
     }
 
-    _activeProfile = profile;
+    _activeTarget = target;
     _activeMode = mode;
     _emit(
       TunnelSnapshot(
         status: TunnelStatus.connecting,
         mode: mode,
-        profile: profile,
+        profile: target,
         stats: const TrafficStats(),
         message: mode == ConnectionMode.vpnTun
             ? 'Готовим Android VPN…'
@@ -72,14 +76,14 @@ class AndroidXrayEngine implements TunnelEngine {
     try {
       final config = mode == ConnectionMode.vpnTun
           ? _configBuilder.buildAndroidTun(
-              profile,
+              target,
               mtu: _settings.mtu,
               bypassPrivateNetworks: _settings.bypassPrivateNetworks,
               sniffingEnabled: _settings.sniffingEnabled,
               logLevel: _settings.logLevel,
             )
           : _configBuilder.buildLocalProxy(
-              profile,
+              target,
               socksPort: _settings.socksPort,
               httpPort: _settings.httpPort,
               allowLan: _settings.allowLan,
@@ -90,10 +94,22 @@ class AndroidXrayEngine implements TunnelEngine {
       await _channel.invokeMethod<void>('start', <String, Object?>{
         'config': config,
         'mode': mode.storageValue,
+        'targetName': target.name,
+        'statsOutboundTags': target.isBalancer
+            ? [
+                for (var index = 0; index < target.profiles.length; index++)
+                  'proxy-$index',
+              ]
+            : const ['proxy'],
         'mtu': _settings.mtu,
         'dnsServers': _settings.dnsServers,
         'socksPort': _settings.socksPort,
         'httpPort': _settings.httpPort,
+        'statsIntervalSeconds': _settings.statsIntervalSeconds,
+        'showNotificationSpeed': _settings.showNotificationSpeed,
+        'restartServiceOnKill': _settings.restartServiceOnKill,
+        'appRoutingMode': _appRouting.mode.storageValue,
+        'appPackages': _appRouting.selectedPackages.toList(growable: false),
       });
     } on PlatformException catch (error) {
       _emitError(error.message ?? error.code, mode: mode);
@@ -131,14 +147,12 @@ class AndroidXrayEngine implements TunnelEngine {
       final event = await _channel.invokeMapMethod<String, dynamic>('status');
       if (event != null) _applyEvent(event);
     } catch (_) {
-      // The EventChannel will deliver the first live state after attachment.
+      // EventChannel delivers the first live state after attachment.
     }
   }
 
   void _onNativeEvent(dynamic event) {
-    if (event is Map) {
-      _applyEvent(Map<String, dynamic>.from(event));
-    }
+    if (event is Map) _applyEvent(Map<String, dynamic>.from(event));
   }
 
   void _applyEvent(Map<String, dynamic> event) {
@@ -156,16 +170,20 @@ class AndroidXrayEngine implements TunnelEngine {
 
     final downloadBytes = (event['downloadBytes'] as num?)?.toInt() ?? 0;
     final uploadBytes = (event['uploadBytes'] as num?)?.toInt() ?? 0;
+    final downBps = (event['downloadBytesPerSecond'] as num?)?.toInt() ?? 0;
+    final upBps = (event['uploadBytesPerSecond'] as num?)?.toInt() ?? 0;
     final durationSeconds = (event['durationSeconds'] as num?)?.toInt() ?? 0;
 
     _emit(
       TunnelSnapshot(
         status: status,
         mode: mode,
-        profile: _activeProfile,
+        profile: _activeTarget,
         stats: TrafficStats(
           downloadBytes: downloadBytes,
           uploadBytes: uploadBytes,
+          downloadBytesPerSecond: downBps,
+          uploadBytesPerSecond: upBps,
           duration: Duration(seconds: durationSeconds),
         ),
         message: event['message'] as String?,
@@ -182,7 +200,7 @@ class AndroidXrayEngine implements TunnelEngine {
       _current.copyWith(
         status: TunnelStatus.error,
         mode: mode,
-        profile: _activeProfile,
+        profile: _activeTarget,
         errorMessage: message,
         clearMessage: true,
       ),

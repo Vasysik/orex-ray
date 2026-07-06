@@ -24,3 +24,9 @@ Project source: https://github.com/2dust/AndroidLibXrayLite
 ## Перед распространением
 
 Перед публикацией APK/EXE проверьте требования всех лицензий, приложите необходимые notices/license texts и обеспечьте требуемый лицензиями доступ к соответствующему исходному коду и/или relinkable form там, где это применимо.
+
+## GeoData update source
+
+OrexRay can download `geoip.dat` and `geosite.dat` plus their published SHA-256 checksum files from the `Loyalsoldier/v2ray-rules-dat` release branch. These data files are downloaded at runtime and are not authored by OrexRay.
+
+Project source: https://github.com/Loyalsoldier/v2ray-rules-dat

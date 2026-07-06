@@ -39,6 +39,8 @@ object OrexRayTunnelEvents {
         errorMessage: String? = null,
         downloadBytes: Long = 0,
         uploadBytes: Long = 0,
+        downloadBytesPerSecond: Long = 0,
+        uploadBytesPerSecond: Long = 0,
         durationSeconds: Long = 0,
     ): Map<String, Any?> = mapOf(
         "status" to status,
@@ -47,6 +49,8 @@ object OrexRayTunnelEvents {
         "errorMessage" to errorMessage,
         "downloadBytes" to downloadBytes,
         "uploadBytes" to uploadBytes,
+        "downloadBytesPerSecond" to downloadBytesPerSecond,
+        "uploadBytesPerSecond" to uploadBytesPerSecond,
         "durationSeconds" to durationSeconds,
     )
 }

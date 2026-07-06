@@ -8,7 +8,9 @@ class ProfileRepository {
   ProfileRepository(this._prefs);
 
   static const _profilesKey = 'orex_ray_profiles_v2';
-  static const _selectedKey = 'orex_ray_selected_profile_v2';
+  static const _balancersKey = 'orex_ray_balancers_v1';
+  static const _selectedKey = 'orex_ray_selected_target_v1';
+  static const _legacySelectedKey = 'orex_ray_selected_profile_v2';
 
   final SharedPreferences _prefs;
 
@@ -31,22 +33,53 @@ class ProfileRepository {
           profiles.add(
             TunnelProfile.fromJson(Map<String, Object?>.from(item)),
           );
-        } catch (_) {
+        } on Object {
           // A stale/corrupt profile must not prevent the app from starting.
         }
       }
       return List.unmodifiable(profiles);
-    } catch (_) {
+    } on Object {
       return const [];
     }
   }
 
-  String? readSelectedId() => _prefs.getString(_selectedKey);
+  List<BalancerProfile> readBalancers() {
+    final raw = _prefs.getString(_balancersKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final balancers = <BalancerProfile>[];
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        try {
+          balancers.add(
+            BalancerProfile.fromJson(Map<String, Object?>.from(item)),
+          );
+        } on Object {
+          // Ignore one malformed balancer instead of losing the whole list.
+        }
+      }
+      return List.unmodifiable(balancers);
+    } on Object {
+      return const [];
+    }
+  }
+
+  String? readSelectedId() =>
+      _prefs.getString(_selectedKey) ?? _prefs.getString(_legacySelectedKey);
 
   Future<void> saveProfiles(List<TunnelProfile> profiles) async {
     await _prefs.setString(
       _profilesKey,
       jsonEncode(profiles.map((profile) => profile.toJson()).toList()),
+    );
+  }
+
+  Future<void> saveBalancers(List<BalancerProfile> balancers) async {
+    await _prefs.setString(
+      _balancersKey,
+      jsonEncode(balancers.map((item) => item.toJson()).toList()),
     );
   }
 

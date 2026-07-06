@@ -120,7 +120,7 @@ class SettingsScreen extends StatelessWidget {
               ListTile(
                 leading: Icon(Icons.pets_rounded, color: OrexColors.copper),
                 title: Text('OrexRay'),
-                subtitle: Text('Версия 0.5.0 · VPN + System Proxy + Local Proxy'),
+                subtitle: Text('Версия 0.6.0 · VPN + System Proxy + Local Proxy'),
               ),
             ],
           ),

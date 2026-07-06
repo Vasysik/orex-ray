@@ -9,7 +9,7 @@ class XrayConfigBuilder {
   static const int httpPort = 20809;
 
   String buildWindowsTun(
-    TunnelProfile profile, {
+    TunnelTarget target, {
     int mtu = 1500,
     List<String> dnsServers = const ['1.1.1.1', '8.8.8.8'],
     bool bypassPrivateNetworks = true,
@@ -17,7 +17,7 @@ class XrayConfigBuilder {
     String logLevel = 'error',
   }) {
     return _encode(
-      profile,
+      target,
       inbounds: [
         {
           'tag': 'orexray-tun',
@@ -39,14 +39,14 @@ class XrayConfigBuilder {
   }
 
   String buildAndroidTun(
-    TunnelProfile profile, {
+    TunnelTarget target, {
     int mtu = 1500,
     bool bypassPrivateNetworks = true,
     bool sniffingEnabled = true,
     String logLevel = 'error',
   }) {
     return _encode(
-      profile,
+      target,
       inbounds: [
         {
           'tag': 'orexray-tun',
@@ -64,7 +64,7 @@ class XrayConfigBuilder {
   }
 
   String buildLocalProxy(
-    TunnelProfile profile, {
+    TunnelTarget target, {
     int socksPort = XrayConfigBuilder.socksPort,
     int httpPort = XrayConfigBuilder.httpPort,
     bool allowLan = false,
@@ -74,16 +74,14 @@ class XrayConfigBuilder {
   }) {
     final listen = allowLan ? '0.0.0.0' : '127.0.0.1';
     return _encode(
-      profile,
+      target,
       inbounds: [
         {
           'tag': 'orexray-socks',
           'listen': listen,
           'port': socksPort,
           'protocol': 'socks',
-          'settings': {
-            'udp': true,
-          },
+          'settings': {'udp': true},
           'sniffing': _sniffing(sniffingEnabled),
         },
         {
@@ -101,11 +99,15 @@ class XrayConfigBuilder {
   }
 
   String _encode(
-    TunnelProfile profile, {
+    TunnelTarget target, {
     required List<Map<String, Object?>> inbounds,
     required bool bypassPrivateNetworks,
     required String logLevel,
   }) {
+    final routeToTarget = target.isBalancer
+        ? <String, Object?>{'balancerTag': 'orexray-balancer'}
+        : <String, Object?>{'outboundTag': 'proxy'};
+
     final rules = <Map<String, Object?>>[
       if (bypassPrivateNetworks)
         {
@@ -116,30 +118,50 @@ class XrayConfigBuilder {
       {
         'type': 'field',
         'network': 'tcp,udp',
-        'outboundTag': 'proxy',
+        ...routeToTarget,
       },
     ];
 
+    final proxyOutbounds = target.isBalancer
+        ? <Map<String, Object?>>[
+            for (var i = 0; i < target.profiles.length; i++)
+              _proxyOutbound(target.profiles[i], tag: 'proxy-$i'),
+          ]
+        : <Map<String, Object?>>[
+            _proxyOutbound(target.primaryProfile, tag: 'proxy'),
+          ];
+
+    final routing = <String, Object?>{
+      'domainStrategy': 'IPIfNonMatch',
+      'rules': rules,
+      if (target.isBalancer)
+        'balancers': [
+          {
+            'tag': 'orexray-balancer',
+            'selector': ['proxy-'],
+            'strategy': {
+              'type': target.balancer!.strategy.storageValue,
+            },
+          },
+        ],
+    };
+
     final config = <String, Object?>{
-      'log': {
-        'loglevel': logLevel,
-      },
+      'log': {'loglevel': logLevel},
       'inbounds': inbounds,
       'outbounds': [
-        _proxyOutbound(profile),
-        {
-          'tag': 'direct',
-          'protocol': 'freedom',
-        },
-        {
-          'tag': 'block',
-          'protocol': 'blackhole',
-        },
+        ...proxyOutbounds,
+        {'tag': 'direct', 'protocol': 'freedom'},
+        {'tag': 'block', 'protocol': 'blackhole'},
       ],
-      'routing': {
-        'domainStrategy': 'IPIfNonMatch',
-        'rules': rules,
-      },
+      'routing': routing,
+      if (target.balancer?.strategy == BalancerStrategy.leastPing)
+        'observatory': {
+          'subjectSelector': ['proxy-'],
+          'probeURL': target.balancer!.probeUrl,
+          'probeInterval': '${target.balancer!.probeIntervalSeconds}s',
+          'enableConcurrency': true,
+        },
       'policy': {
         'system': {
           'statsOutboundUplink': true,
@@ -152,19 +174,20 @@ class XrayConfigBuilder {
     return const JsonEncoder.withIndent('  ').convert(config);
   }
 
-  Map<String, Object?> _proxyOutbound(TunnelProfile profile) {
+  Map<String, Object?> _proxyOutbound(
+    TunnelProfile profile, {
+    required String tag,
+  }) {
     final settings = <String, Object?>{
       'address': profile.address,
       'port': profile.port,
       'id': profile.userId,
       'encryption': profile.encryption,
     };
-    if (profile.flow.isNotEmpty) {
-      settings['flow'] = profile.flow;
-    }
+    if (profile.flow.isNotEmpty) settings['flow'] = profile.flow;
 
     return {
-      'tag': 'proxy',
+      'tag': tag,
       'protocol': 'vless',
       'settings': settings,
       'streamSettings': _streamSettings(profile),

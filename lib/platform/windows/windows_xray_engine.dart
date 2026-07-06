@@ -48,6 +48,9 @@ class WindowsXrayEngine implements TunnelEngine {
   DateTime? _connectedAt;
   int? _baseDownload;
   int? _baseUpload;
+  DateTime? _lastStatsAt;
+  int? _lastDownloadValue;
+  int? _lastUploadValue;
   TunnelSnapshot _current;
   ConnectionMode? _activeMode;
   bool _stopping = false;
@@ -73,7 +76,7 @@ class WindowsXrayEngine implements TunnelEngine {
   void _status(
     TunnelStatus status, {
     ConnectionMode? mode,
-    TunnelProfile? profile,
+    TunnelTarget? profile,
     String? message,
     String? error,
     TrafficStats? stats,
@@ -89,7 +92,7 @@ class WindowsXrayEngine implements TunnelEngine {
   }
 
   @override
-  Future<void> start(TunnelProfile profile, ConnectionMode mode) async {
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
     if (_process != null || _current.isBusy || _current.isConnected) return;
     if (!supportedModes.contains(mode)) {
       _status(
@@ -197,6 +200,9 @@ class WindowsXrayEngine implements TunnelEngine {
       _connectedAt = DateTime.now();
       _baseDownload = null;
       _baseUpload = null;
+      _lastStatsAt = null;
+      _lastDownloadValue = null;
+      _lastUploadValue = null;
       _status(
         TunnelStatus.connected,
         mode: mode,
@@ -346,13 +352,30 @@ class WindowsXrayEngine implements TunnelEngine {
       if (received == null || sent == null) return;
       _baseDownload ??= received;
       _baseUpload ??= sent;
+      final download = received - _baseDownload!;
+      final upload = sent - _baseUpload!;
+      final now = DateTime.now();
+      final seconds = _lastStatsAt == null
+          ? 0.0
+          : now.difference(_lastStatsAt!).inMilliseconds / 1000.0;
+      final downBps = seconds > 0 && _lastDownloadValue != null
+          ? ((download - _lastDownloadValue!) / seconds).round().clamp(0, 1 << 60).toInt()
+          : 0;
+      final upBps = seconds > 0 && _lastUploadValue != null
+          ? ((upload - _lastUploadValue!) / seconds).round().clamp(0, 1 << 60).toInt()
+          : 0;
+      _lastStatsAt = now;
+      _lastDownloadValue = download;
+      _lastUploadValue = upload;
       _status(
         TunnelStatus.connected,
         mode: ConnectionMode.vpnTun,
         message: _connectedMessage(ConnectionMode.vpnTun),
         stats: TrafficStats(
-          downloadBytes: received - _baseDownload!,
-          uploadBytes: sent - _baseUpload!,
+          downloadBytes: download,
+          uploadBytes: upload,
+          downloadBytesPerSecond: downBps,
+          uploadBytesPerSecond: upBps,
           duration: duration,
         ),
       );
@@ -401,6 +424,9 @@ class WindowsXrayEngine implements TunnelEngine {
     _connectedAt = null;
     _baseDownload = null;
     _baseUpload = null;
+    _lastStatsAt = null;
+    _lastDownloadValue = null;
+    _lastUploadValue = null;
     _status(
       TunnelStatus.disconnected,
       mode: _activeMode,
@@ -428,7 +454,7 @@ class WindowsXrayEngine implements TunnelEngine {
         ConnectionMode.vpnTun => 'VPN-туннель активен',
         ConnectionMode.systemProxy => 'Системный прокси Windows активен',
         ConnectionMode.localProxy =>
-          'SOCKS5 :${XrayConfigBuilder.socksPort} · HTTP :${XrayConfigBuilder.httpPort}',
+          'SOCKS5 :${_settings.socksPort} · HTTP :${_settings.httpPort}',
       };
 
   @override
@@ -439,15 +465,5 @@ class WindowsXrayEngine implements TunnelEngine {
     }
     _process?.kill();
     await _snapshots.close();
-  }
-}
-
-extension on TrafficStats {
-  TrafficStats copyWithDuration(Duration duration) {
-    return TrafficStats(
-      downloadBytes: downloadBytes,
-      uploadBytes: uploadBytes,
-      duration: duration,
-    );
   }
 }

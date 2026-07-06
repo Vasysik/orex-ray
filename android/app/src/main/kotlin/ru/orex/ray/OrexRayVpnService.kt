@@ -24,6 +24,7 @@ import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import kotlin.math.max
 
 class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     companion object {
@@ -31,18 +32,32 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val ACTION_STOP = "ru.orex.ray.action.STOP"
         const val EXTRA_CONFIG = "xray_config"
         const val EXTRA_MODE = "connection_mode"
+        const val EXTRA_TARGET_NAME = "target_name"
+        const val EXTRA_STATS_OUTBOUND_TAGS = "stats_outbound_tags"
         const val EXTRA_MTU = "vpn_mtu"
         const val EXTRA_DNS_SERVERS = "vpn_dns_servers"
         const val EXTRA_SOCKS_PORT = "socks_port"
         const val EXTRA_HTTP_PORT = "http_port"
+        const val EXTRA_STATS_INTERVAL_SECONDS = "stats_interval_seconds"
+        const val EXTRA_SHOW_NOTIFICATION_SPEED = "show_notification_speed"
+        const val EXTRA_RESTART_SERVICE = "restart_service"
+        const val EXTRA_APP_ROUTING_MODE = "app_routing_mode"
+        const val EXTRA_APP_PACKAGES = "app_packages"
 
         const val MODE_VPN = "vpn_tun"
         const val MODE_LOCAL_PROXY = "local_proxy"
 
+        private const val APP_ROUTING_ALL = "all"
+        private const val APP_ROUTING_EXCLUDE = "exclude_selected"
+        private const val APP_ROUTING_ONLY = "only_selected"
+
         private const val TAG = "OrexRay"
         private const val NOTIFICATION_CHANNEL_ID = "orexray_vpn"
         private const val NOTIFICATION_ID = 7701
+        private const val STOP_REQUEST_CODE = 7702
     }
+
+    private data class TrafficDelta(val download: Long, val upload: Long)
 
     private val worker = Executors.newSingleThreadScheduledExecutor()
     private var coreController: CoreController? = null
@@ -51,11 +66,20 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var startedAtElapsedMs = 0L
     private var downloadBytes = 0L
     private var uploadBytes = 0L
+    private var downloadBytesPerSecond = 0L
+    private var uploadBytesPerSecond = 0L
     private var activeMode = MODE_VPN
+    private var activeTargetName = "OrexRay"
+    private var activeStatsOutboundTags = listOf("proxy")
     private var activeMtu = 1500
     private var activeDnsServers = listOf("1.1.1.1", "8.8.8.8")
     private var activeSocksPort = 20808
     private var activeHttpPort = 20809
+    private var activeStatsIntervalSeconds = 2
+    private var showNotificationSpeed = true
+    private var restartServiceOnKill = true
+    private var activeAppRoutingMode = APP_ROUTING_ALL
+    private var activeAppPackages = emptyList<String>()
 
     @Volatile
     private var stopping = false
@@ -68,18 +92,53 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> worker.execute { stopTunnel() }
+            ACTION_STOP -> {
+                restartServiceOnKill = false
+                worker.execute { stopTunnel() }
+                return Service.START_NOT_STICKY
+            }
+
             ACTION_START -> {
                 val config = intent.getStringExtra(EXTRA_CONFIG)
                 val mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_VPN
+                activeTargetName = intent.getStringExtra(EXTRA_TARGET_NAME)
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: "OrexRay"
+                activeStatsOutboundTags = intent.getStringArrayListExtra(EXTRA_STATS_OUTBOUND_TAGS)
+                    ?.map { it.trim() }
+                    ?.filter { it == "proxy" || it.matches(Regex("proxy-\\d+")) }
+                    ?.distinct()
+                    .orEmpty()
+                    .ifEmpty { listOf("proxy") }
                 activeMtu = intent.getIntExtra(EXTRA_MTU, 1500).coerceIn(1280, 9000)
                 activeDnsServers = intent.getStringArrayListExtra(EXTRA_DNS_SERVERS)
                     ?.filter { it.isNotBlank() }
                     ?.take(4)
                     .orEmpty()
                     .ifEmpty { listOf("1.1.1.1", "8.8.8.8") }
-                activeSocksPort = intent.getIntExtra(EXTRA_SOCKS_PORT, 20808).coerceIn(1, 65535)
-                activeHttpPort = intent.getIntExtra(EXTRA_HTTP_PORT, 20809).coerceIn(1, 65535)
+                activeSocksPort = intent.getIntExtra(EXTRA_SOCKS_PORT, 20808)
+                    .coerceIn(1, 65535)
+                activeHttpPort = intent.getIntExtra(EXTRA_HTTP_PORT, 20809)
+                    .coerceIn(1, 65535)
+                activeStatsIntervalSeconds = intent
+                    .getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, 2)
+                    .let { if (it in setOf(1, 2, 5, 10)) it else 2 }
+                showNotificationSpeed =
+                    intent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_SPEED, true)
+                restartServiceOnKill = intent.getBooleanExtra(EXTRA_RESTART_SERVICE, true)
+                activeAppRoutingMode = intent.getStringExtra(EXTRA_APP_ROUTING_MODE)
+                    ?.takeIf {
+                        it == APP_ROUTING_ALL ||
+                            it == APP_ROUTING_EXCLUDE ||
+                            it == APP_ROUTING_ONLY
+                    }
+                    ?: APP_ROUTING_ALL
+                activeAppPackages = intent.getStringArrayListExtra(EXTRA_APP_PACKAGES)
+                    ?.filter { it.isNotBlank() }
+                    ?.distinct()
+                    .orEmpty()
+
                 if (config.isNullOrBlank()) {
                     emitError("Не передан Xray-конфиг", mode)
                     stopSelf()
@@ -90,10 +149,15 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     stopSelf()
                     return Service.START_NOT_STICKY
                 }
+                if (mode == MODE_VPN &&
+                    activeAppRoutingMode == APP_ROUTING_ONLY &&
+                    activeAppPackages.isEmpty()
+                ) {
+                    emitError("В режиме «Только выбранные» выбери хотя бы одно приложение", mode)
+                    stopSelf()
+                    return Service.START_NOT_STICKY
+                }
 
-                // Android requires a foreground-service notification very soon after
-                // startForegroundService(). Native core initialization can be slow on
-                // some devices, so the notification is shown before any heavy work.
                 activeMode = mode
                 startInForeground(
                     if (mode == MODE_VPN) {
@@ -105,15 +169,26 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 worker.execute { startTunnel(config, mode) }
             }
         }
-        return Service.START_NOT_STICKY
+
+        return if (restartServiceOnKill) {
+            Service.START_REDELIVER_INTENT
+        } else {
+            Service.START_NOT_STICKY
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = super.onBind(intent)
 
     override fun onRevoke() {
         Log.i(TAG, "VPN permission revoked")
+        restartServiceOnKill = false
         worker.execute { stopTunnel() }
         super.onRevoke()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.i(TAG, "UI task removed; core service keeps running")
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
@@ -176,6 +251,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             activeMode = mode
             downloadBytes = 0
             uploadBytes = 0
+            downloadBytesPerSecond = 0
+            uploadBytesPerSecond = 0
             startedAtElapsedMs = 0
 
             val tunFd = if (mode == MODE_VPN) {
@@ -198,13 +275,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             startedAtElapsedMs = SystemClock.elapsedRealtime()
             emitConnected()
             startStatsLoop()
-            updateNotification(
-                if (mode == MODE_VPN) {
-                    "VPN защищает трафик"
-                } else {
-                    "SOCKS 127.0.0.1:$activeSocksPort · HTTP 127.0.0.1:$activeHttpPort"
-                },
-            )
+            updateRunningNotification()
             Log.i(TAG, "Xray started successfully mode=$mode")
         } catch (error: Throwable) {
             Log.e(TAG, "Could not start Xray mode=$mode", error)
@@ -224,12 +295,17 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
         activeDnsServers.forEach { builder.addDnsServer(it) }
 
-        // Xray lives in this application. Excluding the app keeps its outbound
-        // sockets outside the VPN and prevents the VPN from tunnelling itself.
-        try {
-            builder.addDisallowedApplication(packageName)
-        } catch (_: PackageManager.NameNotFoundException) {
-            Log.w(TAG, "Could not exclude OrexRay package from VPN")
+        when (activeAppRoutingMode) {
+            APP_ROUTING_ONLY -> {
+                activeAppPackages.forEach { addAllowedPackage(builder, it) }
+            }
+
+            APP_ROUTING_EXCLUDE -> {
+                addDisallowedPackage(builder, packageName)
+                activeAppPackages.forEach { addDisallowedPackage(builder, it) }
+            }
+
+            else -> addDisallowedPackage(builder, packageName)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -239,20 +315,55 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         return builder.establish()
     }
 
+    private fun addAllowedPackage(builder: Builder, packageName: String) {
+        try {
+            builder.addAllowedApplication(packageName)
+        } catch (_: PackageManager.NameNotFoundException) {
+            Log.w(TAG, "Allowed package disappeared: $packageName")
+        }
+    }
+
+    private fun addDisallowedPackage(builder: Builder, packageName: String) {
+        try {
+            builder.addDisallowedApplication(packageName)
+        } catch (_: PackageManager.NameNotFoundException) {
+            Log.w(TAG, "Disallowed package disappeared: $packageName")
+        }
+    }
+
     private fun startStatsLoop() {
         statsTask?.cancel(false)
+        val interval = activeStatsIntervalSeconds.toLong()
         statsTask = worker.scheduleAtFixedRate(
             {
                 val controller = coreController ?: return@scheduleAtFixedRate
                 if (!controller.isRunning || stopping) return@scheduleAtFixedRate
-                downloadBytes += controller.queryStats("proxy", "downlink").coerceAtLeast(0)
-                uploadBytes += controller.queryStats("proxy", "uplink").coerceAtLeast(0)
+                val delta = queryTrafficDelta(controller)
+                downloadBytes += delta.download
+                uploadBytes += delta.upload
+                downloadBytesPerSecond = delta.download / max(1, activeStatsIntervalSeconds)
+                uploadBytesPerSecond = delta.upload / max(1, activeStatsIntervalSeconds)
                 emitConnected()
+                if (showNotificationSpeed) updateRunningNotification()
             },
-            1,
-            1,
+            interval,
+            interval,
             TimeUnit.SECONDS,
         )
+    }
+
+    private fun queryTrafficDelta(controller: CoreController): TrafficDelta {
+        var download = 0L
+        var upload = 0L
+        activeStatsOutboundTags.forEach { tag ->
+            download += runCatching {
+                controller.queryStats(tag, "downlink").coerceAtLeast(0)
+            }.getOrDefault(0L)
+            upload += runCatching {
+                controller.queryStats(tag, "uplink").coerceAtLeast(0)
+            }.getOrDefault(0L)
+        }
+        return TrafficDelta(download, upload)
     }
 
     private fun emitConnecting(message: String, mode: String = activeMode) {
@@ -266,11 +377,6 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     }
 
     private fun emitConnected() {
-        val durationSeconds = if (startedAtElapsedMs == 0L) {
-            0L
-        } else {
-            (SystemClock.elapsedRealtime() - startedAtElapsedMs) / 1000L
-        }
         OrexRayTunnelEvents.emit(
             OrexRayTunnelEvents.event(
                 status = "connected",
@@ -282,7 +388,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 },
                 downloadBytes = downloadBytes,
                 uploadBytes = uploadBytes,
-                durationSeconds = durationSeconds,
+                downloadBytesPerSecond = downloadBytesPerSecond,
+                uploadBytesPerSecond = uploadBytesPerSecond,
+                durationSeconds = elapsedSeconds(),
             ),
         )
     }
@@ -302,6 +410,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 },
                 downloadBytes = downloadBytes,
                 uploadBytes = uploadBytes,
+                downloadBytesPerSecond = downloadBytesPerSecond,
+                uploadBytesPerSecond = uploadBytesPerSecond,
                 durationSeconds = elapsedSeconds(),
             ),
         )
@@ -347,6 +457,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 errorMessage = message,
                 downloadBytes = downloadBytes,
                 uploadBytes = uploadBytes,
+                downloadBytesPerSecond = downloadBytesPerSecond,
+                uploadBytesPerSecond = uploadBytesPerSecond,
                 durationSeconds = elapsedSeconds(),
             ),
         )
@@ -369,6 +481,17 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
 
+    private fun updateRunningNotification() {
+        val text = if (showNotificationSpeed) {
+            "↓ ${formatSpeed(downloadBytesPerSecond)} · ↑ ${formatSpeed(uploadBytesPerSecond)}"
+        } else if (activeMode == MODE_VPN) {
+            "VPN защищает трафик"
+        } else {
+            "SOCKS :$activeSocksPort · HTTP :$activeHttpPort"
+        }
+        updateNotification(text)
+    }
+
     private fun updateNotification(text: String) {
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildNotification(text))
@@ -376,10 +499,18 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
     private fun buildNotification(text: String): Notification {
         val openAppIntent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
+        val openPendingIntent = PendingIntent.getActivity(
             this,
             0,
             openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val stopIntent = Intent(this, OrexRayVpnService::class.java)
+            .setAction(ACTION_STOP)
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            STOP_REQUEST_CODE,
+            stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
@@ -392,12 +523,24 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
         return builder
             .setSmallIcon(R.drawable.orexray_icon)
-            .setContentTitle("OrexRay")
+            .setContentTitle("OrexRay · $activeTargetName")
             .setContentText(text)
-            .setContentIntent(pendingIntent)
+            .setSubText(if (activeMode == MODE_VPN) "VPN" else "Локальный прокси")
+            .setContentIntent(openPendingIntent)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
+            .addAction(0, "Отключить", stopPendingIntent)
             .build()
+    }
+
+    private fun formatSpeed(bytesPerSecond: Long): String {
+        val value = bytesPerSecond.coerceAtLeast(0)
+        return when {
+            value >= 1024L * 1024L -> String.format("%.1f MB/s", value / (1024.0 * 1024.0))
+            value >= 1024L -> String.format("%.0f KB/s", value / 1024.0)
+            else -> "$value B/s"
+        }
     }
 
     private fun createNotificationChannel() {
@@ -407,7 +550,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             "OrexRay",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Состояние VPN и локального прокси OrexRay"
+            description = "Состояние VPN, скорость и локальный прокси OrexRay"
             setShowBadge(false)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)

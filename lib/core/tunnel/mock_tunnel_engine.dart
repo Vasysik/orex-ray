@@ -37,7 +37,7 @@ class MockTunnelEngine implements TunnelEngine {
   }
 
   @override
-  Future<void> start(TunnelProfile profile, ConnectionMode mode) async {
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
     if (_current.status == TunnelStatus.connected ||
         _current.status == TunnelStatus.connecting) {
       return;

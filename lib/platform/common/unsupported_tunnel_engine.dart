@@ -24,7 +24,7 @@ class UnsupportedTunnelEngine implements TunnelEngine {
   Set<ConnectionMode> get supportedModes => const {ConnectionMode.localProxy};
 
   @override
-  Future<void> start(TunnelProfile profile, ConnectionMode mode) async {
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
     _current = TunnelSnapshot(
       status: TunnelStatus.error,
       mode: mode,

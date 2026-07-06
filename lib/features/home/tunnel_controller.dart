@@ -43,9 +43,12 @@ class TunnelController extends ChangeNotifier {
   TunnelSnapshot get snapshot {
     if ((_engineSnapshot.isConnected || _engineSnapshot.isBusy) &&
         _engineSnapshot.profile != null) {
-      return _engineSnapshot;
+      final refreshed = _profiles.targetById(_engineSnapshot.profile!.id);
+      return refreshed == null
+          ? _engineSnapshot
+          : _engineSnapshot.copyWith(profile: refreshed);
     }
-    final selected = _profiles.selectedProfile;
+    final selected = _profiles.selectedTarget;
     return _engineSnapshot.copyWith(
       mode: _settings.mode,
       profile: selected,
@@ -53,7 +56,7 @@ class TunnelController extends ChangeNotifier {
     );
   }
 
-  TunnelProfile? get selectedProfile => _profiles.selectedProfile;
+  TunnelTarget? get selectedProfile => _profiles.selectedTarget;
 
   Future<void> setMode(ConnectionMode mode) async {
     if (!canChangeMode || !supportedModes.contains(mode)) return;
@@ -65,30 +68,20 @@ class TunnelController extends ChangeNotifier {
     if (current.isBusy) return;
     if (current.isConnected) {
       await _engine.stop();
-      _engineSnapshot = _engine.current;
-      notifyListeners();
       return;
     }
 
-    final profile = _profiles.selectedProfile;
+    final profile = _profiles.selectedTarget;
     if (profile == null) {
-      notifyListeners();
-      return;
-    }
-    final selectedMode = _settings.mode;
-    if (!supportedModes.contains(selectedMode)) {
-      _engineSnapshot = _engineSnapshot.copyWith(
+      _engineSnapshot = current.copyWith(
         status: TunnelStatus.error,
-        mode: selectedMode,
-        errorMessage: 'Этот режим недоступен на текущей платформе',
+        errorMessage: 'Сначала выбери профиль или балансировщик.',
       );
       notifyListeners();
       return;
     }
 
-    await _engine.start(profile, selectedMode);
-    _engineSnapshot = _engine.current;
-    notifyListeners();
+    await _engine.start(profile, _settings.mode);
   }
 
   void _onDependencyChanged() => notifyListeners();

@@ -6,12 +6,18 @@ import '../../shared/theme/orex_theme.dart';
 class MoreScreen extends StatelessWidget {
   const MoreScreen({
     super.key,
+    required this.onOpenApps,
     required this.onOpenNetwork,
+    required this.onOpenGeoData,
+    required this.onOpenBackground,
     required this.onOpenAppearance,
     required this.onOpenAbout,
   });
 
+  final VoidCallback onOpenApps;
   final VoidCallback onOpenNetwork;
+  final VoidCallback onOpenGeoData;
+  final VoidCallback onOpenBackground;
   final VoidCallback onOpenAppearance;
   final VoidCallback onOpenAbout;
 
@@ -23,15 +29,36 @@ class MoreScreen extends StatelessWidget {
         Text('Ещё', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text(
-          'Сеть, интерфейс и информация о приложении',
+          'Приложения, сеть, GeoData и поведение OrexRay',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 20),
+        _MoreTile(
+          icon: Icons.apps_rounded,
+          title: 'Приложения',
+          subtitle: 'Split tunneling и исключения Android',
+          onTap: onOpenApps,
+        ),
+        const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.public_rounded,
           title: 'Сеть',
           subtitle: 'DNS, маршрутизация и логи',
           onTap: onOpenNetwork,
+        ),
+        const SizedBox(height: 12),
+        _MoreTile(
+          icon: Icons.travel_explore_rounded,
+          title: 'GeoData',
+          subtitle: 'GeoIP, GeoSite и обновления',
+          onTap: onOpenGeoData,
+        ),
+        const SizedBox(height: 12),
+        _MoreTile(
+          icon: Icons.battery_saver_rounded,
+          title: 'Фоновая работа',
+          subtitle: 'Уведомление, скорость и энергопотребление',
+          onTap: onOpenBackground,
         ),
         const SizedBox(height: 12),
         _MoreTile(

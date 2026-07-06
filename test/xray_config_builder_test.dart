@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/profiles/vless_link_parser.dart';
+import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:orex_ray/core/xray/xray_config_builder.dart';
 
 void main() {
@@ -11,10 +12,11 @@ void main() {
     '&sni=www.microsoft.com&fp=chrome&pbk=public-key&sid=abcd&type=tcp'
     '#My%20Server',
   );
+  final target = TunnelTarget.single(profile);
 
   test('builds Windows TUN config with current VLESS REALITY fields', () {
     final json = jsonDecode(
-      const XrayConfigBuilder().buildWindowsTun(profile),
+      const XrayConfigBuilder().buildWindowsTun(target),
     ) as Map<String, dynamic>;
     final inbound = (json['inbounds'] as List).first as Map<String, dynamic>;
     final outbound = (json['outbounds'] as List).first as Map<String, dynamic>;
@@ -33,7 +35,7 @@ void main() {
 
   test('builds Android external-fd TUN config without Windows route automation', () {
     final json = jsonDecode(
-      const XrayConfigBuilder().buildAndroidTun(profile),
+      const XrayConfigBuilder().buildAndroidTun(target),
     ) as Map<String, dynamic>;
     final inbound = (json['inbounds'] as List).first as Map<String, dynamic>;
     final settings = inbound['settings'] as Map<String, dynamic>;
@@ -52,7 +54,7 @@ void main() {
   test('builds configurable local SOCKS and HTTP proxy inbounds', () {
     final json = jsonDecode(
       const XrayConfigBuilder().buildLocalProxy(
-        profile,
+        target,
         socksPort: 31080,
         httpPort: 31081,
         allowLan: true,
@@ -74,5 +76,32 @@ void main() {
     expect(inbounds[1]['port'], 31081);
     expect(json['log']['loglevel'], 'info');
     expect(rules, hasLength(1));
+  });
+
+  test('builds Xray balancer profile', () {
+    final second = profile.copyWith(
+      id: 'second',
+      name: 'Second',
+      address: 'second.example.com',
+    );
+    final balancer = BalancerProfile(
+      id: 'balancer-1',
+      name: 'Fast pool',
+      memberIds: [profile.id, second.id],
+      strategy: BalancerStrategy.leastPing,
+      probeIntervalSeconds: 30,
+    );
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(
+        TunnelTarget.balancer(balancer, [profile, second]),
+      ),
+    ) as Map<String, dynamic>;
+    final outbounds = json['outbounds'] as List<dynamic>;
+    final routing = json['routing'] as Map<String, dynamic>;
+
+    expect(outbounds[0]['tag'], 'proxy-0');
+    expect(outbounds[1]['tag'], 'proxy-1');
+    expect((routing['balancers'] as List).single['tag'], 'orexray-balancer');
+    expect(json['observatory'], isA<Map>());
   });
 }

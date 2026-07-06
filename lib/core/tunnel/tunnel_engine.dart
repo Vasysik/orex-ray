@@ -7,7 +7,7 @@ abstract interface class TunnelEngine {
 
   Set<ConnectionMode> get supportedModes;
 
-  Future<void> start(TunnelProfile profile, ConnectionMode mode);
+  Future<void> start(TunnelTarget profile, ConnectionMode mode);
 
   Future<void> stop();
 

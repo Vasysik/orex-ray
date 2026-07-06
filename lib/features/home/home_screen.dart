@@ -460,16 +460,21 @@ class _TrafficCard extends StatelessWidget {
           final cards = [
             _Metric(
               icon: Icons.south_rounded,
-              label: 'Получено',
-              value: _bytes(snapshot.stats.downloadBytes),
+              label: 'Скачивание',
+              value: _speed(snapshot.stats.downloadBytesPerSecond),
             ),
             _Metric(
               icon: Icons.north_rounded,
-              label: 'Отправлено',
-              value: _bytes(snapshot.stats.uploadBytes),
+              label: 'Отдача',
+              value: _speed(snapshot.stats.uploadBytesPerSecond),
             ),
             _Metric(
-              icon: Icons.speed_rounded,
+              icon: Icons.data_usage_rounded,
+              label: 'Трафик',
+              value: '${_bytes(snapshot.stats.downloadBytes)} ↓ · ${_bytes(snapshot.stats.uploadBytes)} ↑',
+            ),
+            _Metric(
+              icon: Icons.network_ping_rounded,
               label: 'Ping',
               value: ping == null ? '—' : '$ping мс',
             ),
@@ -583,6 +588,8 @@ String _formatDuration(Duration value) {
   final seconds = (value.inSeconds % 60).toString().padLeft(2, '0');
   return '$hours:$minutes:$seconds';
 }
+
+String _speed(int value) => '${_bytes(value)}/с';
 
 String _bytes(int value) {
   if (value < 1024) return '$value Б';
