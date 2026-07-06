@@ -123,7 +123,7 @@ class OrexRaySplashScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'Версия 0.6.0 · сборка 7',
+                  'Версия 0.6.1 · сборка 9',
                   style: TextStyle(color: OrexColors.cream, fontSize: 13),
                 ),
                 const SizedBox(height: 28),

@@ -11,9 +11,17 @@ class XrayConfigBuilder {
   String buildWindowsTun(
     TunnelTarget target, {
     int mtu = 1500,
-    List<String> dnsServers = const ['1.1.1.1', '8.8.8.8'],
+    List<String> dnsServers = const [],
+    int socksPort = XrayConfigBuilder.socksPort,
+    int httpPort = XrayConfigBuilder.httpPort,
+    bool allowLan = false,
+    bool localProxyInVpn = true,
     bool bypassPrivateNetworks = true,
     bool sniffingEnabled = true,
+    bool geoRoutingEnabled = false,
+    List<String> geoDirectRules = const [],
+    List<String> geoProxyRules = const [],
+    List<String> geoBlockRules = const [],
     String logLevel = 'error',
   }) {
     return _encode(
@@ -32,8 +40,19 @@ class XrayConfigBuilder {
           },
           'sniffing': _sniffing(sniffingEnabled),
         },
+        if (localProxyInVpn)
+          ..._localProxyInbounds(
+            socksPort: socksPort,
+            httpPort: httpPort,
+            allowLan: allowLan,
+            sniffingEnabled: sniffingEnabled,
+          ),
       ],
       bypassPrivateNetworks: bypassPrivateNetworks,
+      geoRoutingEnabled: geoRoutingEnabled,
+      geoDirectRules: geoDirectRules,
+      geoProxyRules: geoProxyRules,
+      geoBlockRules: geoBlockRules,
       logLevel: logLevel,
     );
   }
@@ -41,8 +60,16 @@ class XrayConfigBuilder {
   String buildAndroidTun(
     TunnelTarget target, {
     int mtu = 1500,
+    int socksPort = XrayConfigBuilder.socksPort,
+    int httpPort = XrayConfigBuilder.httpPort,
+    bool allowLan = false,
+    bool localProxyInVpn = true,
     bool bypassPrivateNetworks = true,
     bool sniffingEnabled = true,
+    bool geoRoutingEnabled = false,
+    List<String> geoDirectRules = const [],
+    List<String> geoProxyRules = const [],
+    List<String> geoBlockRules = const [],
     String logLevel = 'error',
   }) {
     return _encode(
@@ -57,8 +84,19 @@ class XrayConfigBuilder {
           },
           'sniffing': _sniffing(sniffingEnabled),
         },
+        if (localProxyInVpn)
+          ..._localProxyInbounds(
+            socksPort: socksPort,
+            httpPort: httpPort,
+            allowLan: allowLan,
+            sniffingEnabled: sniffingEnabled,
+          ),
       ],
       bypassPrivateNetworks: bypassPrivateNetworks,
+      geoRoutingEnabled: geoRoutingEnabled,
+      geoDirectRules: geoDirectRules,
+      geoProxyRules: geoProxyRules,
+      geoBlockRules: geoBlockRules,
       logLevel: logLevel,
     );
   }
@@ -70,38 +108,64 @@ class XrayConfigBuilder {
     bool allowLan = false,
     bool bypassPrivateNetworks = true,
     bool sniffingEnabled = true,
+    bool geoRoutingEnabled = false,
+    List<String> geoDirectRules = const [],
+    List<String> geoProxyRules = const [],
+    List<String> geoBlockRules = const [],
     String logLevel = 'error',
   }) {
-    final listen = allowLan ? '0.0.0.0' : '127.0.0.1';
     return _encode(
       target,
-      inbounds: [
-        {
-          'tag': 'orexray-socks',
-          'listen': listen,
-          'port': socksPort,
-          'protocol': 'socks',
-          'settings': {'udp': true},
-          'sniffing': _sniffing(sniffingEnabled),
-        },
-        {
-          'tag': 'orexray-http',
-          'listen': listen,
-          'port': httpPort,
-          'protocol': 'http',
-          'settings': <String, Object?>{},
-          'sniffing': _sniffing(sniffingEnabled),
-        },
-      ],
+      inbounds: _localProxyInbounds(
+        socksPort: socksPort,
+        httpPort: httpPort,
+        allowLan: allowLan,
+        sniffingEnabled: sniffingEnabled,
+      ),
       bypassPrivateNetworks: bypassPrivateNetworks,
+      geoRoutingEnabled: geoRoutingEnabled,
+      geoDirectRules: geoDirectRules,
+      geoProxyRules: geoProxyRules,
+      geoBlockRules: geoBlockRules,
       logLevel: logLevel,
     );
+  }
+
+  List<Map<String, Object?>> _localProxyInbounds({
+    required int socksPort,
+    required int httpPort,
+    required bool allowLan,
+    required bool sniffingEnabled,
+  }) {
+    final listen = allowLan ? '0.0.0.0' : '127.0.0.1';
+    return [
+      {
+        'tag': 'orexray-socks',
+        'listen': listen,
+        'port': socksPort,
+        'protocol': 'socks',
+        'settings': {'udp': true},
+        'sniffing': _sniffing(sniffingEnabled),
+      },
+      {
+        'tag': 'orexray-http',
+        'listen': listen,
+        'port': httpPort,
+        'protocol': 'http',
+        'settings': <String, Object?>{},
+        'sniffing': _sniffing(sniffingEnabled),
+      },
+    ];
   }
 
   String _encode(
     TunnelTarget target, {
     required List<Map<String, Object?>> inbounds,
     required bool bypassPrivateNetworks,
+    required bool geoRoutingEnabled,
+    required List<String> geoDirectRules,
+    required List<String> geoProxyRules,
+    required List<String> geoBlockRules,
     required String logLevel,
   }) {
     final routeToTarget = target.isBalancer
@@ -109,12 +173,17 @@ class XrayConfigBuilder {
         : <String, Object?>{'outboundTag': 'proxy'};
 
     final rules = <Map<String, Object?>>[
+      if (geoRoutingEnabled)
+        ..._geoRules(geoBlockRules, {'outboundTag': 'block'}),
+      if (geoRoutingEnabled)
+        ..._geoRules(geoDirectRules, {'outboundTag': 'direct'}),
       if (bypassPrivateNetworks)
         {
           'type': 'field',
           'ip': _privateNetworks,
           'outboundTag': 'direct',
         },
+      if (geoRoutingEnabled) ..._geoRules(geoProxyRules, routeToTarget),
       {
         'type': 'field',
         'network': 'tcp,udp',
@@ -172,6 +241,36 @@ class XrayConfigBuilder {
     };
 
     return const JsonEncoder.withIndent('  ').convert(config);
+  }
+
+  List<Map<String, Object?>> _geoRules(
+    List<String> values,
+    Map<String, Object?> destination,
+  ) {
+    final ip = <String>[];
+    final domain = <String>[];
+    for (final value in values) {
+      final rule = value.trim().toLowerCase();
+      if (rule.startsWith('geoip:')) {
+        ip.add(rule);
+      } else if (rule.startsWith('geosite:')) {
+        domain.add(rule);
+      }
+    }
+    return [
+      if (domain.isNotEmpty)
+        {
+          'type': 'field',
+          'domain': domain,
+          ...destination,
+        },
+      if (ip.isNotEmpty)
+        {
+          'type': 'field',
+          'ip': ip,
+          ...destination,
+        },
+    ];
   }
 
   Map<String, Object?> _proxyOutbound(

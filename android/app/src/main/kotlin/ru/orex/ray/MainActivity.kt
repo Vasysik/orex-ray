@@ -3,14 +3,21 @@ package ru.orex.ray
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.VpnService
 import android.os.Build
+import android.util.Base64
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.File
+import kotlin.concurrent.thread
 
 class MainActivity : FlutterActivity() {
     companion object {
@@ -27,13 +34,16 @@ class MainActivity : FlutterActivity() {
         val config: String,
         val mode: String,
         val targetName: String,
+        val latencyMs: Int?,
         val statsOutboundTags: List<String>,
         val mtu: Int,
         val dnsServers: List<String>,
         val socksPort: Int,
         val httpPort: Int,
+        val localProxyInVpn: Boolean,
         val statsIntervalSeconds: Int,
         val showNotificationSpeed: Boolean,
+        val showNotificationPing: Boolean,
         val restartServiceOnKill: Boolean,
         val appRoutingMode: String,
         val appPackages: List<String>,
@@ -55,7 +65,11 @@ class MainActivity : FlutterActivity() {
                             return@setMethodCallHandler
                         }
                         if (mode != MODE_VPN && mode != MODE_LOCAL_PROXY) {
-                            result.error("invalid_mode", "Unsupported Android mode: $mode", null)
+                            result.error(
+                                "invalid_mode",
+                                "Unsupported Android mode: $mode",
+                                null,
+                            )
                             return@setMethodCallHandler
                         }
 
@@ -66,29 +80,41 @@ class MainActivity : FlutterActivity() {
                                 ?.trim()
                                 ?.takeIf { it.isNotEmpty() }
                                 ?: "OrexRay",
-                            statsOutboundTags = call.argument<List<String>>("statsOutboundTags")
+                            latencyMs = call.argument<Int>("latencyMs")
+                                ?.takeIf { it >= 0 },
+                            statsOutboundTags = call.argument<List<String>>(
+                                "statsOutboundTags",
+                            )
                                 ?.map { it.trim() }
-                                ?.filter { it == "proxy" || it.matches(Regex("proxy-\\d+")) }
+                                ?.filter {
+                                    it == "proxy" || it.matches(Regex("proxy-\\d+"))
+                                }
                                 ?.distinct()
                                 .orEmpty()
                                 .ifEmpty { listOf("proxy") },
-                            mtu = (call.argument<Int>("mtu") ?: 1500).coerceIn(1280, 9000),
+                            mtu = (call.argument<Int>("mtu") ?: 1500)
+                                .coerceIn(1280, 9000),
                             dnsServers = call.argument<List<String>>("dnsServers")
                                 ?.filter { it.isNotBlank() }
                                 ?.take(4)
-                                .orEmpty()
-                                .ifEmpty { listOf("1.1.1.1", "8.8.8.8") },
+                                .orEmpty(),
                             socksPort = (call.argument<Int>("socksPort") ?: 20808)
                                 .coerceIn(1, 65535),
                             httpPort = (call.argument<Int>("httpPort") ?: 20809)
                                 .coerceIn(1, 65535),
-                            statsIntervalSeconds = (call.argument<Int>("statsIntervalSeconds") ?: 2)
-                                .let { if (it in setOf(1, 2, 5, 10)) it else 2 },
+                            localProxyInVpn =
+                                call.argument<Boolean>("localProxyInVpn") ?: true,
+                            statsIntervalSeconds = (
+                                call.argument<Int>("statsIntervalSeconds") ?: 2
+                            ).let { if (it in setOf(1, 2, 5, 10)) it else 2 },
                             showNotificationSpeed =
                                 call.argument<Boolean>("showNotificationSpeed") ?: true,
+                            showNotificationPing =
+                                call.argument<Boolean>("showNotificationPing") ?: true,
                             restartServiceOnKill =
                                 call.argument<Boolean>("restartServiceOnKill") ?: true,
-                            appRoutingMode = call.argument<String>("appRoutingMode") ?: "all",
+                            appRoutingMode =
+                                call.argument<String>("appRoutingMode") ?: "all",
                             appPackages = call.argument<List<String>>("appPackages")
                                 ?.filter { it.isNotBlank() }
                                 ?.distinct()
@@ -120,18 +146,38 @@ class MainActivity : FlutterActivity() {
                             }
                     }
 
+                    "updateTargetMetadata" -> {
+                        runCatching {
+                            updateTargetMetadata(
+                                targetName = call.argument<String>("targetName"),
+                                latencyMs = call.argument<Int>("latencyMs"),
+                            )
+                        }
+                            .onSuccess { result.success(null) }
+                            .onFailure { error ->
+                                result.error(
+                                    "metadata_update_failed",
+                                    error.message ?: error.javaClass.simpleName,
+                                    null,
+                                )
+                            }
+                    }
+
                     "status" -> result.success(OrexRayTunnelEvents.lastEvent)
                     "assetDirectory" -> result.success(
                         File(filesDir, "xray").apply { mkdirs() }.absolutePath,
                     )
-                    "listApps" -> result.success(listLaunchableApps())
+                    "listApps" -> loadAppsAsync(result)
                     else -> result.notImplemented()
                 }
             }
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
-                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                override fun onListen(
+                    arguments: Any?,
+                    events: EventChannel.EventSink,
+                ) {
                     OrexRayTunnelEvents.attach(events)
                 }
 
@@ -141,27 +187,86 @@ class MainActivity : FlutterActivity() {
             })
     }
 
-    private fun listLaunchableApps(): List<Map<String, String>> {
-        val launchIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return packageManager.queryIntentActivities(launchIntent, 0)
-            .mapNotNull { info ->
-                val packageName = info.activityInfo?.packageName?.trim().orEmpty()
-                if (packageName.isEmpty() || packageName == this.packageName) return@mapNotNull null
-                val label = runCatching { info.loadLabel(packageManager).toString() }
-                    .getOrDefault(packageName)
+    private fun loadAppsAsync(result: MethodChannel.Result) {
+        thread(name = "orexray-app-list") {
+            runCatching { listInstalledApps() }
+                .onSuccess { apps ->
+                    runOnUiThread { result.success(apps) }
+                }
+                .onFailure { error ->
+                    Log.e(TAG, "Could not list installed apps", error)
+                    runOnUiThread {
+                        result.error(
+                            "list_apps_failed",
+                            error.message ?: error.javaClass.simpleName,
+                            null,
+                        )
+                    }
+                }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun listInstalledApps(): List<Map<String, Any?>> {
+        val launcherPackages = packageManager
+            .queryIntentActivities(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
+                0,
+            )
+            .mapNotNull { it.activityInfo?.packageName }
+            .toSet()
+
+        return packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+            .asSequence()
+            .filter { it.packageName != packageName }
+            .map { info ->
+                val label = runCatching {
+                    packageManager.getApplicationLabel(info).toString()
+                }
+                    .getOrDefault(info.packageName)
                     .trim()
-                    .ifEmpty { packageName }
-                mapOf("packageName" to packageName, "label" to label)
+                    .ifEmpty { info.packageName }
+                val system =
+                    (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
+                        (info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                mapOf(
+                    "packageName" to info.packageName,
+                    "label" to label,
+                    "isSystem" to system,
+                    "hasLauncher" to launcherPackages.contains(info.packageName),
+                    "iconBase64" to encodeAppIcon(info),
+                )
             }
-            .distinctBy { it["packageName"] }
-            .sortedBy { it["label"]?.lowercase() }
+            .sortedWith(
+                compareBy<Map<String, Any?>> {
+                    (it["label"] as? String).orEmpty().lowercase()
+                }.thenBy { (it["packageName"] as? String).orEmpty() },
+            )
+            .toList()
+    }
+
+    private fun encodeAppIcon(info: ApplicationInfo): String? {
+        return runCatching {
+            val size = (44 * resources.displayMetrics.density)
+                .toInt()
+                .coerceIn(48, 96)
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val drawable = info.loadIcon(packageManager)
+            drawable.setBounds(0, 0, size, size)
+            drawable.draw(canvas)
+            val output = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 90, output)
+            bitmap.recycle()
+            Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+        }.getOrNull()
     }
 
     private fun startRequestedMode(request: StartRequest) {
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                android.content.pm.PackageManager.PERMISSION_GRANTED
+                PackageManager.PERMISSION_GRANTED
         ) {
             pendingStart = request
             requestPermissions(
@@ -246,6 +351,7 @@ class MainActivity : FlutterActivity() {
             .putExtra(OrexRayVpnService.EXTRA_CONFIG, request.config)
             .putExtra(OrexRayVpnService.EXTRA_MODE, request.mode)
             .putExtra(OrexRayVpnService.EXTRA_TARGET_NAME, request.targetName)
+            .putExtra(OrexRayVpnService.EXTRA_LATENCY_MS, request.latencyMs ?: -1)
             .putStringArrayListExtra(
                 OrexRayVpnService.EXTRA_STATS_OUTBOUND_TAGS,
                 ArrayList(request.statsOutboundTags),
@@ -258,6 +364,10 @@ class MainActivity : FlutterActivity() {
             .putExtra(OrexRayVpnService.EXTRA_SOCKS_PORT, request.socksPort)
             .putExtra(OrexRayVpnService.EXTRA_HTTP_PORT, request.httpPort)
             .putExtra(
+                OrexRayVpnService.EXTRA_LOCAL_PROXY_IN_VPN,
+                request.localProxyInVpn,
+            )
+            .putExtra(
                 OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
                 request.statsIntervalSeconds,
             )
@@ -266,10 +376,17 @@ class MainActivity : FlutterActivity() {
                 request.showNotificationSpeed,
             )
             .putExtra(
+                OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
+                request.showNotificationPing,
+            )
+            .putExtra(
                 OrexRayVpnService.EXTRA_RESTART_SERVICE,
                 request.restartServiceOnKill,
             )
-            .putExtra(OrexRayVpnService.EXTRA_APP_ROUTING_MODE, request.appRoutingMode)
+            .putExtra(
+                OrexRayVpnService.EXTRA_APP_ROUTING_MODE,
+                request.appRoutingMode,
+            )
             .putStringArrayListExtra(
                 OrexRayVpnService.EXTRA_APP_PACKAGES,
                 ArrayList(request.appPackages),
@@ -281,6 +398,17 @@ class MainActivity : FlutterActivity() {
         } else {
             startService(intent)
         }
+    }
+
+    private fun updateTargetMetadata(targetName: String?, latencyMs: Int?) {
+        val intent = Intent(this, OrexRayVpnService::class.java)
+            .setAction(OrexRayVpnService.ACTION_UPDATE_METADATA)
+            .putExtra(
+                OrexRayVpnService.EXTRA_TARGET_NAME,
+                targetName?.trim().orEmpty(),
+            )
+            .putExtra(OrexRayVpnService.EXTRA_LATENCY_MS, latencyMs ?: -1)
+        startService(intent)
     }
 
     private fun stopCoreService() {

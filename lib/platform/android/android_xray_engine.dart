@@ -8,7 +8,7 @@ import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../core/xray/xray_config_builder.dart';
 
-class AndroidXrayEngine implements TunnelEngine {
+class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink {
   AndroidXrayEngine({
     required ConnectionSettingsController settings,
     required AppRoutingController appRouting,
@@ -78,8 +78,16 @@ class AndroidXrayEngine implements TunnelEngine {
           ? _configBuilder.buildAndroidTun(
               target,
               mtu: _settings.mtu,
+              socksPort: _settings.socksPort,
+              httpPort: _settings.httpPort,
+              allowLan: _settings.allowLan,
+              localProxyInVpn: _settings.localProxyInVpn,
               bypassPrivateNetworks: _settings.bypassPrivateNetworks,
               sniffingEnabled: _settings.sniffingEnabled,
+              geoRoutingEnabled: _settings.geoRoutingEnabled,
+              geoDirectRules: _settings.geoDirectRules,
+              geoProxyRules: _settings.geoProxyRules,
+              geoBlockRules: _settings.geoBlockRules,
               logLevel: _settings.logLevel,
             )
           : _configBuilder.buildLocalProxy(
@@ -89,12 +97,17 @@ class AndroidXrayEngine implements TunnelEngine {
               allowLan: _settings.allowLan,
               bypassPrivateNetworks: _settings.bypassPrivateNetworks,
               sniffingEnabled: _settings.sniffingEnabled,
+              geoRoutingEnabled: _settings.geoRoutingEnabled,
+              geoDirectRules: _settings.geoDirectRules,
+              geoProxyRules: _settings.geoProxyRules,
+              geoBlockRules: _settings.geoBlockRules,
               logLevel: _settings.logLevel,
             );
       await _channel.invokeMethod<void>('start', <String, Object?>{
         'config': config,
         'mode': mode.storageValue,
         'targetName': target.name,
+        'latencyMs': target.latencyMs,
         'statsOutboundTags': target.isBalancer
             ? [
                 for (var index = 0; index < target.profiles.length; index++)
@@ -105,8 +118,10 @@ class AndroidXrayEngine implements TunnelEngine {
         'dnsServers': _settings.dnsServers,
         'socksPort': _settings.socksPort,
         'httpPort': _settings.httpPort,
+        'localProxyInVpn': _settings.localProxyInVpn,
         'statsIntervalSeconds': _settings.statsIntervalSeconds,
         'showNotificationSpeed': _settings.showNotificationSpeed,
+        'showNotificationPing': _settings.showNotificationPing,
         'restartServiceOnKill': _settings.restartServiceOnKill,
         'appRoutingMode': _appRouting.mode.storageValue,
         'appPackages': _appRouting.selectedPackages.toList(growable: false),
@@ -115,6 +130,19 @@ class AndroidXrayEngine implements TunnelEngine {
       _emitError(error.message ?? error.code, mode: mode);
     } catch (error) {
       _emitError(error.toString(), mode: mode);
+    }
+  }
+
+  @override
+  Future<void> updateTargetMetadata(TunnelTarget target) async {
+    _activeTarget = target;
+    try {
+      await _channel.invokeMethod<void>('updateTargetMetadata', <String, Object?>{
+        'targetName': target.name,
+        'latencyMs': target.latencyMs,
+      });
+    } catch (_) {
+      // Runtime metadata is best-effort and must never interrupt the tunnel.
     }
   }
 

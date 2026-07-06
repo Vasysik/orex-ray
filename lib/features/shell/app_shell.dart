@@ -59,7 +59,7 @@ class _AppShellState extends State<AppShell> {
       ConnectionScreen(tunnel: widget.tunnel, settings: widget.settings),
       AppsScreen(controller: widget.appRouting),
       NetworkScreen(settings: widget.settings),
-      GeoDataScreen(controller: widget.geoData),
+      GeoDataScreen(controller: widget.geoData, settings: widget.settings),
       BackgroundScreen(settings: widget.settings),
       AppearanceScreen(theme: widget.theme),
       const AboutScreen(),

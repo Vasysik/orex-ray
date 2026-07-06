@@ -78,6 +78,63 @@ void main() {
     expect(rules, hasLength(1));
   });
 
+
+  test('keeps local SOCKS and HTTP proxy available next to VPN TUN', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(target),
+    ) as Map<String, dynamic>;
+    final inbounds = json['inbounds'] as List<dynamic>;
+
+    expect(inbounds, hasLength(3));
+    expect(inbounds[0]['protocol'], 'tun');
+    expect(inbounds[1]['protocol'], 'socks');
+    expect(inbounds[2]['protocol'], 'http');
+  });
+
+  test('can disable local proxy in VPN mode', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(
+        target,
+        localProxyInVpn: false,
+      ),
+    ) as Map<String, dynamic>;
+    final inbounds = json['inbounds'] as List<dynamic>;
+
+    expect(inbounds, hasLength(1));
+    expect(inbounds.single['protocol'], 'tun');
+  });
+
+  test('builds GeoData block, direct and proxy rules', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildLocalProxy(
+        target,
+        geoRoutingEnabled: true,
+        geoBlockRules: ['geosite:category-ads-all'],
+        geoDirectRules: ['geoip:private', 'geosite:ru'],
+        geoProxyRules: ['geosite:google'],
+      ),
+    ) as Map<String, dynamic>;
+    final routing = json['routing'] as Map<String, dynamic>;
+    final rules = (routing['rules'] as List).cast<Map<String, dynamic>>();
+
+    expect(rules[0]['domain'], ['geosite:category-ads-all']);
+    expect(rules[0]['outboundTag'], 'block');
+    expect(
+      rules.any((rule) =>
+          rule['ip'] is List &&
+          (rule['ip'] as List).contains('geoip:private') &&
+          rule['outboundTag'] == 'direct'),
+      isTrue,
+    );
+    expect(
+      rules.any((rule) =>
+          rule['domain'] is List &&
+          (rule['domain'] as List).contains('geosite:google') &&
+          rule['outboundTag'] == 'proxy'),
+      isTrue,
+    );
+  });
+
   test('builds Xray balancer profile', () {
     final second = profile.copyWith(
       id: 'second',

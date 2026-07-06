@@ -129,6 +129,18 @@ class ProfilesController extends ChangeNotifier {
     return profile;
   }
 
+  Future<TunnelProfile> createProfile(TunnelProfile profile) async {
+    if (_profiles.any((item) => item.id == profile.id)) {
+      throw const FormatException('Профиль с таким ID уже существует');
+    }
+    _profiles.insert(0, profile);
+    _selectedId = profile.id;
+    await _persist();
+    notifyListeners();
+    unawaited(refreshLatency(profile.id));
+    return profile;
+  }
+
   Future<void> updateProfile(TunnelProfile profile) async {
     final index = _profiles.indexWhere((item) => item.id == profile.id);
     if (index < 0) return;

@@ -1,18 +1,31 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
+    android:width="24dp"
+    android:height="24dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Monochrome OrexRay mark for Android status bar: network globe + protected squirrel. -->
     <path
-        android:fillColor="#C8763C"
-        android:pathData="M54,4A50,50 0,1 0,54 104A50,50 0,1 0,54 4" />
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="6"
+        android:pathData="M54,8A46,46 0,1 0,54 100A46,46 0,1 0,54 8" />
     <path
-        android:fillColor="#FBF5EC"
-        android:pathData="M54,35C39,35 30,47 30,63C30,81 41,91 54,91C67,91 78,81 78,63C78,47 69,35 54,35Z" />
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="5"
+        android:pathData="M54,9C39,22 34,38 34,54C34,70 39,86 54,99M54,9C69,22 74,38 74,54C74,70 69,86 54,99M10,54L98,54M19,31C39,40 69,40 89,31M19,77C39,68 69,68 89,77" />
+    <!-- Walnut-shell cradle. -->
     <path
-        android:fillColor="#5E3A1A"
-        android:pathData="M29,48C33,31 44,23 54,23C64,23 75,31 79,48C67,42 41,42 29,48Z" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,66C29,58 40,55 54,55C68,55 79,58 88,66C84,86 71,97 54,99C37,97 24,86 20,66Z" />
+    <!-- Squirrel body and head as a compact protected silhouette. -->
     <path
-        android:fillColor="#FBF5EC"
-        android:pathData="M49,16L59,16L59,30L49,30Z" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M45,54C41,49 41,42 45,38C49,34 56,34 60,38C65,42 65,49 61,54C69,58 73,66 72,76C69,84 63,89 54,89C45,89 39,84 36,76C35,66 39,58 45,54Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M39,40L41,29L49,36ZM65,40L67,29L59,36ZM68,56C83,48 91,58 84,70C80,76 73,79 67,78C72,71 73,63 68,56Z" />
 </vector>

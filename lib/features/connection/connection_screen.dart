@@ -108,6 +108,16 @@ class ConnectionScreen extends StatelessWidget {
                   value: settings.allowLan,
                   onChanged: locked ? null : settings.setAllowLan,
                 ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(Icons.multiple_stop_rounded, color: OrexColors.copper),
+                  title: const Text('Прокси параллельно VPN'),
+                  subtitle: const Text(
+                    'Оставлять SOCKS5 и HTTP доступными, пока работает TUN/VPN',
+                  ),
+                  value: settings.localProxyInVpn,
+                  onChanged: locked ? null : settings.setLocalProxyInVpn,
+                ),
               ],
             ),
             const SizedBox(height: 16),

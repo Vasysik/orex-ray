@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -35,10 +36,19 @@ enum AppRoutingMode {
 }
 
 class AndroidAppInfo {
-  const AndroidAppInfo({required this.packageName, required this.label});
+  const AndroidAppInfo({
+    required this.packageName,
+    required this.label,
+    required this.isSystem,
+    required this.hasLauncher,
+    this.iconBytes,
+  });
 
   final String packageName;
   final String label;
+  final bool isSystem;
+  final bool hasLauncher;
+  final Uint8List? iconBytes;
 }
 
 class AppRoutingController extends ChangeNotifier {
@@ -46,17 +56,21 @@ class AppRoutingController extends ChangeNotifier {
     required SharedPreferences preferences,
     required AppRoutingMode mode,
     required Set<String> selectedPackages,
+    required bool showSystemApps,
   })  : _preferences = preferences,
         _mode = mode,
-        _selectedPackages = selectedPackages;
+        _selectedPackages = selectedPackages,
+        _showSystemApps = showSystemApps;
 
   static const _channel = MethodChannel('ru.orex.ray/tunnel');
   static const _modeKey = 'orex_ray_app_routing_mode_v1';
   static const _packagesKey = 'orex_ray_app_routing_packages_v1';
+  static const _showSystemAppsKey = 'orex_ray_show_system_apps_v1';
 
   final SharedPreferences _preferences;
   AppRoutingMode _mode;
   final Set<String> _selectedPackages;
+  bool _showSystemApps;
   List<AndroidAppInfo> _apps = const [];
   bool _loading = false;
   String? _error;
@@ -67,12 +81,14 @@ class AppRoutingController extends ChangeNotifier {
       preferences: prefs,
       mode: AppRoutingMode.fromStorageValue(prefs.getString(_modeKey)),
       selectedPackages: prefs.getStringList(_packagesKey)?.toSet() ?? <String>{},
+      showSystemApps: prefs.getBool(_showSystemAppsKey) ?? false,
     );
   }
 
   AppRoutingMode get mode => _mode;
   Set<String> get selectedPackages => Set.unmodifiable(_selectedPackages);
   List<AndroidAppInfo> get apps => List.unmodifiable(_apps);
+  bool get showSystemApps => _showSystemApps;
   bool get loading => _loading;
   String? get error => _error;
   bool get supported => Platform.isAndroid;
@@ -81,6 +97,13 @@ class AppRoutingController extends ChangeNotifier {
     if (_mode == value) return;
     _mode = value;
     await _preferences.setString(_modeKey, value.storageValue);
+    notifyListeners();
+  }
+
+  Future<void> setShowSystemApps(bool value) async {
+    if (_showSystemApps == value) return;
+    _showSystemApps = value;
+    await _preferences.setBool(_showSystemAppsKey, value);
     notifyListeners();
   }
 
@@ -111,9 +134,27 @@ class AppRoutingController extends ChangeNotifier {
         final packageName = (map['packageName'] as String? ?? '').trim();
         final label = (map['label'] as String? ?? packageName).trim();
         if (packageName.isEmpty) continue;
-        apps.add(AndroidAppInfo(packageName: packageName, label: label));
+        Uint8List? iconBytes;
+        final rawIcon = map['iconBase64'];
+        if (rawIcon is String && rawIcon.isNotEmpty) {
+          try {
+            iconBytes = base64Decode(rawIcon);
+          } on FormatException {
+            iconBytes = null;
+          }
+        }
+        apps.add(AndroidAppInfo(
+          packageName: packageName,
+          label: label.isEmpty ? packageName : label,
+          isSystem: map['isSystem'] == true,
+          hasLauncher: map['hasLauncher'] == true,
+          iconBytes: iconBytes,
+        ));
       }
-      apps.sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+      apps.sort((a, b) {
+        final byLabel = a.label.toLowerCase().compareTo(b.label.toLowerCase());
+        return byLabel == 0 ? a.packageName.compareTo(b.packageName) : byLabel;
+      });
       _apps = apps;
     } on PlatformException catch (error) {
       _error = error.message ?? error.code;

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -141,6 +142,70 @@ class GeoDataController extends ChangeNotifier {
     notifyListeners();
   }
 
+
+  Future<void> importCustomAsset(String targetFileName, XFile source) async {
+    if (_updating) return;
+    if (targetFileName != 'geoip.dat' && targetFileName != 'geosite.dat') {
+      throw const FormatException('Поддерживаются только geoip.dat и geosite.dat');
+    }
+    _updating = true;
+    _progress = 0;
+    _error = null;
+    _message = 'Импортируем $targetFileName…';
+    notifyListeners();
+
+    final temp = File(p.join(_directory.path, '.$targetFileName.import'));
+    final destination = File(p.join(_directory.path, targetFileName));
+    final backup = File('${destination.path}.bak');
+    try {
+      if (await temp.exists()) await temp.delete();
+      final sink = temp.openWrite();
+      try {
+        await for (final chunk in source.openRead()) {
+          sink.add(chunk);
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+      final length = await temp.length();
+      if (length <= 0) {
+        throw const FormatException('Выбран пустой GeoData-файл');
+      }
+      if (length > 256 * 1024 * 1024) {
+        throw const FormatException('GeoData-файл больше 256 МБ');
+      }
+
+      if (await backup.exists()) await backup.delete();
+      if (await destination.exists()) await destination.rename(backup.path);
+      try {
+        await temp.rename(destination.path);
+        if (await backup.exists()) await backup.delete();
+      } catch (_) {
+        if (await backup.exists() && !await destination.exists()) {
+          await backup.rename(destination.path);
+        }
+        rethrow;
+      }
+      _message = '$targetFileName импортирован. Переподключись, чтобы Xray перечитал данные.';
+      await refreshStatus();
+    } on Object catch (error) {
+      _error = _friendlyError(error);
+      _message = null;
+      if (await temp.exists()) {
+        try {
+          await temp.delete();
+        } catch (_) {
+          // Best-effort cleanup after a failed custom import.
+        }
+      }
+    } finally {
+      _updating = false;
+      _progress = 0;
+      notifyListeners();
+    }
+  }
+
   Future<void> updateNow({bool silent = false}) async {
     if (_updating) return;
     _updating = true;
@@ -149,7 +214,7 @@ class GeoDataController extends ChangeNotifier {
     _message = silent ? null : 'Проверяем GeoData…';
     notifyListeners();
 
-    final client = HttpClient()..userAgent = 'OrexRay/0.6.0';
+    final client = HttpClient()..userAgent = 'OrexRay/0.6.1';
     try {
       const files = ['geoip.dat', 'geosite.dat'];
       for (var index = 0; index < files.length; index++) {

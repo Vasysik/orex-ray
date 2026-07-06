@@ -24,7 +24,7 @@ class HomeScreen extends StatelessWidget {
             return SingleChildScrollView(
               padding: EdgeInsets.all(wide ? 24 : 16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _Header(snapshot: snapshot),
                   const SizedBox(height: 20),
@@ -34,7 +34,7 @@ class HomeScreen extends StatelessWidget {
                   ],
                   _ModeSelector(tunnel: tunnel),
                   const SizedBox(height: 16),
-                  if (wide)
+                  if (wide) ...[
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -48,17 +48,22 @@ class HomeScreen extends StatelessWidget {
                         const SizedBox(width: 16),
                         Expanded(
                           flex: 4,
-                          child: _QuickInfo(snapshot: snapshot),
+                          child: _QuickInfo(
+                            tunnel: tunnel,
+                            snapshot: snapshot,
+                          ),
                         ),
                       ],
-                    )
-                  else ...[
-                    _ConnectionHero(snapshot: snapshot, onTap: tunnel.toggle),
+                    ),
                     const SizedBox(height: 16),
-                    _QuickInfo(snapshot: snapshot),
+                    _TrafficCard(tunnel: tunnel, snapshot: snapshot),
+                  ] else ...[
+                    _ConnectionHero(snapshot: snapshot, onTap: tunnel.toggle),
+                    const SizedBox(height: 12),
+                    _MobileStatusCard(tunnel: tunnel, snapshot: snapshot),
+                    const SizedBox(height: 16),
+                    _QuickInfo(tunnel: tunnel, snapshot: snapshot),
                   ],
-                  const SizedBox(height: 16),
-                  _TrafficCard(snapshot: snapshot),
                 ],
               ),
             );
@@ -176,42 +181,104 @@ class _ModeSelector extends StatelessWidget {
                   ),
                 ),
                 if (!tunnel.canChangeMode)
-                  Text(
-                    'Сначала отключитесь',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text('Сначала отключитесь', style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<ConnectionMode>(
-              segments: [
-                for (final mode in modes)
-                  ButtonSegment<ConnectionMode>(
-                    value: mode,
-                    icon: Icon(_modeIcon(mode)),
-                    label: Text(mode.shortTitle),
-                    tooltip: mode.description,
-                  ),
-              ],
-              selected: {tunnel.mode},
-              onSelectionChanged: tunnel.canChangeMode
-                  ? (selection) => tunnel.setMode(selection.first)
-                  : null,
-              showSelectedIcon: false,
-              multiSelectionEnabled: false,
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 620) {
+                return Row(
+                  children: [
+                    for (var index = 0; index < modes.length; index++) ...[
+                      Expanded(
+                        child: _ModeChoice(
+                          mode: modes[index],
+                          selected: tunnel.mode == modes[index],
+                          enabled: tunnel.canChangeMode,
+                          onTap: () => tunnel.setMode(modes[index]),
+                        ),
+                      ),
+                      if (index != modes.length - 1) const SizedBox(width: 8),
+                    ],
+                  ],
+                );
+              }
+              return SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<ConnectionMode>(
+                  segments: [
+                    for (final mode in modes)
+                      ButtonSegment<ConnectionMode>(
+                        value: mode,
+                        icon: Icon(_modeIcon(mode)),
+                        label: Text(mode.shortTitle),
+                        tooltip: mode.description,
+                      ),
+                  ],
+                  selected: {tunnel.mode},
+                  onSelectionChanged: tunnel.canChangeMode
+                      ? (selection) => tunnel.setMode(selection.first)
+                      : null,
+                  showSelectedIcon: false,
+                  multiSelectionEnabled: false,
+                ),
+              );
+            },
           ),
           const SizedBox(height: 9),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Text(
-              tunnel.mode.description,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            child: Text(tunnel.mode.description, style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ModeChoice extends StatelessWidget {
+  const _ModeChoice({
+    required this.mode,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final ConnectionMode mode;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected
+          ? OrexColors.copper.withValues(alpha: 0.24)
+          : Theme.of(context).colorScheme.surface.withValues(alpha: 0.28),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_modeIcon(mode), color: selected ? OrexColors.copper : null),
+              const SizedBox(height: 6),
+              Text(
+                mode.shortTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -234,8 +301,7 @@ class _ConnectionHero extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       child: Column(
         children: [
-          Text(_statusTitle(snapshot.status),
-              style: Theme.of(context).textTheme.titleLarge),
+          Text(_statusTitle(snapshot.status), style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 6),
           Text(
             snapshot.message ??
@@ -323,9 +389,7 @@ class _ConnectButton extends StatelessWidget {
                       ),
                     )
                   : Icon(
-                      active
-                          ? Icons.power_settings_new_rounded
-                          : Icons.power_rounded,
+                      active ? Icons.power_settings_new_rounded : Icons.power_rounded,
                       color: OrexColors.cream,
                       size: 68,
                     ),
@@ -337,9 +401,132 @@ class _ConnectButton extends StatelessWidget {
   }
 }
 
-class _QuickInfo extends StatelessWidget {
-  const _QuickInfo({required this.snapshot});
+class _MobileStatusCard extends StatelessWidget {
+  const _MobileStatusCard({required this.tunnel, required this.snapshot});
 
+  final TunnelController tunnel;
+  final TunnelSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    final ping = snapshot.profile?.latencyMs;
+    return GlassPanel(
+      borderRadius: 24,
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _CompactMetric(
+                  icon: Icons.south_rounded,
+                  label: 'Скачивание',
+                  value: _speed(snapshot.stats.downloadBytesPerSecond),
+                ),
+              ),
+              const SizedBox(height: 48, child: VerticalDivider()),
+              Expanded(
+                child: _CompactMetric(
+                  icon: Icons.north_rounded,
+                  label: 'Отдача',
+                  value: _speed(snapshot.stats.uploadBytesPerSecond),
+                ),
+              ),
+              const SizedBox(height: 48, child: VerticalDivider()),
+              Expanded(
+                child: _CompactMetric(
+                  icon: Icons.network_ping_rounded,
+                  label: 'Ping',
+                  value: ping == null ? '—' : '$ping мс',
+                  busy: tunnel.refreshingLatency,
+                  onTap: snapshot.profile == null ? null : tunnel.refreshSelectedLatency,
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 26),
+          Row(
+            children: [
+              const Icon(Icons.data_usage_rounded, color: OrexColors.copper),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('Трафик', style: Theme.of(context).textTheme.bodySmall),
+              ),
+              Flexible(
+                child: Text(
+                  '${_bytes(snapshot.stats.downloadBytes)} ↓ · '
+                  '${_bytes(snapshot.stats.uploadBytes)} ↑',
+                  textAlign: TextAlign.end,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompactMetric extends StatelessWidget {
+  const _CompactMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.onTap,
+    this.busy = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Future<void> Function()? onTap;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Column(
+        children: [
+          busy
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(icon, color: OrexColors.copper, size: 20),
+          const SizedBox(height: 5),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) return child;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: busy ? null : () => onTap!(),
+      child: child,
+    );
+  }
+}
+
+class _QuickInfo extends StatelessWidget {
+  const _QuickInfo({required this.tunnel, required this.snapshot});
+
+  final TunnelController tunnel;
   final TunnelSnapshot snapshot;
 
   @override
@@ -355,41 +542,61 @@ class _QuickInfo extends StatelessWidget {
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const _CardIcon(icon: Icons.public_rounded),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: tunnel.canChangeTarget && tunnel.targets.length > 1
+                            ? () => _showTargetPicker(context)
+                            : null,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
                             children: [
-                              Text(profile.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium),
-                              Text(profile.endpoint,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall),
+                              const _CardIcon(icon: Icons.public_rounded),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            profile.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context).textTheme.titleMedium,
+                                          ),
+                                        ),
+                                        if (tunnel.targets.length > 1)
+                                          const Icon(Icons.keyboard_arrow_down_rounded),
+                                      ],
+                                    ),
+                                    Text(
+                                      profile.endpoint,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                     const SizedBox(height: 18),
                     const Divider(height: 1),
                     const SizedBox(height: 18),
                     _InfoRow(label: 'Протокол', value: profile.protocol),
                     const SizedBox(height: 12),
-                    _InfoRow(
-                        label: 'Транспорт', value: profile.transportLabel),
+                    _InfoRow(label: 'Транспорт', value: profile.transportLabel),
                     const SizedBox(height: 12),
                     _InfoRow(
                       label: 'Задержка',
-                      value: profile.latencyMs == null
-                          ? '—'
-                          : '${profile.latencyMs} мс',
+                      value: profile.latencyMs == null ? '—' : '${profile.latencyMs} мс',
                     ),
                   ],
                 ),
@@ -419,6 +626,46 @@ class _QuickInfo extends StatelessWidget {
       ],
     );
   }
+
+  Future<void> _showTargetPicker(BuildContext context) async {
+    final selectedId = snapshot.profile?.id;
+    final id = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 520),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+                child: Text('Быстрая смена профиля', style: Theme.of(context).textTheme.titleLarge),
+              ),
+              for (final target in tunnel.targets)
+                ListTile(
+                  leading: Icon(
+                    target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: Text(target.name),
+                  subtitle: Text(
+                    '${target.endpoint} · '
+                    '${target.latencyMs == null ? 'ping —' : '${target.latencyMs} мс'}',
+                  ),
+                  trailing: selectedId == target.id
+                      ? const Icon(Icons.check_rounded, color: OrexColors.online)
+                      : null,
+                  onTap: () => Navigator.pop(context, target.id),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (id != null) await tunnel.selectTarget(id);
+  }
 }
 
 class _NoProfileCard extends StatelessWidget {
@@ -430,11 +677,10 @@ class _NoProfileCard extends StatelessWidget {
       children: [
         const SquirrelMascot(size: 70, compact: true),
         const SizedBox(height: 14),
-        Text('Нет активного профиля',
-            style: Theme.of(context).textTheme.titleMedium),
+        Text('Нет активного профиля', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 5),
         Text(
-          'Откройте вкладку «Профили» и импортируйте vless://',
+          'Откройте вкладку «Профили» и импортируйте или создайте VLESS-профиль',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall,
         ),
@@ -444,8 +690,9 @@ class _NoProfileCard extends StatelessWidget {
 }
 
 class _TrafficCard extends StatelessWidget {
-  const _TrafficCard({required this.snapshot});
+  const _TrafficCard({required this.tunnel, required this.snapshot});
 
+  final TunnelController tunnel;
   final TunnelSnapshot snapshot;
 
   @override
@@ -454,78 +701,99 @@ class _TrafficCard extends StatelessWidget {
     return GlassPanel(
       borderRadius: 24,
       padding: const EdgeInsets.all(20),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final horizontal = constraints.maxWidth >= 620;
-          final cards = [
-            _Metric(
+      child: Row(
+        children: [
+          Expanded(
+            child: _Metric(
               icon: Icons.south_rounded,
               label: 'Скачивание',
               value: _speed(snapshot.stats.downloadBytesPerSecond),
             ),
-            _Metric(
+          ),
+          const SizedBox(height: 54, child: VerticalDivider()),
+          Expanded(
+            child: _Metric(
               icon: Icons.north_rounded,
               label: 'Отдача',
               value: _speed(snapshot.stats.uploadBytesPerSecond),
             ),
-            _Metric(
+          ),
+          const SizedBox(height: 54, child: VerticalDivider()),
+          Expanded(
+            child: _Metric(
               icon: Icons.data_usage_rounded,
               label: 'Трафик',
-              value: '${_bytes(snapshot.stats.downloadBytes)} ↓ · ${_bytes(snapshot.stats.uploadBytes)} ↑',
+              value: '${_bytes(snapshot.stats.downloadBytes)} ↓ · '
+                  '${_bytes(snapshot.stats.uploadBytes)} ↑',
             ),
-            _Metric(
+          ),
+          const SizedBox(height: 54, child: VerticalDivider()),
+          Expanded(
+            child: _Metric(
               icon: Icons.network_ping_rounded,
               label: 'Ping',
               value: ping == null ? '—' : '$ping мс',
+              busy: tunnel.refreshingLatency,
+              onTap: snapshot.profile == null ? null : tunnel.refreshSelectedLatency,
             ),
-          ];
-          if (horizontal) {
-            return Row(
-              children: [
-                for (var i = 0; i < cards.length; i++) ...[
-                  Expanded(child: cards[i]),
-                  if (i != cards.length - 1)
-                    const SizedBox(height: 54, child: VerticalDivider()),
-                ],
-              ],
-            );
-          }
-          return Column(
-            children: [
-              for (var i = 0; i < cards.length; i++) ...[
-                cards[i],
-                if (i != cards.length - 1) const Divider(height: 24),
-              ],
-            ],
-          );
-        },
+          ),
+        ],
       ),
     );
   }
 }
 
 class _Metric extends StatelessWidget {
-  const _Metric({required this.icon, required this.label, required this.value});
+  const _Metric({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.onTap,
+    this.busy = false,
+  });
 
   final IconData icon;
   final String label;
   final String value;
+  final Future<void> Function()? onTap;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, color: OrexColors.copper),
-        const SizedBox(width: 10),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-            Text(value, style: Theme.of(context).textTheme.titleMedium),
-          ],
-        ),
-      ],
+    final child = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          busy
+              ? const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(icon, color: OrexColors.copper),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: Theme.of(context).textTheme.bodySmall),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) return child;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: busy ? null : () => onTap!(),
+      child: child,
     );
   }
 }

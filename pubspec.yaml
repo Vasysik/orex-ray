@@ -1,17 +1,18 @@
 name: orex_ray
 description: "OrexRay — тёплый Xray-клиент для Android и Windows."
 publish_to: "none"
-version: 0.6.0+7
+version: 0.6.1+9
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
-  flutter: ">=3.24.0"
+  flutter: ">=3.33.0"
 
 dependencies:
   flutter:
     sdk: flutter
   archive: ^3.6.1
   crypto: ^3.0.6
+  file_selector: 1.0.4
   path: ^1.9.1
   path_provider: ^2.1.5
   shared_preferences: ^2.5.3

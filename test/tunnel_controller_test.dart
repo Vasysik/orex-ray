@@ -48,6 +48,8 @@ void main() {
     );
 
     expect(settings.mode, ConnectionMode.vpnTun);
+    expect(settings.dnsPreset, DnsPreset.system);
+    expect(settings.dnsServers, isEmpty);
     expect(settings.supportedModes, contains(ConnectionMode.localProxy));
     expect(settings.supportedModes, isNot(contains(ConnectionMode.systemProxy)));
 
@@ -65,6 +67,7 @@ void main() {
     await settings.setHttpPort(31081);
     await settings.setMtu(1420);
     await settings.setAllowLan(true);
+    await settings.setLocalProxyInVpn(false);
     await settings.setBypassPrivateNetworks(false);
     await settings.setSniffingEnabled(false);
     await settings.setLogLevel('info');
@@ -72,18 +75,27 @@ void main() {
     await settings.setDnsPreset(DnsPreset.custom);
     await settings.setStatsIntervalSeconds(5);
     await settings.setShowNotificationSpeed(false);
+    await settings.setShowNotificationPing(false);
+    await settings.setGeoRoutingEnabled(true);
+    await settings.setGeoDirectRules('geoip:private, geosite:ru');
+    await settings.setGeoBlockRules('geosite:category-ads-all');
     await settings.setRestartServiceOnKill(false);
 
     expect(settings.socksPort, 31080);
     expect(settings.httpPort, 31081);
     expect(settings.mtu, 1420);
     expect(settings.allowLan, isTrue);
+    expect(settings.localProxyInVpn, isFalse);
     expect(settings.bypassPrivateNetworks, isFalse);
     expect(settings.sniffingEnabled, isFalse);
     expect(settings.logLevel, 'info');
     expect(settings.dnsServers, ['9.9.9.9', '149.112.112.112']);
     expect(settings.statsIntervalSeconds, 5);
     expect(settings.showNotificationSpeed, isFalse);
+    expect(settings.showNotificationPing, isFalse);
+    expect(settings.geoRoutingEnabled, isTrue);
+    expect(settings.geoDirectRules, ['geoip:private', 'geosite:ru']);
+    expect(settings.geoBlockRules, ['geosite:category-ads-all']);
     expect(settings.restartServiceOnKill, isFalse);
 
     settings.dispose();

@@ -63,7 +63,7 @@ class XrayCoreManager {
     void Function(double progress)? onProgress,
   }) async {
     final client = HttpClient();
-    client.userAgent = 'OrexRay/0.2.0';
+    client.userAgent = 'OrexRay/0.6.1';
     try {
       final request = await client.getUrl(Uri.parse(url));
       request.followRedirects = true;

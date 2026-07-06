@@ -58,6 +58,17 @@ class BackgroundScreen extends StatelessWidget {
                   value: settings.showNotificationSpeed,
                   onChanged: settings.setShowNotificationSpeed,
                 ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(
+                    Icons.network_ping_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Ping в уведомлении'),
+                  subtitle: const Text('Показывать последнюю измеренную задержку профиля'),
+                  value: settings.showNotificationPing,
+                  onChanged: settings.setShowNotificationPing,
+                ),
               ],
             ],
           ),

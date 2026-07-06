@@ -30,3 +30,12 @@ Project source: https://github.com/2dust/AndroidLibXrayLite
 OrexRay can download `geoip.dat` and `geosite.dat` plus their published SHA-256 checksum files from the `Loyalsoldier/v2ray-rules-dat` release branch. These data files are downloaded at runtime and are not authored by OrexRay.
 
 Project source: https://github.com/Loyalsoldier/v2ray-rules-dat
+
+## Flutter file_selector
+
+- Package: `file_selector`
+- Publisher: flutter.dev
+- License: BSD-3-Clause
+- Purpose in OrexRay: user-selected custom `geoip.dat` and `geosite.dat` imports on Android and Windows.
+
+Project source: https://github.com/flutter/packages/tree/main/packages/file_selector

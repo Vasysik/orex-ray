@@ -13,3 +13,9 @@ abstract interface class TunnelEngine {
 
   Future<void> dispose();
 }
+
+/// Optional bridge for engines that can update native/background UI while a
+/// tunnel is already running (for example Android's foreground notification).
+abstract interface class TunnelRuntimeMetadataSink {
+  Future<void> updateTargetMetadata(TunnelTarget target);
+}

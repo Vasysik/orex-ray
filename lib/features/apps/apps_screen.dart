@@ -18,13 +18,12 @@ class AppsScreen extends StatefulWidget {
 
 class _AppsScreenState extends State<AppsScreen> {
   String _query = '';
+  bool _selectedOnly = false;
 
   @override
   void initState() {
     super.initState();
-    if (Platform.isAndroid) {
-      widget.controller.loadApps();
-    }
+    if (Platform.isAndroid) widget.controller.loadApps();
   }
 
   @override
@@ -32,11 +31,15 @@ class _AppsScreenState extends State<AppsScreen> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        if (!widget.controller.supported) {
-          return const _UnsupportedAppsScreen();
-        }
+        if (!widget.controller.supported) return const _UnsupportedAppsScreen();
+
         final query = _query.trim().toLowerCase();
         final apps = widget.controller.apps.where((app) {
+          if (!widget.controller.showSystemApps && app.isSystem) return false;
+          if (_selectedOnly &&
+              !widget.controller.selectedPackages.contains(app.packageName)) {
+            return false;
+          }
           if (query.isEmpty) return true;
           return app.label.toLowerCase().contains(query) ||
               app.packageName.toLowerCase().contains(query);
@@ -45,7 +48,7 @@ class _AppsScreenState extends State<AppsScreen> {
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            SettingsPageHeader(
+            const SettingsPageHeader(
               title: 'Приложения',
               subtitle: 'Split tunneling: исключения или только выбранные приложения',
               icon: Icons.apps_rounded,
@@ -78,24 +81,47 @@ class _AppsScreenState extends State<AppsScreen> {
             GlassPanel(
               borderRadius: 20,
               padding: const EdgeInsets.all(12),
-              child: TextField(
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  hintText: 'Поиск приложения или пакета',
-                  suffixIcon: IconButton(
-                    tooltip: 'Обновить список',
-                    onPressed: widget.controller.loading
-                        ? null
-                        : () => widget.controller.loadApps(force: true),
-                    icon: widget.controller.loading
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh_rounded),
+              child: Column(
+                children: [
+                  TextField(
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      hintText: 'Поиск приложения или пакета',
+                      suffixIcon: IconButton(
+                        tooltip: 'Обновить список',
+                        onPressed: widget.controller.loading
+                            ? null
+                            : () => widget.controller.loadApps(force: true),
+                        icon: widget.controller.loading
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh_rounded),
+                      ),
+                    ),
+                    onChanged: (value) => setState(() => _query = value),
                   ),
-                ),
-                onChanged: (value) => setState(() => _query = value),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilterChip(
+                        selected: widget.controller.showSystemApps,
+                        avatar: const Icon(Icons.settings_suggest_rounded, size: 18),
+                        label: const Text('Системные'),
+                        onSelected: widget.controller.setShowSystemApps,
+                      ),
+                      FilterChip(
+                        selected: _selectedOnly,
+                        avatar: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                        label: const Text('Только выбранные'),
+                        onSelected: (value) => setState(() => _selectedOnly = value),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
             if (widget.controller.error != null) ...[
@@ -110,7 +136,8 @@ class _AppsScreenState extends State<AppsScreen> {
             ],
             const SizedBox(height: 12),
             Text(
-              '${widget.controller.selectedPackages.length} выбрано · ${widget.controller.apps.length} найдено',
+              '${widget.controller.selectedPackages.length} выбрано · '
+              '${apps.length} показано · ${widget.controller.apps.length} всего',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -138,10 +165,32 @@ class _AppsScreenState extends State<AppsScreen> {
                             .contains(apps[index].packageName),
                         onChanged: (_) => widget.controller
                             .togglePackage(apps[index].packageName),
-                        secondary: const CircleAvatar(
-                          child: Icon(Icons.android_rounded, size: 19),
+                        secondary: _AppIcon(app: apps[index]),
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                apps[index].label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (apps[index].isSystem)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Tooltip(
+                                  message: 'Системное приложение',
+                                  child: Icon(
+                                    Icons.settings_rounded,
+                                    size: 16,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        title: Text(apps[index].label),
                         subtitle: Text(
                           apps[index].packageName,
                           maxLines: 1,
@@ -160,6 +209,40 @@ class _AppsScreenState extends State<AppsScreen> {
   }
 }
 
+class _AppIcon extends StatelessWidget {
+  const _AppIcon({required this.app});
+
+  final AndroidAppInfo app;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = app.iconBytes;
+    return Container(
+      width: 44,
+      height: 44,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: bytes == null
+          ? const Icon(Icons.android_rounded, color: OrexColors.copper)
+          : ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: Image.memory(
+                bytes,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.android_rounded,
+                  color: OrexColors.copper,
+                ),
+              ),
+            ),
+    );
+  }
+}
+
 class _UnsupportedAppsScreen extends StatelessWidget {
   const _UnsupportedAppsScreen();
 
@@ -170,14 +253,17 @@ class _UnsupportedAppsScreen extends StatelessWidget {
       children: const [
         SettingsPageHeader(
           title: 'Приложения',
-          subtitle: 'Split tunneling на уровне приложений доступен в Android VPN mode',
+          subtitle: 'Split tunneling по приложениям доступен на Android',
           icon: Icons.apps_rounded,
         ),
         SizedBox(height: 22),
         GlassPanel(
-          borderRadius: 20,
+          borderRadius: 22,
           padding: EdgeInsets.all(24),
-          child: Text('На Windows используйте системный прокси, локальный прокси или правила Xray. Список Android-приложений здесь недоступен.'),
+          child: Text(
+            'На Windows маршрутизация по процессам потребует отдельного '
+            'Windows-native backend. Сейчас эта страница управляет Android VPN.',
+          ),
         ),
       ],
     );
@@ -185,7 +271,7 @@ class _UnsupportedAppsScreen extends StatelessWidget {
 }
 
 IconData _modeIcon(AppRoutingMode mode) => switch (mode) {
-      AppRoutingMode.all => Icons.select_all_rounded,
+      AppRoutingMode.all => Icons.all_inclusive_rounded,
       AppRoutingMode.excludeSelected => Icons.remove_circle_outline_rounded,
-      AppRoutingMode.onlySelected => Icons.check_circle_outline_rounded,
+      AppRoutingMode.onlySelected => Icons.filter_alt_rounded,
     };

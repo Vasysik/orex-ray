@@ -26,8 +26,8 @@ class ProfilesScreen extends StatelessWidget {
               runSpacing: 10,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                SizedBox(
-                  width: 360,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -41,9 +41,12 @@ class ProfilesScreen extends StatelessWidget {
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: profiles.profiles.length < 2
-                      ? null
-                      : () => _showBalancerDialog(context),
+                  onPressed: () => _showCreateProfileDialog(context),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Профиль'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _showBalancerDialog(context),
                   icon: const Icon(Icons.hub_rounded),
                   label: const Text('Балансировщик'),
                 ),
@@ -59,7 +62,7 @@ class ProfilesScreen extends StatelessWidget {
                       : const Icon(Icons.network_ping_rounded),
                   label: const Text('Проверить ping'),
                 ),
-                FilledButton.icon(
+                OutlinedButton.icon(
                   onPressed: () => _showImportDialog(context),
                   icon: const Icon(Icons.add_link_rounded),
                   label: const Text('Импорт'),
@@ -128,6 +131,25 @@ class ProfilesScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _showCreateProfileDialog(BuildContext context) async {
+    final seed = TunnelProfile(
+      id: 'profile-${DateTime.now().microsecondsSinceEpoch}',
+      name: '',
+      address: '',
+      port: 443,
+      userId: '',
+    );
+    final created = await showDialog<TunnelProfile>(
+      context: context,
+      builder: (context) => _EditProfileDialog(
+        profile: seed,
+        title: 'Новый VLESS-профиль',
+      ),
+    );
+    if (created == null) return;
+    await profiles.createProfile(created);
+  }
+
   Future<void> _showEditProfileDialog(
     BuildContext context,
     TunnelProfile profile,
@@ -144,6 +166,12 @@ class ProfilesScreen extends StatelessWidget {
     BuildContext context, {
     BalancerProfile? existing,
   }) async {
+    if (existing == null && profiles.profiles.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Для балансировщика нужны минимум два профиля')),
+      );
+      return;
+    }
     final value = await showDialog<_BalancerDraft>(
       context: context,
       builder: (context) => _BalancerDialog(
@@ -234,7 +262,7 @@ class _EmptyProfiles extends StatelessWidget {
           Text('Белочка ждёт сервер', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
-            'Добавьте первую VLESS-ссылку — и она появится здесь.',
+            'Импортируйте VLESS-ссылку или создайте профиль вручную.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -504,9 +532,13 @@ class _ImportVlessDialogState extends State<_ImportVlessDialog> {
 }
 
 class _EditProfileDialog extends StatefulWidget {
-  const _EditProfileDialog({required this.profile});
+  const _EditProfileDialog({
+    required this.profile,
+    this.title = 'Редактировать профиль',
+  });
 
   final TunnelProfile profile;
+  final String title;
 
   @override
   State<_EditProfileDialog> createState() => _EditProfileDialogState();
@@ -583,7 +615,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Редактировать профиль'),
+      title: Text(widget.title),
       content: SizedBox(
         width: 640,
         child: SingleChildScrollView(
@@ -605,7 +637,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
               Row(children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _security,
+                    initialValue: _security,
                     decoration: const InputDecoration(labelText: 'Security'),
                     items: const [
                       DropdownMenuItem(value: 'none', child: Text('None')),
@@ -618,7 +650,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _transport,
+                    initialValue: _transport,
                     decoration: const InputDecoration(labelText: 'Transport'),
                     items: const [
                       DropdownMenuItem(value: 'raw', child: Text('RAW / TCP')),
@@ -760,7 +792,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
               TextField(controller: _name, decoration: const InputDecoration(labelText: 'Имя')),
               const SizedBox(height: 12),
               DropdownButtonFormField<BalancerStrategy>(
-                value: _strategy,
+                initialValue: _strategy,
                 decoration: const InputDecoration(labelText: 'Стратегия'),
                 items: [
                   for (final strategy in BalancerStrategy.values)

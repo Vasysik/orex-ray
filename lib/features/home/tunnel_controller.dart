@@ -58,6 +58,26 @@ class TunnelController extends ChangeNotifier {
 
   TunnelTarget? get selectedProfile => _profiles.selectedTarget;
 
+  List<TunnelTarget> get targets => _profiles.targets;
+
+  bool get refreshingLatency => _profiles.refreshingLatency;
+
+  bool get canChangeTarget =>
+      !_engineSnapshot.isBusy && !_engineSnapshot.isConnected;
+
+  Future<void> selectTarget(String id) async {
+    if (!canChangeTarget) return;
+    await _profiles.select(id);
+  }
+
+  Future<void> refreshSelectedLatency() async {
+    final target = _profiles.selectedTarget;
+    if (target == null) return;
+    for (final profile in target.profiles) {
+      await _profiles.refreshLatency(profile.id);
+    }
+  }
+
   Future<void> setMode(ConnectionMode mode) async {
     if (!canChangeMode || !supportedModes.contains(mode)) return;
     await _settings.setMode(mode);
@@ -68,6 +88,7 @@ class TunnelController extends ChangeNotifier {
     if (current.isBusy) return;
     if (current.isConnected) {
       await _engine.stop();
+      _syncFromEngine();
       return;
     }
 
@@ -82,9 +103,28 @@ class TunnelController extends ChangeNotifier {
     }
 
     await _engine.start(profile, _settings.mode);
+    _syncFromEngine();
   }
 
-  void _onDependencyChanged() => notifyListeners();
+  void _syncFromEngine() {
+    _engineSnapshot = _engine.current;
+    notifyListeners();
+  }
+
+  void _onDependencyChanged() {
+    final active = _engineSnapshot.profile;
+    if ((_engineSnapshot.isConnected || _engineSnapshot.isBusy) &&
+        active != null &&
+        _engine is TunnelRuntimeMetadataSink) {
+      final refreshed = _profiles.targetById(active.id);
+      if (refreshed != null) {
+        unawaited(
+          (_engine as TunnelRuntimeMetadataSink).updateTargetMetadata(refreshed),
+        );
+      }
+    }
+    notifyListeners();
+  }
 
   @override
   void dispose() {

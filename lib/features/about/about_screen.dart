@@ -8,8 +8,8 @@ import '../../shared/widgets/squirrel_mascot.dart';
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
-  static const version = '0.6.0';
-  static const buildNumber = '7';
+  static const version = '0.6.1';
+  static const buildNumber = '9';
 
   @override
   Widget build(BuildContext context) {
