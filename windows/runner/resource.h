@@ -3,6 +3,7 @@
 // Used by Runner.rc
 //
 #define IDI_APP_ICON                    101
+#define IDR_OREXRAY_MONOCHROME          102
 
 // Next default values for new objects
 //

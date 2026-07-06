@@ -114,95 +114,105 @@ void DrawOrexMark(Graphics* graphics, const RectF& bounds,
   if (graphics == nullptr) return;
 
   graphics->SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-  Pen line_pen(foreground, 2.2f);
-  line_pen.SetStartCap(Gdiplus::LineCapRound);
-  line_pen.SetEndCap(Gdiplus::LineCapRound);
-  line_pen.SetLineJoin(Gdiplus::LineJoinRound);
 
-  const float globe_left = bounds.X + 7.0f;
-  const float globe_top = bounds.Y + 4.0f;
-  const float globe_size = bounds.Width - 14.0f;
-  const RectF globe(globe_left, globe_top, globe_size, globe_size);
-  graphics->DrawEllipse(&line_pen, globe);
-
-  graphics->DrawLine(&line_pen, globe.X + 1.0f, globe.Y + globe.Height / 2.0f,
-                     globe.GetRight() - 1.0f,
-                     globe.Y + globe.Height / 2.0f);
-  GraphicsPath latitude_top;
-  AddArcEllipse(&latitude_top, globe.X + 5.0f, globe.Y + 5.5f,
-                globe.Width - 10.0f, globe.Height - 23.0f);
-  graphics->DrawPath(&line_pen, &latitude_top);
-  GraphicsPath latitude_bottom;
-  AddArcEllipse(&latitude_bottom, globe.X + 5.0f,
-                globe.Y + globe.Height - 19.5f, globe.Width - 10.0f,
-                globe.Height - 23.0f, true);
-  graphics->DrawPath(&line_pen, &latitude_bottom);
-
-  graphics->DrawEllipse(&line_pen, globe.X + globe.Width * 0.30f, globe.Y + 1.0f,
-                        globe.Width * 0.40f, globe.Height - 2.0f);
-  graphics->DrawEllipse(&line_pen, globe.X + globe.Width * 0.18f, globe.Y + 2.0f,
-                        globe.Width * 0.64f, globe.Height - 4.0f);
+  Pen stroke_pen(foreground, 2.0f);
+  stroke_pen.SetStartCap(Gdiplus::LineCapRound);
+  stroke_pen.SetEndCap(Gdiplus::LineCapRound);
+  stroke_pen.SetLineJoin(Gdiplus::LineJoinRound);
 
   SolidBrush fill_brush(foreground);
 
+  // ===== Globe =====
+  const float globe_left = bounds.X + 4.8f;
+  const float globe_top = bounds.Y + 3.8f;
+  const float globe_size = bounds.Width - 9.6f;
+  const RectF globe(globe_left, globe_top, globe_size, globe_size);
+
+  graphics->DrawEllipse(&stroke_pen, globe);
+
+  // Vertical globe arcs
+  graphics->DrawArc(&stroke_pen, globe.X + globe.Width * 0.18f, globe.Y + 1.0f,
+                    globe.Width * 0.64f, globe.Height - 2.0f, 90.0f, 180.0f);
+  graphics->DrawArc(&stroke_pen, globe.X + globe.Width * 0.30f, globe.Y + 1.0f,
+                    globe.Width * 0.40f, globe.Height - 2.0f, 90.0f, 180.0f);
+
+  // Horizontal equator
+  graphics->DrawLine(&stroke_pen, globe.X + 1.2f, globe.Y + globe.Height / 2.0f,
+                     globe.GetRight() - 1.2f, globe.Y + globe.Height / 2.0f);
+
+  // Upper latitude
+  graphics->DrawArc(&stroke_pen, globe.X + 4.0f, globe.Y + 5.5f,
+                    globe.Width - 8.0f, globe.Height - 21.0f, 200.0f, 140.0f);
+
+  // Lower latitude
+  graphics->DrawArc(&stroke_pen, globe.X + 4.0f, globe.Y + globe.Height - 20.5f,
+                    globe.Width - 8.0f, globe.Height - 21.0f, 20.0f, 140.0f);
+
+  // ===== Walnut shell =====
   GraphicsPath shell_path;
   shell_path.StartFigure();
-  shell_path.AddBezier(PointF(bounds.X + 6.0f, bounds.Y + 21.0f),
-                       PointF(bounds.X + 9.0f, bounds.Y + 17.0f),
-                       PointF(bounds.X + 13.0f, bounds.Y + 15.0f),
-                       PointF(bounds.X + 16.0f, bounds.Y + 15.5f));
-  shell_path.AddBezier(PointF(bounds.X + 16.0f, bounds.Y + 15.5f),
-                       PointF(bounds.X + 20.0f, bounds.Y + 14.8f),
-                       PointF(bounds.X + 24.0f, bounds.Y + 17.0f),
-                       PointF(bounds.X + 26.0f, bounds.Y + 21.0f));
-  shell_path.AddBezier(PointF(bounds.X + 26.0f, bounds.Y + 21.0f),
-                       PointF(bounds.X + 24.8f, bounds.Y + 26.0f),
-                       PointF(bounds.X + 21.3f, bounds.Y + 29.2f),
-                       PointF(bounds.X + 16.0f, bounds.Y + 30.0f));
-  shell_path.AddBezier(PointF(bounds.X + 16.0f, bounds.Y + 30.0f),
-                       PointF(bounds.X + 10.7f, bounds.Y + 29.2f),
-                       PointF(bounds.X + 7.2f, bounds.Y + 26.0f),
-                       PointF(bounds.X + 6.0f, bounds.Y + 21.0f));
+  shell_path.AddBezier(PointF(bounds.X + 5.6f, bounds.Y + 20.2f),
+                       PointF(bounds.X + 8.5f, bounds.Y + 15.8f),
+                       PointF(bounds.X + 12.2f, bounds.Y + 14.2f),
+                       PointF(bounds.X + 16.0f, bounds.Y + 14.0f));
+  shell_path.AddBezier(PointF(bounds.X + 16.0f, bounds.Y + 14.0f),
+                       PointF(bounds.X + 19.8f, bounds.Y + 14.2f),
+                       PointF(bounds.X + 23.5f, bounds.Y + 15.8f),
+                       PointF(bounds.X + 26.4f, bounds.Y + 20.2f));
+  shell_path.AddBezier(PointF(bounds.X + 26.4f, bounds.Y + 20.2f),
+                       PointF(bounds.X + 25.2f, bounds.Y + 25.5f),
+                       PointF(bounds.X + 21.2f, bounds.Y + 28.8f),
+                       PointF(bounds.X + 16.0f, bounds.Y + 29.4f));
+  shell_path.AddBezier(PointF(bounds.X + 16.0f, bounds.Y + 29.4f),
+                       PointF(bounds.X + 10.8f, bounds.Y + 28.8f),
+                       PointF(bounds.X + 6.8f, bounds.Y + 25.5f),
+                       PointF(bounds.X + 5.6f, bounds.Y + 20.2f));
   shell_path.CloseFigure();
   graphics->FillPath(&fill_brush, &shell_path);
 
-  graphics->FillEllipse(&fill_brush, bounds.X + 10.0f, bounds.Y + 14.0f, 8.6f,
-                        10.4f);
-  graphics->FillEllipse(&fill_brush, bounds.X + 13.4f, bounds.Y + 10.6f, 7.6f,
-                        7.6f);
+  // ===== Squirrel body =====
+  graphics->FillEllipse(&fill_brush, bounds.X + 10.2f, bounds.Y + 14.6f, 8.4f,
+                        10.0f);
 
+  // Head
+  graphics->FillEllipse(&fill_brush, bounds.X + 13.4f, bounds.Y + 11.1f, 7.0f,
+                        7.0f);
+
+  // Tail
   GraphicsPath tail_path;
   tail_path.StartFigure();
-  tail_path.AddBezier(PointF(bounds.X + 19.2f, bounds.Y + 15.5f),
-                      PointF(bounds.X + 24.5f, bounds.Y + 10.5f),
-                      PointF(bounds.X + 29.0f, bounds.Y + 13.0f),
-                      PointF(bounds.X + 27.2f, bounds.Y + 18.2f));
-  tail_path.AddBezier(PointF(bounds.X + 27.2f, bounds.Y + 18.2f),
-                      PointF(bounds.X + 26.1f, bounds.Y + 22.0f),
-                      PointF(bounds.X + 22.4f, bounds.Y + 24.1f),
-                      PointF(bounds.X + 19.2f, bounds.Y + 22.2f));
-  tail_path.AddBezier(PointF(bounds.X + 19.2f, bounds.Y + 22.2f),
-                      PointF(bounds.X + 21.5f, bounds.Y + 19.8f),
-                      PointF(bounds.X + 21.4f, bounds.Y + 17.6f),
-                      PointF(bounds.X + 19.2f, bounds.Y + 15.5f));
+  tail_path.AddBezier(PointF(bounds.X + 18.9f, bounds.Y + 16.0f),
+                      PointF(bounds.X + 24.4f, bounds.Y + 10.3f),
+                      PointF(bounds.X + 29.2f, bounds.Y + 12.8f),
+                      PointF(bounds.X + 27.8f, bounds.Y + 18.0f));
+  tail_path.AddBezier(PointF(bounds.X + 27.8f, bounds.Y + 18.0f),
+                      PointF(bounds.X + 26.8f, bounds.Y + 22.3f),
+                      PointF(bounds.X + 22.7f, bounds.Y + 24.4f),
+                      PointF(bounds.X + 18.7f, bounds.Y + 22.1f));
+  tail_path.AddBezier(PointF(bounds.X + 18.7f, bounds.Y + 22.1f),
+                      PointF(bounds.X + 21.2f, bounds.Y + 19.6f),
+                      PointF(bounds.X + 21.3f, bounds.Y + 17.4f),
+                      PointF(bounds.X + 18.9f, bounds.Y + 16.0f));
   tail_path.CloseFigure();
   graphics->FillPath(&fill_brush, &tail_path);
 
+  // Left ear
   GraphicsPath ear_left;
   ear_left.StartFigure();
-  ear_left.AddLine(PointF(bounds.X + 12.0f, bounds.Y + 12.0f),
-                   PointF(bounds.X + 13.0f, bounds.Y + 8.0f));
-  ear_left.AddLine(PointF(bounds.X + 13.0f, bounds.Y + 8.0f),
-                   PointF(bounds.X + 15.8f, bounds.Y + 11.0f));
+  ear_left.AddLine(PointF(bounds.X + 12.0f, bounds.Y + 11.9f),
+                   PointF(bounds.X + 13.0f, bounds.Y + 7.8f));
+  ear_left.AddLine(PointF(bounds.X + 13.0f, bounds.Y + 7.8f),
+                   PointF(bounds.X + 15.8f, bounds.Y + 10.8f));
   ear_left.CloseFigure();
   graphics->FillPath(&fill_brush, &ear_left);
 
+  // Right ear
   GraphicsPath ear_right;
   ear_right.StartFigure();
-  ear_right.AddLine(PointF(bounds.X + 19.0f, bounds.Y + 12.0f),
-                    PointF(bounds.X + 20.0f, bounds.Y + 8.2f));
-  ear_right.AddLine(PointF(bounds.X + 20.0f, bounds.Y + 8.2f),
-                    PointF(bounds.X + 17.2f, bounds.Y + 11.0f));
+  ear_right.AddLine(PointF(bounds.X + 19.0f, bounds.Y + 11.9f),
+                    PointF(bounds.X + 20.0f, bounds.Y + 8.0f));
+  ear_right.AddLine(PointF(bounds.X + 20.0f, bounds.Y + 8.0f),
+                    PointF(bounds.X + 17.2f, bounds.Y + 10.8f));
   ear_right.CloseFigure();
   graphics->FillPath(&fill_brush, &ear_right);
 }
@@ -308,7 +318,7 @@ HICON TrayIcon::CreateStatusIcon(TrayStatus status) const {
   GdiplusScope gdiplus;
   if (!gdiplus.active()) return nullptr;
 
-  Bitmap bitmap(kIconSize, kIconSize, Gdiplus::PixelFormat32bppARGB);
+  Bitmap bitmap(kIconSize, kIconSize, PixelFormat32bppARGB);
   Graphics graphics(&bitmap);
   graphics.Clear(Color(0, 0, 0, 0));
   graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
@@ -316,11 +326,12 @@ HICON TrayIcon::CreateStatusIcon(TrayStatus status) const {
   graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
 
   SolidBrush background(StatusColor(status));
-  graphics.FillEllipse(&background, 1.0f, 1.0f, kIconSize - 2.0f,
-                       kIconSize - 2.0f);
+  graphics.FillEllipse(&background, 0.0f, 0.0f, static_cast<Gdiplus::REAL>(kIconSize),
+                       static_cast<Gdiplus::REAL>(kIconSize));
 
-  DrawOrexMark(&graphics, RectF(0.0f, 0.0f, static_cast<float>(kIconSize),
-                                static_cast<float>(kIconSize)),
+  DrawOrexMark(&graphics, RectF(0.0f, 0.0f,
+                                static_cast<Gdiplus::REAL>(kIconSize),
+                                static_cast<Gdiplus::REAL>(kIconSize)),
                CreamColor());
 
   HBITMAP color_bitmap = nullptr;

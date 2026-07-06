@@ -23,6 +23,7 @@ class XrayConfigBuilder {
     List<String> geoProxyRules = const [],
     List<String> geoBlockRules = const [],
     String logLevel = 'error',
+    int? apiPort,
   }) {
     return _encode(
       target,
@@ -54,6 +55,7 @@ class XrayConfigBuilder {
       geoProxyRules: geoProxyRules,
       geoBlockRules: geoBlockRules,
       logLevel: logLevel,
+      apiPort: apiPort,
     );
   }
 
@@ -113,6 +115,7 @@ class XrayConfigBuilder {
     List<String> geoProxyRules = const [],
     List<String> geoBlockRules = const [],
     String logLevel = 'error',
+    int? apiPort,
   }) {
     return _encode(
       target,
@@ -128,6 +131,7 @@ class XrayConfigBuilder {
       geoProxyRules: geoProxyRules,
       geoBlockRules: geoBlockRules,
       logLevel: logLevel,
+      apiPort: apiPort,
     );
   }
 
@@ -167,6 +171,7 @@ class XrayConfigBuilder {
     required List<String> geoProxyRules,
     required List<String> geoBlockRules,
     required String logLevel,
+    int? apiPort,
   }) {
     final routeToTarget = target.isBalancer
         ? <String, Object?>{'balancerTag': 'orexray-balancer'}
@@ -233,6 +238,12 @@ class XrayConfigBuilder {
         {'tag': 'block', 'protocol': 'blackhole'},
       ],
       'routing': routing,
+      if (apiPort != null)
+        'api': {
+          'tag': 'orexray-api',
+          'listen': '127.0.0.1:$apiPort',
+          'services': ['StatsService'],
+        },
       if (target.balancer?.strategy == BalancerStrategy.leastPing ||
           fallbackTag != null)
         'observatory': {
@@ -243,6 +254,8 @@ class XrayConfigBuilder {
         },
       'policy': {
         'system': {
+          'statsInboundUplink': true,
+          'statsInboundDownlink': true,
           'statsOutboundUplink': true,
           'statsOutboundDownlink': true,
         },

@@ -12,6 +12,7 @@ import '../../core/xray/xray_config_builder.dart';
 import 'windows_process_job.dart';
 import 'windows_system_proxy_controller.dart';
 import 'xray_core_manager.dart';
+import 'xray_stats_parser.dart';
 
 class WindowsXrayEngine implements TunnelEngine {
   WindowsXrayEngine({
@@ -51,8 +52,9 @@ class WindowsXrayEngine implements TunnelEngine {
   Process? _process;
   Timer? _statsTimer;
   DateTime? _connectedAt;
-  int? _baseDownload;
-  int? _baseUpload;
+  int? _statsApiPort;
+  String? _xrayExecutablePath;
+  bool _statsPollInFlight = false;
   DateTime? _lastStatsAt;
   int? _lastDownloadValue;
   int? _lastUploadValue;
@@ -157,6 +159,10 @@ class WindowsXrayEngine implements TunnelEngine {
       await WindowsProcessJob.terminateStaleProcesses(install.executable.path);
       if (!_isCurrentOperation(operationId)) return;
 
+      final statsApiPort = await _reserveLoopbackPort();
+      _statsApiPort = statsApiPort;
+      _xrayExecutablePath = install.executable.path;
+
       final configFile =
           File(p.join(install.directory.path, 'orexray-config.json'));
       final config = switch (mode) {
@@ -175,6 +181,7 @@ class WindowsXrayEngine implements TunnelEngine {
             geoProxyRules: _settings.geoProxyRules,
             geoBlockRules: _settings.geoBlockRules,
             logLevel: _settings.logLevel,
+            apiPort: statsApiPort,
           ),
         ConnectionMode.systemProxy || ConnectionMode.localProxy =>
           _configBuilder.buildLocalProxy(
@@ -189,6 +196,7 @@ class WindowsXrayEngine implements TunnelEngine {
             geoProxyRules: _settings.geoProxyRules,
             geoBlockRules: _settings.geoBlockRules,
             logLevel: _settings.logLevel,
+            apiPort: statsApiPort,
           ),
       };
       await configFile.writeAsString(config, flush: true);
@@ -278,8 +286,6 @@ class WindowsXrayEngine implements TunnelEngine {
       }
 
       _connectedAt = DateTime.now();
-      _baseDownload = null;
-      _baseUpload = null;
       _lastStatsAt = null;
       _lastDownloadValue = null;
       _lastUploadValue = null;
@@ -452,41 +458,32 @@ class WindowsXrayEngine implements TunnelEngine {
   }
 
   Future<void> _pollStats() async {
-    if (_process == null || _connectedAt == null) return;
-    final duration = DateTime.now().difference(_connectedAt!);
+    if (_process == null || _connectedAt == null || _statsPollInFlight) return;
+    final executable = _xrayExecutablePath;
+    final apiPort = _statsApiPort;
+    if (executable == null || apiPort == null) return;
 
-    if (_activeMode != ConnectionMode.vpnTun) {
-      _status(
-        TunnelStatus.connected,
-        mode: _activeMode,
-        message: _connectedMessage(_activeMode ?? ConnectionMode.localProxy),
-        stats: _current.stats.copyWithDuration(duration),
-      );
-      return;
-    }
-
+    _statsPollInFlight = true;
     try {
+      final duration = DateTime.now().difference(_connectedAt!);
       final result = await Process.run(
-        'powershell.exe',
+        executable,
         [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          r"$s=Get-NetAdapterStatistics -Name 'OrexRay' -ErrorAction Stop; Write-Output ($s.ReceivedBytes.ToString()+'|'+$s.SentBytes.ToString())",
+          'api',
+          'statsquery',
+          '--server=127.0.0.1:$apiPort',
         ],
         stdoutEncoding: utf8,
         stderrEncoding: utf8,
       );
-      if (result.exitCode != 0) return;
-      final parts = result.stdout.toString().trim().split('|');
-      if (parts.length != 2) return;
-      final received = int.tryParse(parts[0]);
-      final sent = int.tryParse(parts[1]);
-      if (received == null || sent == null) return;
-      _baseDownload ??= received;
-      _baseUpload ??= sent;
-      final download = received - _baseDownload!;
-      final upload = sent - _baseUpload!;
+      if (result.exitCode != 0) {
+        _updateStatsDurationOnly(duration);
+        return;
+      }
+
+      final totals = parseXrayInboundStats(result.stdout.toString());
+      final download = totals.downloadBytes;
+      final upload = totals.uploadBytes;
       final now = DateTime.now();
       final seconds = _lastStatsAt == null
           ? 0.0
@@ -503,13 +500,14 @@ class WindowsXrayEngine implements TunnelEngine {
               .clamp(0, 1 << 60)
               .toInt()
           : 0;
+
       _lastStatsAt = now;
       _lastDownloadValue = download;
       _lastUploadValue = upload;
       _status(
         TunnelStatus.connected,
-        mode: ConnectionMode.vpnTun,
-        message: _connectedMessage(ConnectionMode.vpnTun),
+        mode: _activeMode,
+        message: _connectedMessage(_activeMode ?? ConnectionMode.localProxy),
         stats: TrafficStats(
           downloadBytes: download,
           uploadBytes: upload,
@@ -519,13 +517,26 @@ class WindowsXrayEngine implements TunnelEngine {
         ),
       );
     } catch (_) {
-      _status(
-        TunnelStatus.connected,
-        mode: ConnectionMode.vpnTun,
-        message: _connectedMessage(ConnectionMode.vpnTun),
-        stats: _current.stats.copyWithDuration(duration),
-      );
+      _updateStatsDurationOnly(DateTime.now().difference(_connectedAt!));
+    } finally {
+      _statsPollInFlight = false;
     }
+  }
+
+  void _updateStatsDurationOnly(Duration duration) {
+    _status(
+      TunnelStatus.connected,
+      mode: _activeMode,
+      message: _connectedMessage(_activeMode ?? ConnectionMode.localProxy),
+      stats: _current.stats.copyWithDuration(duration),
+    );
+  }
+
+  Future<int> _reserveLoopbackPort() async {
+    final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final port = socket.port;
+    await socket.close();
+    return port;
   }
 
   @override
@@ -652,8 +663,9 @@ class WindowsXrayEngine implements TunnelEngine {
 
   void _resetRuntimeState() {
     _connectedAt = null;
-    _baseDownload = null;
-    _baseUpload = null;
+    _statsApiPort = null;
+    _xrayExecutablePath = null;
+    _statsPollInFlight = false;
     _lastStatsAt = null;
     _lastDownloadValue = null;
     _lastUploadValue = null;

@@ -256,4 +256,21 @@ void main() {
     );
   });
 
+  test('enables the local Xray Stats API for Windows configs', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildLocalProxy(
+        TunnelTarget.single(profile),
+        apiPort: 32123,
+      ),
+    ) as Map<String, dynamic>;
+    final api = json['api'] as Map<String, dynamic>;
+    final policy = json['policy'] as Map<String, dynamic>;
+    final system = policy['system'] as Map<String, dynamic>;
+
+    expect(api['listen'], '127.0.0.1:32123');
+    expect(api['services'], ['StatsService']);
+    expect(system['statsInboundUplink'], isTrue);
+    expect(system['statsInboundDownlink'], isTrue);
+  });
+
 }
