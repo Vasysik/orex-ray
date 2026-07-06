@@ -1,0 +1,55 @@
+# =============================================================
+# OrexRay — .gitignore
+#
+# Храним исходники, Android VpnService/libXray bridge и Windows runner.
+# Сборочные кэши, локальные ключи и скачанный libv2ray.aar не коммитим.
+# =============================================================
+
+# --- Сборка и кэш Flutter/Dart ---
+/build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+flutter_*.png
+**/generated_plugin_registrant.dart
+
+# --- android/: храним, но без генерируемых/машинно-зависимых частей ---
+android/.gradle/
+android/.cxx/
+android/local.properties
+android/key.properties
+android/**/GeneratedPluginRegistrant.java
+**/*.keystore
+**/*.jks
+
+# --- Windows: храним runner/native исходники, игнорируем только генерируемое ---
+windows/flutter/ephemeral/
+windows/**/CMakeFiles/
+windows/**/CMakeCache.txt
+windows/**/cmake_install.cmake
+windows/**/Debug/
+windows/**/Profile/
+windows/**/Release/
+windows/**/x64/
+windows/**/x86/
+windows/**/arm64/
+
+# --- Остальные платформы регенерируются flutter create ---
+/ios/
+/linux/
+/macos/
+/web/
+
+# --- IDE ---
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# --- Прочее ---
+.DS_Store
+*.log
