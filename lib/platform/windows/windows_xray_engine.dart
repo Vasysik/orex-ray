@@ -9,6 +9,7 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../core/xray/xray_config_builder.dart';
+import 'windows_process_job.dart';
 import 'windows_system_proxy_controller.dart';
 import 'xray_core_manager.dart';
 
@@ -45,6 +46,8 @@ class WindowsXrayEngine implements TunnelEngine {
   final List<String> _logs = [];
 
   late final Future<void> _proxyRecovery;
+  Future<void>? _systemProxyEnableFuture;
+  Future<void>? _stopFuture;
   Process? _process;
   Timer? _statsTimer;
   DateTime? _connectedAt;
@@ -56,6 +59,8 @@ class WindowsXrayEngine implements TunnelEngine {
   TunnelSnapshot _current;
   ConnectionMode? _activeMode;
   bool _stopping = false;
+  bool _disposed = false;
+  int _operationId = 0;
 
   @override
   TunnelSnapshot get current => _current;
@@ -93,9 +98,17 @@ class WindowsXrayEngine implements TunnelEngine {
     ));
   }
 
+  bool _isCurrentOperation(int operationId) =>
+      !_disposed && operationId == _operationId;
+
   @override
   Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
-    if (_process != null || _current.isBusy || _current.isConnected) return;
+    if (_disposed ||
+        _process != null ||
+        _current.isBusy ||
+        _current.isConnected) {
+      return;
+    }
     if (!supportedModes.contains(mode)) {
       _status(
         TunnelStatus.error,
@@ -106,6 +119,8 @@ class WindowsXrayEngine implements TunnelEngine {
       return;
     }
 
+    final operationId = ++_operationId;
+    Process? startedProcess;
     _stopping = false;
     _logs.clear();
     _activeMode = mode;
@@ -119,8 +134,11 @@ class WindowsXrayEngine implements TunnelEngine {
 
     try {
       await _proxyRecovery;
+      if (!_isCurrentOperation(operationId)) return;
+
       final install = await _coreManager.ensureInstalled(
         onProgress: (progress) {
+          if (!_isCurrentOperation(operationId)) return;
           _status(
             TunnelStatus.connecting,
             mode: mode,
@@ -130,8 +148,17 @@ class WindowsXrayEngine implements TunnelEngine {
           );
         },
       );
+      if (!_isCurrentOperation(operationId)) return;
 
-      final configFile = File(p.join(install.directory.path, 'orexray-config.json'));
+      // Recover from old OrexRay versions that could leave their managed
+      // xray.exe alive after the Flutter process exited. The native side only
+      // terminates processes whose full executable path exactly matches this
+      // OrexRay-managed core path.
+      await WindowsProcessJob.terminateStaleProcesses(install.executable.path);
+      if (!_isCurrentOperation(operationId)) return;
+
+      final configFile =
+          File(p.join(install.directory.path, 'orexray-config.json'));
       final config = switch (mode) {
         ConnectionMode.vpnTun => _configBuilder.buildWindowsTun(
             profile,
@@ -165,6 +192,7 @@ class WindowsXrayEngine implements TunnelEngine {
           ),
       };
       await configFile.writeAsString(config, flush: true);
+      if (!_isCurrentOperation(operationId)) return;
 
       _status(
         TunnelStatus.connecting,
@@ -173,6 +201,7 @@ class WindowsXrayEngine implements TunnelEngine {
         message: 'Проверяем конфигурацию…',
       );
       await _validateConfig(install, configFile);
+      if (!_isCurrentOperation(operationId)) return;
 
       _status(
         TunnelStatus.connecting,
@@ -180,21 +209,42 @@ class WindowsXrayEngine implements TunnelEngine {
         profile: profile,
         message: _startingMessage(mode),
       );
-      final process = await Process.start(
+      startedProcess = await Process.start(
         install.executable.path,
         ['run', '-c', configFile.path],
         workingDirectory: install.directory.path,
         mode: ProcessStartMode.normal,
       );
-      _process = process;
-      _listenLogs(process);
+      _process = startedProcess;
+      _listenLogs(startedProcess);
+
+      if (!_isCurrentOperation(operationId)) {
+        await _terminateProcessTree(startedProcess);
+        if (_process == startedProcess) _process = null;
+        return;
+      }
+
+      // Make Xray an OS-owned child of OrexRay before treating it as started.
+      // Closing the OrexRay process then kills Xray even after a crash or a
+      // forced process termination that bypasses Dart cleanup.
+      await WindowsProcessJob.attach(startedProcess.pid);
+      if (!_isCurrentOperation(operationId)) {
+        await _terminateProcessTree(startedProcess);
+        if (_process == startedProcess) _process = null;
+        return;
+      }
 
       final earlyExit = await Future.any<int?>([
-        process.exitCode.then<int?>((value) => value),
+        startedProcess.exitCode.then<int?>((value) => value),
         Future<int?>.delayed(const Duration(milliseconds: 900), () => null),
       ]);
+      if (!_isCurrentOperation(operationId)) {
+        await _terminateProcessTree(startedProcess);
+        if (_process == startedProcess) _process = null;
+        return;
+      }
       if (earlyExit != null) {
-        _process = null;
+        if (_process == startedProcess) _process = null;
         throw StateError(_bestError('Xray завершился с кодом $earlyExit'));
       }
 
@@ -205,10 +255,26 @@ class WindowsXrayEngine implements TunnelEngine {
           profile: profile,
           message: 'Включаем системный прокси Windows…',
         );
-        await _systemProxy.enable(
-          server: '127.0.0.1:${_settings.httpPort}',
-          bypass: _proxyBypass,
-        );
+        final enableFuture = _systemProxy
+            .enable(
+              server: '127.0.0.1:${_settings.httpPort}',
+              bypass: _proxyBypass,
+            )
+            .then<void>((_) {});
+        _systemProxyEnableFuture = enableFuture;
+        try {
+          await enableFuture;
+        } finally {
+          if (_systemProxyEnableFuture == enableFuture) {
+            _systemProxyEnableFuture = null;
+          }
+        }
+        if (!_isCurrentOperation(operationId)) {
+          await _restoreSystemProxy();
+          await _terminateProcessTree(startedProcess);
+          if (_process == startedProcess) _process = null;
+          return;
+        }
       }
 
       _connectedAt = DateTime.now();
@@ -226,35 +292,52 @@ class WindowsXrayEngine implements TunnelEngine {
       );
       _startStats();
 
-      unawaited(process.exitCode.then((code) async {
-        if (_stopping || _snapshots.isClosed) return;
+      unawaited(startedProcess.exitCode.then((code) async {
+        if (_process != startedProcess ||
+            _stopping ||
+            _snapshots.isClosed) {
+          return;
+        }
         _process = null;
         _statsTimer?.cancel();
         if (_activeMode == ConnectionMode.systemProxy) {
           await _restoreSystemProxy();
         }
+        _resetRuntimeState();
         _status(
           code == 0 ? TunnelStatus.disconnected : TunnelStatus.error,
           mode: mode,
           profile: profile,
-          error: code == 0 ? null : _bestError('Xray завершился с кодом $code'),
+          error: code == 0
+              ? null
+              : _bestError('Xray завершился с кодом $code'),
           stats: const TrafficStats(),
         );
+        _activeMode = null;
       }));
     } catch (error) {
-      _process?.kill();
-      _process = null;
+      final canceled = !_isCurrentOperation(operationId);
+      final process = startedProcess;
+      if (process != null) {
+        await _terminateProcessTree(process);
+        if (_process == process) _process = null;
+      }
       _statsTimer?.cancel();
       if (mode == ConnectionMode.systemProxy) {
         await _restoreSystemProxy();
       }
-      _status(
-        TunnelStatus.error,
-        mode: mode,
-        profile: profile,
-        error: _friendlyError(error, mode),
-        stats: const TrafficStats(),
-      );
+      _resetRuntimeState();
+
+      if (!canceled && !_disposed) {
+        _status(
+          TunnelStatus.error,
+          mode: mode,
+          profile: profile,
+          error: _friendlyError(error, mode),
+          stats: const TrafficStats(),
+        );
+      }
+      if (_activeMode == mode) _activeMode = null;
     }
   }
 
@@ -262,18 +345,54 @@ class WindowsXrayEngine implements TunnelEngine {
     XrayCoreInstall install,
     File configFile,
   ) async {
-    final result = await Process.run(
+    final process = await Process.start(
       install.executable.path,
       ['run', '-test', '-c', configFile.path],
       workingDirectory: install.directory.path,
-      stdoutEncoding: utf8,
-      stderrEncoding: utf8,
+      mode: ProcessStartMode.normal,
     );
-    if (result.exitCode != 0) {
-      final output = '${result.stderr}\n${result.stdout}'.trim();
-      throw FormatException(
-        output.isEmpty ? 'Xray отклонил конфигурацию.' : output,
-      );
+    _process = process;
+
+    try {
+      final stdout = process.stdout.transform(utf8.decoder).join();
+      final stderr = process.stderr.transform(utf8.decoder).join();
+      Object? attachError;
+      try {
+        await WindowsProcessJob.attach(process.pid);
+      } catch (error) {
+        attachError = error;
+      }
+
+      int exitCode;
+      if (attachError == null) {
+        exitCode = await process.exitCode;
+      } else {
+        // `run -test` can finish before the platform channel manages to open
+        // its PID. In that harmless race, trust the completed validation. A
+        // still-running process must be job-owned, so a real attach failure is
+        // fatal and the process is terminated below.
+        final earlyExit = await Future.any<int?>([
+          process.exitCode.then<int?>((value) => value),
+          Future<int?>.delayed(
+            const Duration(milliseconds: 100),
+            () => null,
+          ),
+        ]);
+        if (earlyExit == null) throw attachError;
+        exitCode = earlyExit;
+      }
+
+      final output = '${await stderr}\n${await stdout}'.trim();
+      if (exitCode != 0) {
+        throw FormatException(
+          output.isEmpty ? 'Xray отклонил конфигурацию.' : output,
+        );
+      }
+    } catch (_) {
+      await _terminateProcessTree(process);
+      rethrow;
+    } finally {
+      if (_process == process) _process = null;
     }
   }
 
@@ -373,10 +492,16 @@ class WindowsXrayEngine implements TunnelEngine {
           ? 0.0
           : now.difference(_lastStatsAt!).inMilliseconds / 1000.0;
       final downBps = seconds > 0 && _lastDownloadValue != null
-          ? ((download - _lastDownloadValue!) / seconds).round().clamp(0, 1 << 60).toInt()
+          ? ((download - _lastDownloadValue!) / seconds)
+              .round()
+              .clamp(0, 1 << 60)
+              .toInt()
           : 0;
       final upBps = seconds > 0 && _lastUploadValue != null
-          ? ((upload - _lastUploadValue!) / seconds).round().clamp(0, 1 << 60).toInt()
+          ? ((upload - _lastUploadValue!) / seconds)
+              .round()
+              .clamp(0, 1 << 60)
+              .toInt()
           : 0;
       _lastStatsAt = now;
       _lastDownloadValue = download;
@@ -404,50 +529,134 @@ class WindowsXrayEngine implements TunnelEngine {
   }
 
   @override
-  Future<void> stop() async {
-    final process = _process;
-    if (process == null) {
-      await _restoreSystemProxy();
-      _status(
-        TunnelStatus.disconnected,
-        mode: _activeMode,
-        stats: const TrafficStats(),
-      );
-      return;
-    }
+  Future<void> stop() {
+    ++_operationId;
+    final pending = _stopFuture;
+    if (pending != null) return pending;
 
+    late final Future<void> future;
+    future = _stopInternal().whenComplete(() {
+      if (_stopFuture == future) _stopFuture = null;
+    });
+    _stopFuture = future;
+    return future;
+  }
+
+  Future<void> _stopInternal() async {
     _stopping = true;
-    _status(
-      TunnelStatus.disconnecting,
-      mode: _activeMode,
-      message: 'Останавливаем OrexRay…',
-    );
+    final process = _process;
+    final mode = _activeMode ?? _current.mode;
+    final wasActive = process != null ||
+        _current.status == TunnelStatus.connecting ||
+        _current.status == TunnelStatus.connected ||
+        _current.status == TunnelStatus.error;
+
+    if (wasActive) {
+      _status(
+        TunnelStatus.disconnecting,
+        mode: mode,
+        message: 'Останавливаем OrexRay…',
+      );
+    }
     _statsTimer?.cancel();
 
-    if (_activeMode == ConnectionMode.systemProxy) {
-      await _restoreSystemProxy();
+    try {
+      try {
+        await _proxyRecovery;
+      } catch (error) {
+        _appendLog('System proxy recovery failed: $error');
+      }
+
+      final pendingProxyEnable = _systemProxyEnableFuture;
+      if (pendingProxyEnable != null) {
+        try {
+          await pendingProxyEnable;
+        } catch (error) {
+          _appendLog('System proxy enable failed during shutdown: $error');
+        }
+      }
+
+      if (mode == ConnectionMode.systemProxy) {
+        await _restoreSystemProxy();
+      }
+
+      if (process != null) {
+        final stopped = await _terminateProcessTree(process);
+        if (!stopped) {
+          _status(
+            TunnelStatus.error,
+            mode: mode,
+            profile: _current.profile,
+            error: 'Не удалось остановить Xray. Заверши OrexRay через трей '
+                'или Диспетчер задач — системная привязка процесса остановит '
+                'Xray вместе с приложением.',
+            stats: const TrafficStats(),
+          );
+          return;
+        }
+        if (_process == process) _process = null;
+      }
+
+      _resetRuntimeState();
+      _status(
+        TunnelStatus.disconnected,
+        mode: mode,
+        stats: const TrafficStats(),
+      );
+      _activeMode = null;
+    } finally {
+      _stopping = false;
+    }
+  }
+
+  Future<bool> _terminateProcessTree(Process process) async {
+    try {
+      process.kill();
+    } catch (error) {
+      _appendLog('Xray terminate failed: $error');
     }
 
-    process.kill();
-    try {
-      await process.exitCode.timeout(const Duration(seconds: 3));
-    } on TimeoutException {
-      await Process.run('taskkill', ['/PID', '${process.pid}', '/T', '/F']);
+    if (await _waitForExit(process, const Duration(seconds: 3))) {
+      return true;
     }
-    _process = null;
+
+    try {
+      final result = await Process.run(
+        'taskkill',
+        ['/PID', '${process.pid}', '/T', '/F'],
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+      if (result.exitCode != 0) {
+        final output = '${result.stderr}\n${result.stdout}'.trim();
+        if (output.isNotEmpty) _appendLog(output);
+      }
+    } catch (error) {
+      _appendLog('taskkill failed: $error');
+    }
+
+    return _waitForExit(process, const Duration(seconds: 2));
+  }
+
+  Future<bool> _waitForExit(Process process, Duration timeout) async {
+    try {
+      await process.exitCode.timeout(timeout);
+      return true;
+    } on TimeoutException {
+      return false;
+    } catch (error) {
+      _appendLog('Could not observe Xray exit: $error');
+      return false;
+    }
+  }
+
+  void _resetRuntimeState() {
     _connectedAt = null;
     _baseDownload = null;
     _baseUpload = null;
     _lastStatsAt = null;
     _lastDownloadValue = null;
     _lastUploadValue = null;
-    _status(
-      TunnelStatus.disconnected,
-      mode: _activeMode,
-      stats: const TrafficStats(),
-    );
-    _activeMode = null;
-    _stopping = false;
   }
 
   Future<void> _restoreSystemProxy() async {
@@ -473,11 +682,23 @@ class WindowsXrayEngine implements TunnelEngine {
 
   @override
   Future<void> dispose() async {
-    _statsTimer?.cancel();
-    if (_activeMode == ConnectionMode.systemProxy) {
-      await _restoreSystemProxy();
+    if (_disposed) return;
+    _disposed = true;
+    ++_operationId;
+
+    if (_process != null ||
+        _activeMode != null ||
+        _current.status != TunnelStatus.disconnected) {
+      await stop();
+    } else {
+      try {
+        await _proxyRecovery;
+      } catch (error) {
+        _appendLog('System proxy recovery failed: $error');
+      }
     }
-    _process?.kill();
-    await _snapshots.close();
+
+    _statsTimer?.cancel();
+    if (!_snapshots.isClosed) await _snapshots.close();
   }
 }

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_version.dart';
@@ -9,6 +12,7 @@ import '../core/tunnel/tunnel_engine.dart';
 import '../features/home/tunnel_controller.dart';
 import '../features/shell/app_shell.dart';
 import '../platform/tunnel_engine_factory.dart';
+import '../platform/windows/windows_lifecycle_controller.dart';
 import '../shared/theme/orex_theme.dart';
 import '../shared/theme/theme_controller.dart';
 
@@ -47,11 +51,19 @@ class _OrexRayAppState extends State<OrexRayApp> {
     profiles: widget.profiles,
     settings: widget.connectionSettings,
   );
+  WindowsLifecycleController? _windowsLifecycle;
 
   @override
   void initState() {
     super.initState();
     widget.theme.addListener(_refresh);
+    if (Platform.isWindows) {
+      _windowsLifecycle = WindowsLifecycleController(
+        tunnel: _tunnel,
+        settings: widget.connectionSettings,
+      );
+      unawaited(_windowsLifecycle!.initialize());
+    }
   }
 
   void _refresh() => setState(() {});
@@ -59,6 +71,7 @@ class _OrexRayAppState extends State<OrexRayApp> {
   @override
   void dispose() {
     widget.theme.removeListener(_refresh);
+    _windowsLifecycle?.dispose();
     _tunnel.dispose();
     super.dispose();
   }

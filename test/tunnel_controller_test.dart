@@ -83,6 +83,7 @@ void main() {
     await settings.setGeoDirectRules('geoip:private, geosite:ru');
     await settings.setGeoBlockRules('geosite:category-ads-all');
     await settings.setRestartServiceOnKill(false);
+    await settings.setCloseToTray(false);
 
     expect(settings.socksPort, 31080);
     expect(settings.httpPort, 31081);
@@ -100,6 +101,7 @@ void main() {
     expect(settings.geoDirectRules, ['geoip:private', 'geosite:ru']);
     expect(settings.geoBlockRules, ['geosite:category-ads-all']);
     expect(settings.restartServiceOnKill, isFalse);
+    expect(settings.closeToTray, isFalse);
 
     settings.dispose();
   });
@@ -116,6 +118,68 @@ void main() {
     expect(settings.dnsPreset, DnsPreset.system);
     expect(settings.localProxyInVpn, isTrue);
     expect(settings.showNotificationPing, isTrue);
+    expect(settings.closeToTray, isFalse);
+  });
+
+  test('Windows closes to tray by default', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    addTearDown(settings.dispose);
+
+    expect(settings.closeToTray, isTrue);
+  });
+
+  test('shutdown awaits engine stop and dispose exactly once', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load(
+      automaticLatencyRefresh: false,
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final engine = _RecordingTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.shutdown();
+    await controller.shutdown();
+
+    expect(engine.stopCalls, 1);
+    expect(engine.disposeCalls, 1);
+  });
+
+  test('regular controller disposal does not stop a background tunnel', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load(
+      automaticLatencyRefresh: false,
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final engine = _RecordingTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+    );
+
+    controller.dispose();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(engine.stopCalls, 0);
+    expect(engine.disposeCalls, 1);
+    profiles.dispose();
+    settings.dispose();
   });
 
   test('switching profile while connected restarts the active tunnel', () async {
@@ -172,6 +236,7 @@ class _RecordingTunnelEngine implements TunnelEngine {
   );
   final List<String> startedTargets = <String>[];
   int stopCalls = 0;
+  int disposeCalls = 0;
 
   @override
   TunnelSnapshot get current => _current;
@@ -208,5 +273,7 @@ class _RecordingTunnelEngine implements TunnelEngine {
   }
 
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    disposeCalls += 1;
+  }
 }

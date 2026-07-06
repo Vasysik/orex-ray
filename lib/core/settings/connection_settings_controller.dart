@@ -62,6 +62,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     required bool showNotificationSpeed,
     required bool showNotificationPing,
     required bool restartServiceOnKill,
+    required bool closeToTray,
   })  : _preferences = preferences,
         _supportedModes = Set.unmodifiable(supportedModes),
         _mode = mode,
@@ -82,7 +83,8 @@ class ConnectionSettingsController extends ChangeNotifier {
         _statsIntervalSeconds = statsIntervalSeconds,
         _showNotificationSpeed = showNotificationSpeed,
         _showNotificationPing = showNotificationPing,
-        _restartServiceOnKill = restartServiceOnKill;
+        _restartServiceOnKill = restartServiceOnKill,
+        _closeToTray = closeToTray;
 
   static const _modeKey = 'orex_ray_connection_mode_v1';
   static const _socksPortKey = 'orex_ray_socks_port_v1';
@@ -103,6 +105,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   static const _notificationSpeedKey = 'orex_ray_notification_speed_v1';
   static const _notificationPingKey = 'orex_ray_notification_ping_v1';
   static const _restartServiceKey = 'orex_ray_restart_service_v1';
+  static const _closeToTrayKey = 'orex_ray_close_to_tray_v1';
 
   static const int defaultSocksPort = 20808;
   static const int defaultHttpPort = 20809;
@@ -130,6 +133,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   bool _showNotificationSpeed;
   bool _showNotificationPing;
   bool _restartServiceOnKill;
+  bool _closeToTray;
 
   static Future<ConnectionSettingsController> load({
     String? operatingSystem,
@@ -175,6 +179,8 @@ class ConnectionSettingsController extends ChangeNotifier {
       showNotificationPing:
           preferences.getBool(_notificationPingKey) ?? true,
       restartServiceOnKill: preferences.getBool(_restartServiceKey) ?? true,
+      closeToTray:
+          preferences.getBool(_closeToTrayKey) ?? (platform == 'windows'),
     );
   }
 
@@ -198,6 +204,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   bool get showNotificationSpeed => _showNotificationSpeed;
   bool get showNotificationPing => _showNotificationPing;
   bool get restartServiceOnKill => _restartServiceOnKill;
+  bool get closeToTray => _closeToTray;
 
   List<String> get dnsServers => switch (_dnsPreset) {
         DnsPreset.system => const [],
@@ -384,6 +391,13 @@ class ConnectionSettingsController extends ChangeNotifier {
     if (_restartServiceOnKill == value) return;
     _restartServiceOnKill = value;
     await _preferences.setBool(_restartServiceKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setCloseToTray(bool value) async {
+    if (_closeToTray == value) return;
+    _closeToTray = value;
+    await _preferences.setBool(_closeToTrayKey, value);
     notifyListeners();
   }
 

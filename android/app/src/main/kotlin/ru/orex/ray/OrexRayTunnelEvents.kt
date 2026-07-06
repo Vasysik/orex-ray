@@ -1,5 +1,6 @@
 package ru.orex.ray
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.EventChannel
@@ -13,7 +14,8 @@ object OrexRayTunnelEvents {
         private set
 
     @Synchronized
-    fun attach(eventSink: EventChannel.EventSink) {
+    fun attach(context: Context, eventSink: EventChannel.EventSink) {
+        lastEvent = OrexRayRuntimeStateStore.load(context)
         sink = eventSink
         eventSink.success(lastEvent)
     }
@@ -23,7 +25,8 @@ object OrexRayTunnelEvents {
         sink = null
     }
 
-    fun emit(value: Map<String, Any?>) {
+    fun emit(context: Context, value: Map<String, Any?>) {
+        OrexRayRuntimeStateStore.save(context, value)
         lastEvent = value
         mainHandler.post {
             synchronized(this) {

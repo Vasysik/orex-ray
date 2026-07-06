@@ -49,6 +49,7 @@ class OrexRayVpnPermissionActivity : Activity() {
             startVpnAndFinish()
         } else {
             OrexRayTunnelEvents.emit(
+                this,
                 OrexRayTunnelEvents.event(
                     status = "error",
                     mode = OrexRayVpnService.MODE_VPN,
@@ -76,6 +77,7 @@ class OrexRayVpnPermissionActivity : Activity() {
         }.onFailure {
             Log.e(TAG, "Could not start VPN after Quick Settings permission flow", it)
             OrexRayTunnelEvents.emit(
+                this,
                 OrexRayTunnelEvents.event(
                     status = "error",
                     mode = OrexRayVpnService.MODE_VPN,

@@ -17,6 +17,7 @@ class TunnelController extends ChangeNotifier {
         _settings = settings,
         _engineSnapshot = engine.current {
     _engineSubscription = _engine.snapshots.listen((value) {
+      if (_closing) return;
       _engineSnapshot = value;
       notifyListeners();
     });
@@ -29,6 +30,12 @@ class TunnelController extends ChangeNotifier {
   final ConnectionSettingsController _settings;
   late final StreamSubscription<TunnelSnapshot> _engineSubscription;
   TunnelSnapshot _engineSnapshot;
+  Future<void>? _shutdownFuture;
+  Future<void>? _disposeFuture;
+  Future<void>? _subscriptionCancelFuture;
+  bool _dependenciesDetached = false;
+  bool _closing = false;
+  bool _disposed = false;
 
   Set<ConnectionMode> get supportedModes => {
         for (final mode in _settings.supportedModes)
@@ -108,6 +115,7 @@ class TunnelController extends ChangeNotifier {
   }
 
   Future<void> toggle() async {
+    if (_closing) return;
     final current = snapshot;
     if (current.isBusy) return;
     if (current.isConnected) {
@@ -130,12 +138,53 @@ class TunnelController extends ChangeNotifier {
     _syncFromEngine();
   }
 
+  Future<void> disconnect() async {
+    if (_closing) return;
+    final current = snapshot;
+    if (current.status == TunnelStatus.disconnected) return;
+    await _engine.stop();
+    _syncFromEngine();
+  }
+
+  Future<void> shutdown() => _shutdownFuture ??= _shutdown();
+
+  Future<void> _shutdown() async {
+    _closing = true;
+    _detachDependencies();
+    await _cancelEngineSubscription();
+    try {
+      await _engine.stop();
+    } finally {
+      await _disposeEngine();
+    }
+  }
+
+  Future<void> _disposeWithoutStopping() async {
+    _closing = true;
+    _detachDependencies();
+    await _cancelEngineSubscription();
+    await _disposeEngine();
+  }
+
+  Future<void> _cancelEngineSubscription() =>
+      _subscriptionCancelFuture ??= _engineSubscription.cancel();
+
+  Future<void> _disposeEngine() => _disposeFuture ??= _engine.dispose();
+
   void _syncFromEngine() {
     _engineSnapshot = _engine.current;
-    notifyListeners();
+    if (!_closing) notifyListeners();
+  }
+
+  void _detachDependencies() {
+    if (_dependenciesDetached) return;
+    _dependenciesDetached = true;
+    _profiles.removeListener(_onDependencyChanged);
+    _settings.removeListener(_onDependencyChanged);
   }
 
   void _onDependencyChanged() {
+    if (_closing) return;
     final active = _engineSnapshot.profile;
     if ((_engineSnapshot.isConnected || _engineSnapshot.isBusy) &&
         active != null &&
@@ -152,10 +201,11 @@ class TunnelController extends ChangeNotifier {
 
   @override
   void dispose() {
-    _profiles.removeListener(_onDependencyChanged);
-    _settings.removeListener(_onDependencyChanged);
-    unawaited(_engineSubscription.cancel());
-    unawaited(_engine.dispose());
+    if (_disposed) return;
+    _disposed = true;
+    _closing = true;
+    _detachDependencies();
+    unawaited(_shutdownFuture ??= _disposeWithoutStopping());
     super.dispose();
   }
 }

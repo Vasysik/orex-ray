@@ -441,7 +441,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     }
 
     private fun emitTunnelEvent(value: Map<String, Any?>) {
-        OrexRayTunnelEvents.emit(value)
+        OrexRayTunnelEvents.emit(this, value)
         OrexRayQuickSettingsTileService.requestRefresh(this)
     }
 

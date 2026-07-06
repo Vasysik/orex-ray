@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../core/app_version.dart';
@@ -68,6 +70,7 @@ class _AppShellState extends State<AppShell> {
       AppearanceScreen(theme: widget.theme),
       AboutScreen(appVersion: widget.appVersion),
       MoreScreen(
+        showApps: !Platform.isWindows,
         onOpenApps: () => setState(() => _index = _appsIndex),
         onOpenNetwork: () => setState(() => _index = _networkIndex),
         onOpenGeoData: () => setState(() => _index = _geoDataIndex),
@@ -85,7 +88,60 @@ class _AppShellState extends State<AppShell> {
             builder: (context, constraints) {
               final desktop = constraints.maxWidth >= 900;
               if (desktop) {
-                final desktopIndex = _index == _moreIndex ? _networkIndex : _index;
+                final desktopPageIndices = Platform.isWindows
+                    ? const [0, 1, 2, 4, 5, 6, 7, 8]
+                    : const [0, 1, 2, 3, 4, 5, 6, 7, 8];
+                final requestedPageIndex = _index == _moreIndex
+                    ? _networkIndex
+                    : _index;
+                final normalizedPageIndex =
+                    desktopPageIndices.contains(requestedPageIndex)
+                        ? requestedPageIndex
+                        : _networkIndex;
+                final desktopIndex =
+                    desktopPageIndices.indexOf(normalizedPageIndex);
+                final desktopPages = [
+                  for (final pageIndex in desktopPageIndices) pages[pageIndex],
+                ];
+                final desktopDestinations = <NavigationRailDestination>[
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.power_settings_new_rounded),
+                    label: Text('Главная'),
+                  ),
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.storage_rounded),
+                    label: Text('Профили'),
+                  ),
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.route_rounded),
+                    label: Text('Подключение'),
+                  ),
+                  if (!Platform.isWindows)
+                    const NavigationRailDestination(
+                      icon: Icon(Icons.apps_rounded),
+                      label: Text('Приложения'),
+                    ),
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.public_rounded),
+                    label: Text('Сеть'),
+                  ),
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.travel_explore_rounded),
+                    label: Text('GeoData'),
+                  ),
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.battery_saver_rounded),
+                    label: Text('Фон'),
+                  ),
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.palette_outlined),
+                    label: Text('Интерфейс'),
+                  ),
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.info_outline_rounded),
+                    label: Text('О приложении'),
+                  ),
+                ];
                 return Padding(
                   padding: const EdgeInsets.all(12),
                   child: Row(
@@ -96,48 +152,12 @@ class _AppShellState extends State<AppShell> {
                           width: 132,
                           child: NavigationRail(
                             selectedIndex: desktopIndex,
-                            onDestinationSelected: (value) =>
-                                setState(() => _index = value),
+                            onDestinationSelected: (value) => setState(
+                              () => _index = desktopPageIndices[value],
+                            ),
                             labelType: NavigationRailLabelType.all,
                             groupAlignment: -0.85,
-                            destinations: const [
-                              NavigationRailDestination(
-                                icon: Icon(Icons.power_settings_new_rounded),
-                                label: Text('Главная'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.storage_rounded),
-                                label: Text('Профили'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.route_rounded),
-                                label: Text('Подключение'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.apps_rounded),
-                                label: Text('Приложения'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.public_rounded),
-                                label: Text('Сеть'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.travel_explore_rounded),
-                                label: Text('GeoData'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.battery_saver_rounded),
-                                label: Text('Фон'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.palette_outlined),
-                                label: Text('Интерфейс'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.info_outline_rounded),
-                                label: Text('О приложении'),
-                              ),
-                            ],
+                            destinations: desktopDestinations,
                           ),
                         ),
                       ),
@@ -148,7 +168,7 @@ class _AppShellState extends State<AppShell> {
                           opacity: 0.30,
                           child: IndexedStack(
                             index: desktopIndex,
-                            children: pages.take(9).toList(growable: false),
+                            children: desktopPages,
                           ),
                         ),
                       ),
@@ -168,7 +188,9 @@ class _AppShellState extends State<AppShell> {
                       child: NavigationBar(
                         selectedIndex: mobileSelected,
                         onDestinationSelected: (value) {
-                          setState(() => _index = value == 3 ? _moreIndex : value);
+                          setState(
+                            () => _index = value == 3 ? _moreIndex : value,
+                          );
                         },
                         destinations: const [
                           NavigationDestination(

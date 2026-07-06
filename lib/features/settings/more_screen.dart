@@ -12,6 +12,7 @@ class MoreScreen extends StatelessWidget {
     required this.onOpenBackground,
     required this.onOpenAppearance,
     required this.onOpenAbout,
+    this.showApps = true,
   });
 
   final VoidCallback onOpenApps;
@@ -20,6 +21,7 @@ class MoreScreen extends StatelessWidget {
   final VoidCallback onOpenBackground;
   final VoidCallback onOpenAppearance;
   final VoidCallback onOpenAbout;
+  final bool showApps;
 
   @override
   Widget build(BuildContext context) {
@@ -29,17 +31,21 @@ class MoreScreen extends StatelessWidget {
         Text('Ещё', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text(
-          'Приложения, сеть, GeoData и поведение OrexRay',
+          showApps
+              ? 'Приложения, сеть, GeoData и поведение OrexRay'
+              : 'Сеть, GeoData и поведение OrexRay',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 20),
-        _MoreTile(
-          icon: Icons.apps_rounded,
-          title: 'Приложения',
-          subtitle: 'Split tunneling и исключения Android',
-          onTap: onOpenApps,
-        ),
-        const SizedBox(height: 12),
+        if (showApps) ...[
+          _MoreTile(
+            icon: Icons.apps_rounded,
+            title: 'Приложения',
+            subtitle: 'Split tunneling и исключения Android',
+            onTap: onOpenApps,
+          ),
+          const SizedBox(height: 12),
+        ],
         _MoreTile(
           icon: Icons.public_rounded,
           title: 'Сеть',

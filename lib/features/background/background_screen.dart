@@ -72,6 +72,28 @@ class BackgroundScreen extends StatelessWidget {
               ],
             ],
           ),
+          if (Platform.isWindows) ...[
+            const SizedBox(height: 16),
+            SettingsSection(
+              title: 'Windows',
+              subtitle: 'Поведение окна и фоновой работы OrexRay.',
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(
+                    Icons.system_update_alt_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Сворачивать в трей при закрытии'),
+                  subtitle: const Text(
+                    'Если выключено, крестик остановит подключение и '
+                    'завершит OrexRay.',
+                  ),
+                  value: settings.closeToTray,
+                  onChanged: settings.setCloseToTray,
+                ),
+              ],
+            ),
+          ],
           if (Platform.isAndroid) ...[
             const SizedBox(height: 16),
             SettingsSection(

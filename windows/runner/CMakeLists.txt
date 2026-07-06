@@ -9,7 +9,9 @@ project(runner LANGUAGES CXX)
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
+  "process_job.cpp"
   "system_proxy_controller.cpp"
+  "tray_icon.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
@@ -33,7 +35,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
-target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib" "ole32.lib" "wininet.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib" "ole32.lib" "wininet.lib" "shell32.lib")
 # The UAC/DPI manifest is embedded by Runner.rc. Disabling linker-generated
 # manifests avoids the mt.exe merge step that caused LNK1327 on some Windows SDK setups.
 target_link_options(${BINARY_NAME} PRIVATE "/MANIFEST:NO")

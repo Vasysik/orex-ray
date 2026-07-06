@@ -169,7 +169,7 @@ class MainActivity : FlutterActivity() {
                             }
                     }
 
-                    "status" -> result.success(OrexRayTunnelEvents.lastEvent)
+                    "status" -> result.success(OrexRayRuntimeStateStore.load(this))
                     "assetDirectory" -> result.success(
                         File(filesDir, "xray").apply { mkdirs() }.absolutePath,
                     )
@@ -192,7 +192,7 @@ class MainActivity : FlutterActivity() {
                     arguments: Any?,
                     events: EventChannel.EventSink,
                 ) {
-                    OrexRayTunnelEvents.attach(events)
+                    OrexRayTunnelEvents.attach(applicationContext, events)
                 }
 
                 override fun onCancel(arguments: Any?) {
@@ -365,6 +365,7 @@ class MainActivity : FlutterActivity() {
         val permissionIntent = VpnService.prepare(this)
         if (permissionIntent != null) {
             OrexRayTunnelEvents.emit(
+                this,
                 OrexRayTunnelEvents.event(
                     status = "connecting",
                     mode = request.mode,
@@ -403,6 +404,7 @@ class MainActivity : FlutterActivity() {
                 .onFailure { error ->
                     Log.e(TAG, "Could not start VPN service after permission", error)
                     OrexRayTunnelEvents.emit(
+                        this,
                         OrexRayTunnelEvents.event(
                             status = "error",
                             mode = request.mode,
@@ -412,6 +414,7 @@ class MainActivity : FlutterActivity() {
                 }
         } else {
             OrexRayTunnelEvents.emit(
+                this,
                 OrexRayTunnelEvents.event(
                     status = "error",
                     mode = request?.mode ?: MODE_VPN,
