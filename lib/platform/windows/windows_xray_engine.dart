@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../../core/app_version.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
@@ -14,11 +15,12 @@ import 'xray_core_manager.dart';
 class WindowsXrayEngine implements TunnelEngine {
   WindowsXrayEngine({
     required ConnectionSettingsController settings,
+    OrexAppVersion appVersion = OrexAppVersion.fallback,
     XrayCoreManager? coreManager,
     XrayConfigBuilder? configBuilder,
     WindowsSystemProxyController? systemProxyController,
   })  : _settings = settings,
-        _coreManager = coreManager ?? XrayCoreManager(),
+        _coreManager = coreManager ?? XrayCoreManager(appVersion: appVersion),
         _configBuilder = configBuilder ?? const XrayConfigBuilder(),
         _systemProxy =
             systemProxyController ?? WindowsSystemProxyController(),

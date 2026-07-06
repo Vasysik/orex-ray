@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/app_version.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
@@ -11,10 +12,12 @@ class SettingsScreen extends StatelessWidget {
     super.key,
     required this.theme,
     required this.tunnel,
+    this.appVersion = OrexAppVersion.fallback,
   });
 
   final ThemeController theme;
   final TunnelController tunnel;
+  final OrexAppVersion appVersion;
 
   @override
   Widget build(BuildContext context) {
@@ -114,13 +117,16 @@ class SettingsScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          const _Section(
+          _Section(
             title: 'О приложении',
             children: [
               ListTile(
-                leading: Icon(Icons.pets_rounded, color: OrexColors.copper),
-                title: Text('OrexRay'),
-                subtitle: Text('Версия 0.6.1 · VPN + System Proxy + Local Proxy'),
+                leading: const Icon(
+                  Icons.pets_rounded,
+                  color: OrexColors.copper,
+                ),
+                title: const Text('OrexRay'),
+                subtitle: Text(appVersion.settingsSubtitle),
               ),
             ],
           ),

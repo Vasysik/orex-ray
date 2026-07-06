@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/app_version.dart';
 import '../core/apps/app_routing_controller.dart';
 import '../core/geodata/geodata_controller.dart';
 import '../core/profiles/profiles_controller.dart';
@@ -19,6 +20,7 @@ class OrexRayApp extends StatefulWidget {
     required this.connectionSettings,
     required this.appRouting,
     required this.geoData,
+    this.appVersion = OrexAppVersion.fallback,
     this.tunnelEngine,
   });
 
@@ -27,6 +29,7 @@ class OrexRayApp extends StatefulWidget {
   final ConnectionSettingsController connectionSettings;
   final AppRoutingController appRouting;
   final GeoDataController geoData;
+  final OrexAppVersion appVersion;
   final TunnelEngine? tunnelEngine;
 
   @override
@@ -39,6 +42,7 @@ class _OrexRayAppState extends State<OrexRayApp> {
         createTunnelEngine(
           settings: widget.connectionSettings,
           appRouting: widget.appRouting,
+          appVersion: widget.appVersion,
         ),
     profiles: widget.profiles,
     settings: widget.connectionSettings,
@@ -74,6 +78,7 @@ class _OrexRayAppState extends State<OrexRayApp> {
         settings: widget.connectionSettings,
         appRouting: widget.appRouting,
         geoData: widget.geoData,
+        appVersion: widget.appVersion,
       ),
     );
   }

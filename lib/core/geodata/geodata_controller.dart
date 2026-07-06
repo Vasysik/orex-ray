@@ -10,6 +10,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../app_version.dart';
+
 class GeoAssetStatus {
   const GeoAssetStatus({
     required this.name,
@@ -33,11 +35,13 @@ class GeoDataController extends ChangeNotifier {
     required bool autoUpdate,
     required int updateIntervalHours,
     required DateTime? lastCheckedAt,
+    required String userAgent,
   })  : _preferences = preferences,
         _directory = directory,
         _autoUpdate = autoUpdate,
         _updateIntervalHours = updateIntervalHours,
-        _lastCheckedAt = lastCheckedAt;
+        _lastCheckedAt = lastCheckedAt,
+        _userAgent = userAgent;
 
   static const _channel = MethodChannel('ru.orex.ray/tunnel');
   static const _autoUpdateKey = 'orex_ray_geodata_auto_update_v1';
@@ -49,6 +53,7 @@ class GeoDataController extends ChangeNotifier {
 
   final SharedPreferences _preferences;
   final Directory _directory;
+  final String _userAgent;
 
   bool _autoUpdate;
   int _updateIntervalHours;
@@ -59,7 +64,10 @@ class GeoDataController extends ChangeNotifier {
   String? _message;
   String? _error;
 
-  static Future<GeoDataController> load({Directory? directoryOverride}) async {
+  static Future<GeoDataController> load({
+    Directory? directoryOverride,
+    OrexAppVersion appVersion = OrexAppVersion.fallback,
+  }) async {
     final preferences = await SharedPreferences.getInstance();
     final directory = directoryOverride ?? await _resolveDirectory();
     await directory.create(recursive: true);
@@ -74,6 +82,7 @@ class GeoDataController extends ChangeNotifier {
           24,
       lastCheckedAt:
           rawLastChecked == null ? null : DateTime.tryParse(rawLastChecked),
+      userAgent: 'OrexRay/${appVersion.version}',
     );
     await controller.refreshStatus();
     return controller;
@@ -214,7 +223,7 @@ class GeoDataController extends ChangeNotifier {
     _message = silent ? null : 'Проверяем GeoData…';
     notifyListeners();
 
-    final client = HttpClient()..userAgent = 'OrexRay/0.6.1';
+    final client = HttpClient()..userAgent = _userAgent;
     try {
       const files = ['geoip.dat', 'geosite.dat'];
       for (var index = 0; index < files.length; index++) {

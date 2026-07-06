@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_edit_dialog.dart';
 import '../../shared/widgets/settings_section.dart';
 import '../home/tunnel_controller.dart';
 
@@ -22,6 +23,10 @@ class ConnectionScreen extends StatelessWidget {
       animation: Listenable.merge([tunnel, settings]),
       builder: (context, _) {
         final locked = !tunnel.canChangeMode;
+        final disabledColor = Theme.of(context).disabledColor;
+        final editableIconColor =
+            locked ? disabledColor : OrexColors.copper;
+        final chevronColor = locked ? disabledColor : null;
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
@@ -68,10 +73,14 @@ class ConnectionScreen extends StatelessWidget {
               subtitle: 'Эти порты используются и режимом системного прокси Windows.',
               children: [
                 ListTile(
-                  leading: const Icon(Icons.cable_rounded, color: OrexColors.copper),
+                  enabled: !locked,
+                  leading: Icon(Icons.cable_rounded, color: editableIconColor),
                   title: const Text('SOCKS5'),
                   subtitle: Text('${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.socksPort}'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    color: chevronColor,
+                  ),
                   onTap: locked
                       ? null
                       : () => _editNumber(
@@ -85,10 +94,14 @@ class ConnectionScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.http_rounded, color: OrexColors.copper),
+                  enabled: !locked,
+                  leading: Icon(Icons.http_rounded, color: editableIconColor),
                   title: const Text('HTTP'),
                   subtitle: Text('${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.httpPort}'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    color: chevronColor,
+                  ),
                   onTap: locked
                       ? null
                       : () => _editNumber(
@@ -128,10 +141,17 @@ class ConnectionScreen extends StatelessWidget {
               subtitle: 'Применяется к TUN/VPN режиму на Android и Windows.',
               children: [
                 ListTile(
-                  leading: const Icon(Icons.swap_vert_rounded, color: OrexColors.copper),
+                  enabled: !locked,
+                  leading: Icon(
+                    Icons.swap_vert_rounded,
+                    color: editableIconColor,
+                  ),
                   title: const Text('MTU'),
                   subtitle: Text('${settings.mtu} байт'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    color: chevronColor,
+                  ),
                   onTap: locked
                       ? null
                       : () => _editNumber(
@@ -197,62 +217,23 @@ Future<void> _editNumber(
   required int min,
   required int max,
   required Future<void> Function(int value) onSave,
-}) async {
-  final controller = TextEditingController(text: '$current');
-  String? error;
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            labelText: '$min–$max',
-            errorText: error,
-          ),
-          onSubmitted: (_) async {
-            final value = int.tryParse(controller.text.trim());
-            if (value == null || value < min || value > max) {
-              setState(() => error = 'Допустимо от $min до $max');
-              return;
-            }
-            try {
-              await onSave(value);
-              if (dialogContext.mounted) Navigator.pop(dialogContext);
-            } on FormatException catch (e) {
-              setState(() => error = e.message.toString());
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final value = int.tryParse(controller.text.trim());
-              if (value == null || value < min || value > max) {
-                setState(() => error = 'Допустимо от $min до $max');
-                return;
-              }
-              try {
-                await onSave(value);
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
-              } on FormatException catch (e) {
-                setState(() => error = e.message.toString());
-              }
-            },
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    ),
+}) {
+  return showOrexEditDialog(
+    context,
+    title: title,
+    initialValue: '$current',
+    keyboardType: TextInputType.number,
+    textInputAction: TextInputAction.done,
+    labelText: '$min–$max',
+    validator: (rawValue) {
+      final value = int.tryParse(rawValue.trim());
+      if (value == null || value < min || value > max) {
+        return 'Допустимо от $min до $max';
+      }
+      return null;
+    },
+    onSave: (rawValue) => onSave(int.parse(rawValue.trim())),
   );
-  controller.dispose();
 }
 
 IconData _modeIcon(ConnectionMode mode) => switch (mode) {

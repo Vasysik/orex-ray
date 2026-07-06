@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/app_version.dart';
 import '../../core/apps/app_routing_controller.dart';
 import '../../core/geodata/geodata_controller.dart';
 import '../../core/profiles/profiles_controller.dart';
@@ -28,6 +29,7 @@ class AppShell extends StatefulWidget {
     required this.settings,
     required this.appRouting,
     required this.geoData,
+    required this.appVersion,
   });
 
   final TunnelController tunnel;
@@ -36,6 +38,7 @@ class AppShell extends StatefulWidget {
   final ConnectionSettingsController settings;
   final AppRoutingController appRouting;
   final GeoDataController geoData;
+  final OrexAppVersion appVersion;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -63,7 +66,7 @@ class _AppShellState extends State<AppShell> {
       GeoDataScreen(controller: widget.geoData, settings: widget.settings),
       BackgroundScreen(settings: widget.settings),
       AppearanceScreen(theme: widget.theme),
-      const AboutScreen(),
+      AboutScreen(appVersion: widget.appVersion),
       MoreScreen(
         onOpenApps: () => setState(() => _index = _appsIndex),
         onOpenNetwork: () => setState(() => _index = _networkIndex),

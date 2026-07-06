@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/app_version.dart';
 import '../core/apps/app_routing_controller.dart';
 import '../core/geodata/geodata_controller.dart';
 import '../core/profiles/profiles_controller.dart';
@@ -26,6 +27,7 @@ class _BootstrapData {
     required this.settings,
     required this.appRouting,
     required this.geoData,
+    required this.appVersion,
   });
 
   final ThemeController theme;
@@ -33,23 +35,30 @@ class _BootstrapData {
   final ConnectionSettingsController settings;
   final AppRoutingController appRouting;
   final GeoDataController geoData;
+  final OrexAppVersion appVersion;
 }
 
 class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
+  late final Future<OrexAppVersion> _versionFuture = OrexAppVersion.load();
   late final Future<_BootstrapData> _future = _initialize();
 
   Future<_BootstrapData> _initialize() async {
     final minimumSplash =
         Future<void>.delayed(const Duration(milliseconds: 720));
+    final geoDataFuture = _versionFuture.then(
+      (version) => GeoDataController.load(appVersion: version),
+    );
     final results = await Future.wait<Object>([
       ThemeController.load(),
       ProfilesController.load(),
       ConnectionSettingsController.load(),
       AppRoutingController.load(),
-      GeoDataController.load(),
+      _versionFuture,
+      geoDataFuture,
     ]);
     await minimumSplash;
-    final geoData = results[4] as GeoDataController;
+    final appVersion = results[4] as OrexAppVersion;
+    final geoData = results[5] as GeoDataController;
     unawaited(geoData.maybeAutoUpdate());
     return _BootstrapData(
       theme: results[0] as ThemeController,
@@ -57,31 +66,40 @@ class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
       settings: results[2] as ConnectionSettingsController,
       appRouting: results[3] as AppRoutingController,
       geoData: geoData,
+      appVersion: appVersion,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<_BootstrapData>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _BootstrapApp(
-            child: _StartupError(error: snapshot.error.toString()),
+    return FutureBuilder<OrexAppVersion>(
+      future: _versionFuture,
+      builder: (context, versionSnapshot) => FutureBuilder<_BootstrapData>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _BootstrapApp(
+              child: _StartupError(error: snapshot.error.toString()),
+            );
+          }
+          final data = snapshot.data;
+          if (data == null) {
+            return _BootstrapApp(
+              child: OrexRaySplashScreen(
+                appVersion: versionSnapshot.data ?? OrexAppVersion.fallback,
+              ),
+            );
+          }
+          return OrexRayApp(
+            theme: data.theme,
+            profiles: data.profiles,
+            connectionSettings: data.settings,
+            appRouting: data.appRouting,
+            geoData: data.geoData,
+            appVersion: data.appVersion,
           );
-        }
-        final data = snapshot.data;
-        if (data == null) {
-          return const _BootstrapApp(child: OrexRaySplashScreen());
-        }
-        return OrexRayApp(
-          theme: data.theme,
-          profiles: data.profiles,
-          connectionSettings: data.settings,
-          appRouting: data.appRouting,
-          geoData: data.geoData,
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -102,7 +120,12 @@ class _BootstrapApp extends StatelessWidget {
 }
 
 class OrexRaySplashScreen extends StatelessWidget {
-  const OrexRaySplashScreen({super.key});
+  const OrexRaySplashScreen({
+    super.key,
+    this.appVersion = OrexAppVersion.fallback,
+  });
+
+  final OrexAppVersion appVersion;
 
   @override
   Widget build(BuildContext context) {
@@ -122,9 +145,12 @@ class OrexRaySplashScreen extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'Версия 0.6.1 · сборка 10',
-                  style: TextStyle(color: OrexColors.cream, fontSize: 13),
+                Text(
+                  appVersion.settingsSubtitle,
+                  style: const TextStyle(
+                    color: OrexColors.cream,
+                    fontSize: 13,
+                  ),
                 ),
                 const SizedBox(height: 28),
                 const SizedBox.square(

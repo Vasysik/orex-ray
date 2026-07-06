@@ -5,7 +5,7 @@
 профили VLESS, балансировщики и per-app маршрутизацию в одном интерфейсе в
 визуальном стиле Orex.
 
-Текущая версия: `0.6.2+1`.
+Текущая версия: `0.6.2+2`.
 
 OrexRay сейчас находится в стадии **private beta / dogfood**. Android VPN уже
 пропускает реальный TCP/UDP-трафик через Xray, работает в фоне и может
@@ -304,10 +304,18 @@ flutter analyze --no-pub
 flutter test --no-pub
 ```
 
-Для private beta распространяется подписанный APK и его SHA-256. Release
-keystore хранится отдельно от репозитория и не пересоздаётся между версиями.
+Android release собирается тем же способом, что Orex Messenger:
 
-## 13. Текущий статус `0.6.2+1`
+```powershell
+flutter build apk --release --split-per-abi --no-pub
+```
+
+По умолчанию Dart obfuscation не используется. Release автоматически подписывается
+Gradle через `android/key.properties` или `OREX_ANDROID_*`. Для private beta
+распространяется подписанный APK и его SHA-256; release keystore хранится отдельно
+от репозитория и не пересоздаётся между версиями.
+
+## 13. Текущий статус `0.6.2+2`
 
 В этой версии основной фокус — не новая подсистема, а доведение текущего UX:
 

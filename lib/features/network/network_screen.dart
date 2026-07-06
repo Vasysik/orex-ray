@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_edit_dialog.dart';
 import '../../shared/widgets/settings_section.dart';
 
 class NetworkScreen extends StatelessWidget {
@@ -160,46 +161,19 @@ Future<void> _setLogLevel(
 Future<void> _editCustomDns(
   BuildContext context,
   ConnectionSettingsController settings,
-) async {
-  final controller = TextEditingController(text: settings.customDns);
-  String? error;
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('Свой DNS'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 3,
-          decoration: InputDecoration(
-            hintText: '9.9.9.9, 149.112.112.112',
-            helperText: 'Разделяй адреса пробелами или запятыми',
-            errorText: error,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              try {
-                await settings.setCustomDns(controller.text);
-                await settings.setDnsPreset(DnsPreset.custom);
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
-              } on FormatException catch (e) {
-                setState(() => error = e.message.toString());
-              }
-            },
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    ),
+) {
+  return showOrexEditDialog(
+    context,
+    title: 'Свой DNS',
+    initialValue: settings.customDns,
+    maxLines: 3,
+    hintText: '9.9.9.9, 149.112.112.112',
+    helperText: 'Разделяй адреса пробелами или запятыми',
+    onSave: (value) async {
+      await settings.setCustomDns(value);
+      await settings.setDnsPreset(DnsPreset.custom);
+    },
   );
-  controller.dispose();
 }
 
 String _logLevelTitle(String value) => switch (value) {

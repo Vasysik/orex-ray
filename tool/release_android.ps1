@@ -1,7 +1,6 @@
 param(
     [switch]$BuildBundle,
-    [switch]$SkipTests,
-    [switch]$NoObfuscate
+    [switch]$SkipTests
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,7 +25,9 @@ try {
             "OREX_ANDROID_KEY_ALIAS",
             "OREX_ANDROID_KEY_PASSWORD"
         )
-        return ($required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }).Count -eq 0
+        return ($required | Where-Object {
+            [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))
+        }).Count -eq 0
     }
 
     $versionLine = Select-String -Path "pubspec.yaml" -Pattern '^version:\s*(.+)$' | Select-Object -First 1
@@ -37,8 +38,8 @@ try {
     if (-not (Test-ReleaseSigningConfigured)) {
         throw @"
 Android release signing не настроен.
-Создай android/key.properties по android/key.properties.example
-или задай OREX_ANDROID_STORE_FILE / STORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD.
+Как и в Orex Messenger, release автоматически подписывается через android/key.properties
+или OREX_ANDROID_STORE_FILE / STORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD.
 "@
     }
 
@@ -51,32 +52,36 @@ Android release signing не настроен.
         Invoke-Flutter -Arguments @("test", "--no-pub")
     }
 
-    $symbolsDir = Join-Path $projectRoot "build/symbols/android/$version"
-    New-Item -ItemType Directory -Force $symbolsDir | Out-Null
-
-    $common = @(
+    # Keep the APK build identical to Orex Messenger: release, split per ABI,
+    # no Dart obfuscation, and signing handled automatically by Gradle.
+    Invoke-Flutter -Arguments @(
+        "build",
+        "apk",
         "--release",
-        "--no-pub",
-        "--dart-define=OREX_ENV=production",
-        "--dart-define=OREX_DEBUG_LOGS=false"
+        "--split-per-abi",
+        "--no-pub"
     )
-    if (-not $NoObfuscate) {
-        $common += "--obfuscate"
-        $common += "--split-debug-info=$symbolsDir"
-    }
-
-    Invoke-Flutter -Arguments (@("build", "apk") + $common)
 
     $distDir = Join-Path $projectRoot "dist/android/$version"
     New-Item -ItemType Directory -Force $distDir | Out-Null
-    $apkSource = Join-Path $projectRoot "build/app/outputs/flutter-apk/app-release.apk"
-    if (-not (Test-Path $apkSource)) { throw "Не найден release APK: $apkSource" }
-    $apkTarget = Join-Path $distDir "OrexRay-$version-android.apk"
-    Copy-Item $apkSource $apkTarget -Force
 
-    $artifacts = @($apkTarget)
+    $apkOutputs = @(
+        @{ Abi = "armeabi-v7a"; Source = "app-armeabi-v7a-release.apk" },
+        @{ Abi = "arm64-v8a"; Source = "app-arm64-v8a-release.apk" },
+        @{ Abi = "x86_64"; Source = "app-x86_64-release.apk" }
+    )
+
+    $artifacts = @()
+    foreach ($apk in $apkOutputs) {
+        $source = Join-Path $projectRoot "build/app/outputs/flutter-apk/$($apk.Source)"
+        if (-not (Test-Path $source)) { throw "Не найден release APK: $source" }
+        $target = Join-Path $distDir "OrexRay-$version-android-$($apk.Abi).apk"
+        Copy-Item $source $target -Force
+        $artifacts += $target
+    }
+
     if ($BuildBundle) {
-        Invoke-Flutter -Arguments (@("build", "appbundle") + $common)
+        Invoke-Flutter -Arguments @("build", "appbundle", "--release", "--no-pub")
         $aabSource = Join-Path $projectRoot "build/app/outputs/bundle/release/app-release.aab"
         if (-not (Test-Path $aabSource)) { throw "Не найден release AAB: $aabSource" }
         $aabTarget = Join-Path $distDir "OrexRay-$version-android.aab"
@@ -96,29 +101,22 @@ Android release signing не настроен.
         $candidate = (& git rev-parse --short HEAD 2>$null)
         if ($LASTEXITCODE -eq 0 -and $candidate) { $commit = $candidate.Trim() }
     }
-    $lockFile = Join-Path $projectRoot "pubspec.lock"
-    $lockHash = if (Test-Path $lockFile) {
-        (Get-FileHash -Algorithm SHA256 $lockFile).Hash.ToLowerInvariant()
-    } else {
-        "missing"
-    }
+    $lockHash = (Get-FileHash -Algorithm SHA256 "pubspec.lock").Hash.ToLowerInvariant()
 
     @"
 OrexRay $version
+PackageId=ru.orex.ray
 BuiltAtUtc=$(Get-Date).ToUniversalTime().ToString("o")
 GitCommit=$commit
 PubspecLockSha256=$lockHash
-Obfuscated=$(-not $NoObfuscate)
-Symbols=$symbolsDir
+SplitPerAbi=true
+Obfuscated=false
 "@ | Set-Content -Path (Join-Path $distDir "BUILD-INFO.txt") -Encoding UTF8
 
     Write-Host "`nRelease готов:" -ForegroundColor Green
     foreach ($artifact in $artifacts) { Write-Host "  $artifact" }
     Write-Host "  $hashFile"
-    if (-not $NoObfuscate) {
-        Write-Host "`nНЕ УДАЛЯЙ symbols: $symbolsDir" -ForegroundColor Yellow
-        Write-Host "Они нужны для расшифровки stack trace обфусцированной сборки."
-    }
+    Write-Host "`nДля большинства современных телефонов отдавай arm64-v8a APK." -ForegroundColor Cyan
 }
 finally {
     Pop-Location

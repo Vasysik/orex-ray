@@ -6,6 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/app_version.dart';
+
 class XrayCoreInstall {
   const XrayCoreInstall({
     required this.directory,
@@ -17,10 +19,16 @@ class XrayCoreInstall {
 }
 
 class XrayCoreManager {
+  XrayCoreManager({
+    OrexAppVersion appVersion = OrexAppVersion.fallback,
+  }) : _userAgent = 'OrexRay/${appVersion.version}';
+
   static const _zipUrl =
       'https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-64.zip';
   static const _digestUrl =
       'https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-64.zip.dgst';
+
+  final String _userAgent;
 
   Future<XrayCoreInstall> ensureInstalled({
     void Function(double progress)? onProgress,
@@ -63,7 +71,7 @@ class XrayCoreManager {
     void Function(double progress)? onProgress,
   }) async {
     final client = HttpClient();
-    client.userAgent = 'OrexRay/0.6.1';
+    client.userAgent = _userAgent;
     try {
       final request = await client.getUrl(Uri.parse(url));
       request.followRedirects = true;

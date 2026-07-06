@@ -1,6 +1,17 @@
-# Copy to android/key.properties and replace the placeholders.
-# This file is intentionally tracked; android/key.properties is gitignored.
-storeFile=secrets/orexray-release.jks
-storePassword=YOUR_STORE_PASSWORD
-keyAlias=orexray
-keyPassword=YOUR_KEY_PASSWORD
+# Copy this file to android/key.properties on the release machine.
+# Do not commit android/key.properties or the keystore itself.
+#
+# OrexRay intentionally uses the same release signing convention as Orex
+# Messenger. To keep a stable developer certificate, copy the same real
+# key.properties values and the same keystore used by the messenger release.
+
+storeFile=secrets/orex-release.jks
+storePassword=change-me
+keyAlias=orex
+keyPassword=change-me
+
+# The same values can be provided through environment variables:
+# OREX_ANDROID_STORE_FILE
+# OREX_ANDROID_STORE_PASSWORD
+# OREX_ANDROID_KEY_ALIAS
+# OREX_ANDROID_KEY_PASSWORD

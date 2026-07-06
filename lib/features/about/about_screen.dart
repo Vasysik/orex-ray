@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/app_version.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/settings_section.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 
 class AboutScreen extends StatelessWidget {
-  const AboutScreen({super.key});
+  const AboutScreen({
+    super.key,
+    required this.appVersion,
+  });
 
-  static const version = '0.6.2';
-  static const buildNumber = '1';
+  final OrexAppVersion appVersion;
 
   @override
   Widget build(BuildContext context) {
@@ -29,10 +32,10 @@ class AboutScreen extends StatelessWidget {
         SettingsSection(
           title: 'Версия',
           children: [
-            const ListTile(
-              leading: Icon(Icons.apps_rounded, color: OrexColors.copper),
-              title: Text('OrexRay'),
-              subtitle: Text('Версия $version · сборка $buildNumber'),
+            ListTile(
+              leading: const Icon(Icons.apps_rounded, color: OrexColors.copper),
+              title: const Text('OrexRay'),
+              subtitle: Text(appVersion.settingsSubtitle),
             ),
             const Divider(height: 1),
             ListTile(
@@ -41,7 +44,7 @@ class AboutScreen extends StatelessWidget {
               subtitle: const Text('Для баг-репорта и диагностики'),
               onTap: () async {
                 await Clipboard.setData(
-                  const ClipboardData(text: 'OrexRay $version+$buildNumber'),
+                  ClipboardData(text: 'OrexRay ${appVersion.label}'),
                 );
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(

@@ -1,59 +1,55 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:orex_ray/app/orex_ray_app.dart';
-import 'package:orex_ray/core/apps/app_routing_controller.dart';
-import 'package:orex_ray/core/geodata/geodata_controller.dart';
 import 'package:orex_ray/core/profiles/profiles_controller.dart';
 import 'package:orex_ray/core/settings/connection_settings_controller.dart';
 import 'package:orex_ray/core/tunnel/tunnel_engine.dart';
 import 'package:orex_ray/core/tunnel/tunnel_models.dart';
-import 'package:orex_ray/shared/theme/theme_controller.dart';
+import 'package:orex_ray/features/home/home_screen.dart';
+import 'package:orex_ray/features/home/tunnel_controller.dart';
+import 'package:orex_ray/shared/theme/orex_theme.dart';
+import 'package:orex_ray/shared/widgets/squirrel_mascot.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('OrexRay starts with squirrel empty state', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final theme = await ThemeController.load();
-    final profiles = await ProfilesController.load(
-      automaticLatencyRefresh: false,
-    );
-    final settings = await ConnectionSettingsController.load(
-      operatingSystem: 'linux',
-    );
-    final appRouting = await AppRoutingController.load();
-    final temp = await Directory.systemTemp.createTemp('orexray_test_geo_');
-    final geoData = await GeoDataController.load(directoryOverride: temp);
-    addTearDown(() async {
-      profiles.dispose();
-      settings.dispose();
-      appRouting.dispose();
-      geoData.dispose();
-      theme.dispose();
-      if (await temp.exists()) await temp.delete(recursive: true);
-    });
-
-    await tester.pumpWidget(
-      OrexRayApp(
-        theme: theme,
+  testWidgets(
+    'home shows the empty state without filesystem or platform setup',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final profiles = await ProfilesController.load(
+        automaticLatencyRefresh: false,
+      );
+      final settings = await ConnectionSettingsController.load(
+        operatingSystem: 'linux',
+      );
+      final tunnel = TunnelController(
+        engine: const _TestTunnelEngine(),
         profiles: profiles,
-        connectionSettings: settings,
-        appRouting: appRouting,
-        geoData: geoData,
-        tunnelEngine: _TestTunnelEngine(),
-      ),
-    );
-    await tester.pump();
+        settings: settings,
+      );
+      addTearDown(() {
+        tunnel.dispose();
+        profiles.dispose();
+        settings.dispose();
+      });
 
-    expect(find.text('OrexRay'), findsOneWidget);
-    expect(find.text('Не подключено'), findsNothing);
-    expect(find.text('Белочка пока без маршрута'), findsOneWidget);
-    expect(find.byType(Image), findsWidgets);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: OrexTheme.dark,
+          home: HomeScreen(tunnel: tunnel),
+        ),
+      );
+      await tester.pump();
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
-  });
+      expect(find.text('OrexRay'), findsOneWidget);
+      expect(find.text('Не подключено'), findsNothing);
+      expect(find.text('Белочка пока без маршрута'), findsOneWidget);
+      expect(find.byType(SquirrelMascot), findsWidgets);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+    timeout: const Timeout(Duration(seconds: 15)),
+  );
 }
 
 class _TestTunnelEngine implements TunnelEngine {

@@ -5,6 +5,7 @@ import '../../core/geodata/geodata_controller.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_edit_dialog.dart';
 import '../../shared/widgets/settings_section.dart';
 
 class GeoDataScreen extends StatelessWidget {
@@ -289,49 +290,18 @@ Future<void> _editRules(
   required String current,
   required String hint,
   required Future<void> Function(String value) onSave,
-}) async {
-  final controller = TextEditingController(text: current);
-  String? error;
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: Text(title),
-        content: SizedBox(
-          width: 560,
-          child: TextField(
-            controller: controller,
-            autofocus: true,
-            minLines: 3,
-            maxLines: 8,
-            decoration: InputDecoration(
-              hintText: hint,
-              helperText: 'Разделяй правила запятыми, пробелами или переносами строк',
-              errorText: error,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              try {
-                await onSave(controller.text);
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
-              } on FormatException catch (e) {
-                setState(() => error = e.message.toString());
-              }
-            },
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    ),
+}) {
+  return showOrexEditDialog(
+    context,
+    title: title,
+    initialValue: current,
+    width: 560,
+    minLines: 3,
+    maxLines: 8,
+    hintText: hint,
+    helperText: 'Разделяй правила запятыми, пробелами или переносами строк',
+    onSave: onSave,
   );
-  controller.dispose();
 }
 
 String _formatBytes(int bytes) {

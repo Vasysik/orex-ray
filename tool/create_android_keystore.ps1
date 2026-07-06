@@ -1,6 +1,6 @@
 param(
-    [string]$Alias = "orexray",
-    [string]$KeystoreName = "orexray-release.jks",
+    [string]$Alias = "orex",
+    [string]$KeystoreName = "orex-release.jks",
     [switch]$WriteKeyProperties
 )
 
@@ -22,7 +22,8 @@ if (Test-Path $keystorePath) {
     throw "Keystore уже существует: $keystorePath`nНе перезаписывай релизный ключ."
 }
 
-Write-Host "Создаём OrexRay release keystore:" -ForegroundColor Cyan
+Write-Warning "Создавай новый ключ только если у тебя нет существующего Orex release keystore. Для той же developer identity скопируй ключ Orex Messenger."
+Write-Host "Создаём Orex release keystore:" -ForegroundColor Cyan
 Write-Host "  $keystorePath"
 Write-Host "Пароли вводятся интерактивно самим keytool и не попадают в командную строку."
 

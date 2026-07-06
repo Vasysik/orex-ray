@@ -1,6 +1,7 @@
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -112,19 +113,22 @@ if (hasReleaseSigning && !rootProject.file(releaseStoreFile!!).isFile) {
     )
 }
 
-gradle.taskGraph.whenReady { graph ->
-    val buildsReleaseArtifact = graph.allTasks.any { task ->
-        val name = task.name.lowercase()
-        name == "assemblerelease" || name == "bundlerelease" ||
-            name == "packagerelease"
+val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+    group = "verification"
+    description = "Checks that Android release signing is configured."
+    doLast {
+        if (!hasReleaseSigning && !allowUnsignedRelease) {
+            throw GradleException(
+                "Android release signing is not configured. Create android/key.properties " +
+                    "or set OREX_ANDROID_STORE_FILE, OREX_ANDROID_STORE_PASSWORD, " +
+                    "OREX_ANDROID_KEY_ALIAS and OREX_ANDROID_KEY_PASSWORD.",
+            )
+        }
     }
-    if (buildsReleaseArtifact && !hasReleaseSigning && !allowUnsignedRelease) {
-        throw GradleException(
-            "Android release signing is not configured. Create android/key.properties " +
-                "or set OREX_ANDROID_STORE_FILE, OREX_ANDROID_STORE_PASSWORD, " +
-                "OREX_ANDROID_KEY_ALIAS and OREX_ANDROID_KEY_PASSWORD.",
-        )
-    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(validateReleaseSigning)
 }
 
 android {
@@ -135,10 +139,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     signingConfigs {
@@ -161,13 +161,24 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Debug and release must be installable side by side. This also
+            // prevents a locally signed debug build from blocking installation
+            // of the real release package ru.orex.ray.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
-            isDebuggable = false
-            isJniDebuggable = false
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 

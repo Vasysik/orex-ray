@@ -1,18 +1,12 @@
 # OrexRay Release Builds
 
-Эта инструкция нужна для локальной private-beta сборки `0.6.2+1` и передачи
-артефактов товарищам. Здесь нет CI-обёрток и `.ps1`-скриптов: все команды
-запускаются напрямую из PowerShell в корне проекта.
+Эта инструкция повторяет Android release-путь Orex Messenger: обычный Flutter
+release, APK по ABI, без Dart obfuscation. Подпись выполняет Gradle автоматически
+из `android/key.properties` или `OREX_ANDROID_*`.
 
 ## 1. Перед сборкой
 
-Проверь версию в `pubspec.yaml`:
-
-```yaml
-version: 0.6.2+1
-```
-
-Обнови зависимости и пройди обязательный gate:
+Проверь версию в `pubspec.yaml`, затем выполни:
 
 ```powershell
 flutter pub get
@@ -22,176 +16,158 @@ flutter test --no-pub
 
 Release APK не собирай, пока analyze или tests красные.
 
-## 2. Android release signing
+## 2. Как работает подпись
 
-Для первого релиза нужен постоянный keystore. Создай его **один раз** на машине,
-с которой будут собираться обновления:
+Flutter/Gradle **не должны создавать новый release key при каждой сборке**.
+Release key создаётся один раз и потом автоматически используется во всех
+обновлениях. Именно поэтому Android может проверить, что обновление выпустил тот
+же разработчик.
 
-```powershell
-New-Item -ItemType Directory -Force android\secrets
-
-keytool -genkeypair -v `
-  -keystore android\secrets\orexray-release.jks `
-  -storetype JKS `
-  -keyalg RSA `
-  -keysize 2048 `
-  -validity 10000 `
-  -alias orexray
-```
-
-Сохрани пароли и сделай минимум две офлайн-копии файла:
-
-```text
-android\secrets\orexray-release.jks
-```
-
-Потеря этого keystore означает, что уже розданные APK с package id
-`ru.orex.ray` нельзя будет обновлять той же подписью.
-
-## 3. `android/key.properties`
-
-Создай файл:
+OrexRay использует тот же механизм и те же имена параметров, что Orex Messenger:
 
 ```text
 android/key.properties
-```
-
-Содержимое:
-
-```properties
-storeFile=secrets/orexray-release.jks
-storePassword=ВАШ_STORE_PASSWORD
-keyAlias=orexray
-keyPassword=ВАШ_KEY_PASSWORD
-```
-
-`storeFile` читается относительно папки `android/`.
-
-`android/key.properties`, `android/secrets/`, `*.jks` и `*.keystore` уже
-исключены из git. Не добавляй их в ZIP с исходниками и не отправляй вместе с
-APK.
-
-Вместо `key.properties` можно использовать переменные окружения:
-
-```text
 OREX_ANDROID_STORE_FILE
 OREX_ANDROID_STORE_PASSWORD
 OREX_ANDROID_KEY_ALIAS
 OREX_ANDROID_KEY_PASSWORD
 ```
 
-Пример для текущего PowerShell-сеанса:
+Для одинаковой developer signing identity у Orex приложений используй тот же
+реальный keystore и те же значения `key.properties`, что на release-машине Orex
+Messenger. Например:
 
-```powershell
-$env:OREX_ANDROID_STORE_FILE = "secrets/orexray-release.jks"
-$env:OREX_ANDROID_STORE_PASSWORD = "..."
-$env:OREX_ANDROID_KEY_ALIAS = "orexray"
-$env:OREX_ANDROID_KEY_PASSWORD = "..."
+```properties
+storeFile=secrets/orex-release.jks
+storePassword=ВАШ_STORE_PASSWORD
+keyAlias=orex
+keyPassword=ВАШ_KEY_PASSWORD
 ```
 
-## 4. Android release APK
+`storeFile` читается относительно папки `android/`. Сам keystore и
+`android/key.properties` не коммитятся.
 
-Сначала ещё раз пройди gate без повторного `pub get`:
+Важно: если OrexRay уже раздавался с другим release key и должен обновляться
+поверх той версии, нельзя просто переключиться на ключ Messenger. Для обновления
+нужен именно прежний сертификат OrexRay. Если публичной цепочки обновлений ещё
+нет, один общий Orex release key упрощает дальнейшие локальные сборки.
+
+Перед локальной release-сборкой убери compile-only escape hatch, если он остался
+в окружении после CI-проверок:
 
 ```powershell
-flutter analyze --no-pub
-flutter test --no-pub
+Remove-Item Env:OREX_ALLOW_UNSIGNED_ANDROID_RELEASE -ErrorAction SilentlyContinue
 ```
 
-Собери release APK с obfuscation и отдельными символами:
+Без настроенной подписи release должен завершиться ошибкой, а не тихо стать
+артефактом для раздачи.
+
+## 3. Android release APK — так же, как Orex Messenger
+
+Команда:
 
 ```powershell
-flutter build apk --release --no-pub `
-  --obfuscate `
-  --split-debug-info=build\symbols\android\0.6.2+1
+flutter build apk --release --split-per-abi --no-pub
 ```
 
-Готовый APK:
+Никаких `--obfuscate` и `--split-debug-info` здесь нет. Для OrexRay obfuscation
+не даёт полезной защиты конфигов, URL, assets или native Xray library, зато
+усложняет stack traces и добавляет отдельное хранение symbols. Если появится
+отдельная реальная причина скрывать Dart symbols, это можно вернуть как
+осознанный release-профиль, а не включать по умолчанию.
+
+Артефакты:
 
 ```text
-build\app\outputs\flutter-apk\app-release.apk
+build\app\outputs\flutter-apk\app-armeabi-v7a-release.apk
+build\app\outputs\flutter-apk\app-arm64-v8a-release.apk
+build\app\outputs\flutter-apk\app-x86_64-release.apk
 ```
 
-Символы:
+Для большинства современных Android-телефонов нужен:
 
 ```text
-build\symbols\android\0.6.2+1\
+app-arm64-v8a-release.apk
 ```
 
-Символы не отправляй тестировщикам и не удаляй: они нужны для разбора
-обфусцированных Dart stack traces.
+## 4. Проверить подпись APK
 
-## 5. Подготовить папку для раздачи
-
-```powershell
-$Version = "0.6.2+1"
-$Out = "dist\android\$Version"
-
-New-Item -ItemType Directory -Force $Out
-Copy-Item `
-  build\app\outputs\flutter-apk\app-release.apk `
-  "$Out\OrexRay-$Version-android.apk"
-```
-
-Посчитать SHA-256:
-
-```powershell
-Get-FileHash `
-  "$Out\OrexRay-$Version-android.apk" `
-  -Algorithm SHA256 | Format-List
-```
-
-Записать checksum в файл:
-
-```powershell
-$Hash = (Get-FileHash `
-  "$Out\OrexRay-$Version-android.apk" `
-  -Algorithm SHA256).Hash.ToLower()
-
-"$Hash  OrexRay-$Version-android.apk" | `
-  Set-Content "$Out\SHA256SUMS.txt" -Encoding ascii
-```
-
-Итог:
-
-```text
-dist\
-  android\
-    0.6.2+1\
-      OrexRay-0.6.2+1-android.apk
-      SHA256SUMS.txt
-```
-
-## 6. Проверить подпись APK
-
-Найди `apksigner.bat` в Android SDK `build-tools` и выполни:
+Проверяй именно тот APK, который собираешься установить или отправить:
 
 ```powershell
 & "$env:LOCALAPPDATA\Android\Sdk\build-tools\<VERSION>\apksigner.bat" `
   verify --verbose --print-certs `
-  "dist\android\0.6.2+1\OrexRay-0.6.2+1-android.apk"
+  "build\app\outputs\flutter-apk\app-arm64-v8a-release.apk"
 ```
 
-Проверь:
+У release-обновлений должны сохраняться:
 
-- `Verified` без ошибки;
-- certificate SHA-256 сохраняется между всеми будущими версиями OrexRay;
-- APK не подписан Android debug certificate.
+- package id `ru.orex.ray`;
+- certificate SHA-256;
+- возрастающий `versionCode` из `pubspec.yaml`.
 
-## 7. Установить release APK на устройство
+## 5. Почему Android пишет «конфликтует с другим пакетом»
 
-Перед первой раздачей установи именно release-артефакт:
+Release package id OrexRay — `ru.orex.ray`. Android не разрешает поставить APK
+поверх уже установленного пакета с тем же id, если сертификаты подписи разные.
+Чаще всего это старая debug-сборка или release, созданный другим keystore.
+
+Посмотреть, есть ли пакет на устройстве:
+
+```powershell
+adb shell pm path ru.orex.ray
+```
+
+Получить точную ошибку установки:
 
 ```powershell
 adb install -r `
-  "dist\android\0.6.2+1\OrexRay-0.6.2+1-android.apk"
+  "build\app\outputs\flutter-apk\app-arm64-v8a-release.apk"
 ```
 
-После обновления поверх debug-сборки Android может отказать из-за другой
-подписи. В таком случае для чистой release-проверки удали debug-версию вручную,
-затем установи release APK. Перед удалением сохрани нужные профили отдельно.
+Если старая установка не нужна, сохрани профили и удали её один раз:
 
-## 8. Android smoke-проверка
+```powershell
+adb uninstall ru.orex.ray
+```
+
+После этого установи release APK заново. Если данные старой установки нужно
+сохранить, решение только одно: собрать новый APK тем же signing key, которым
+подписана уже установленная версия.
+
+Начиная с этой версии debug получает отдельный package id:
+
+```text
+ru.orex.ray.debug
+```
+
+Поэтому будущие debug и release сборки смогут стоять рядом и больше не будут
+блокировать друг друга.
+
+## 6. Подготовить папку для раздачи
+
+```powershell
+$Version = "0.6.2+2"
+$Out = "dist\android\$Version"
+New-Item -ItemType Directory -Force $Out
+
+Copy-Item `
+  "build\app\outputs\flutter-apk\app-arm64-v8a-release.apk" `
+  "$Out\OrexRay-$Version-android-arm64-v8a.apk"
+
+$Hash = (Get-FileHash `
+  "$Out\OrexRay-$Version-android-arm64-v8a.apk" `
+  -Algorithm SHA256).Hash.ToLower()
+
+"$Hash  OrexRay-$Version-android-arm64-v8a.apk" | `
+  Set-Content "$Out\SHA256SUMS.txt" -Encoding ascii
+```
+
+Для автоматической подготовки всех трёх ABI можно использовать
+`tool/release_android.ps1`; внутри он вызывает тот же Flutter build command без
+obfuscation.
+
+## 7. Android smoke-проверка
 
 Минимальный сценарий перед отправкой товарищам:
 
@@ -217,56 +193,36 @@ disconnect из notification action
 перезапуск приложения -> профили и настройки восстановлены
 ```
 
-Для логов во время smoke-проверки:
+Логи:
 
 ```powershell
 adb logcat -c
 adb logcat -v time OrexRay:I GoLog:I AndroidRuntime:E libc:F "*:S"
 ```
 
-Для release privacy-проверки отдельно убедись, что обычный успешный трафик не
-сыплет подробные destination logs при log level `error`.
-
-## 9. Что отправлять товарищам
+## 8. Что отправлять товарищам
 
 Минимально:
 
-- `OrexRay-0.6.2+1-android.apk`;
+- `OrexRay-0.6.2+2-android-arm64-v8a.apk`;
 - `SHA256SUMS.txt`;
 - короткий текст: версия, что изменилось, какие сценарии особенно проверить.
 
-Не отправляй:
+Не отправляй release keystore, `key.properties` и пароли.
 
-- release keystore;
-- `key.properties`;
-- пароли;
-- `build/symbols/`;
-- полный исходный проект только ради установки APK.
-
-## 10. Windows release build
-
-Windows пока проходит отдельный dogfood-путь. Перед сборкой:
+## 9. Windows release build
 
 ```powershell
 flutter pub get
 flutter analyze --no-pub
 flutter test --no-pub
-```
-
-Сборка:
-
-```powershell
 flutter build windows --release --no-pub
 ```
 
-Артефакты:
+Передавать нужно всю папку:
 
 ```text
 build\windows\x64\runner\Release\
 ```
 
-Передавать нужно всю папку `Release`, а не один `.exe`, потому что рядом лежат
-Flutter runtime и native DLL.
-
-Перед более широкой Windows-раздачей нужен отдельный security-проход по
-локальному хранению профилей и recovery системного proxy.
+а не один `.exe`, потому что рядом лежат Flutter runtime и native DLL.
