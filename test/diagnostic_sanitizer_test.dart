@@ -9,7 +9,7 @@ void main() {
     );
 
     expect(sanitized, isNot(contains(uuid)));
-    expect(sanitized, contains('<UUID>'));
+    expect(sanitized, contains('id=<REDACTED>'));
     expect(sanitized, contains('vless://<REDACTED>'));
     expect(sanitized, isNot(contains('secret')));
   });
