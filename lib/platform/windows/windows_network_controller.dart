@@ -30,7 +30,7 @@ class WindowsTunRouteStatus {
     final ipv4 = '$ipv4Name ${ipv4Captured ? '✓' : '✗'}';
     final ipv6 = ipv6Interface.isEmpty
         ? 'unavailable'
-        : '${ipv6Interface} ${ipv6Captured ? '✓' : '✗'}';
+        : '$ipv6Interface ${ipv6Captured ? '✓' : '✗'}';
     return 'IPv4 → $ipv4 · IPv6 → $ipv6';
   }
 }
