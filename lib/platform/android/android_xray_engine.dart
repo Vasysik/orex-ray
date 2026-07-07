@@ -179,6 +179,7 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, Tunn
             ),
       lastExitCode: (native?['lastExitCode'] as num?)?.toInt(),
       outboundInterface: 'Android VpnService',
+      routeSummary: 'Android VpnService managed route',
       restartSummary:
           '${(native?['automaticRestarts'] as num?)?.toInt() ?? 0} automatic · service restart ${_settings.restartServiceOnKill ? 'enabled' : 'disabled'}',
       logs: logs,

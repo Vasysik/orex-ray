@@ -95,6 +95,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
   int? _lastExitCode;
   String? _lastError;
   String? _lastOutboundInterface;
+  String _lastTunRouteSummary = 'not checked';
   int _automaticRestarts = 0;
 
   @override
@@ -169,11 +170,17 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
     Process? startedProcess;
     _stopping = false;
     if (recovery) {
-      _appendLog('--- automatic recovery start ---');
+      _appendAppLog('Automatic recovery start: mode=${mode.storageValue}.');
     } else {
       _logs.clear();
+      _appendAppLog(
+        'Connection start requested: mode=${mode.storageValue}, '
+        'target=${profile.name}.',
+      );
     }
     _activeMode = mode;
+    _lastTunRouteSummary =
+        mode == ConnectionMode.vpnTun ? 'checking' : 'not applicable';
     _status(
       TunnelStatus.connecting,
       mode: mode,
@@ -200,6 +207,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       );
       if (!_isCurrentOperation(operationId)) return;
       _managedExecutablePath = install.executable.path;
+      _appendAppLog('Xray Core ${XrayCoreManager.version} verified.');
 
       // Recover from old OrexRay versions that could leave their managed
       // xray.exe alive after the Flutter process exited. The native side only
@@ -207,20 +215,26 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       // OrexRay-managed core path.
       await WindowsProcessJob.terminateStaleProcesses(install.executable.path);
       if (!_isCurrentOperation(operationId)) return;
+      _appendAppLog('Stale managed Xray process cleanup completed.');
 
       final elevated = await WindowsElevationController.isElevated();
+      _appendAppLog('Process elevation: ${elevated ? 'elevated' : 'standard'}.');
       final assetDirectory = elevated
           ? install.elevatedAssetDirectory
           : install.assetDirectory;
       final statsApiPort = await _reserveLoopbackPort();
       final outboundInterface = mode == ConnectionMode.vpnTun
-          ? await WindowsNetworkController.bestOutboundInterface()
+          ? await _waitForOutboundInterface()
           : null;
       _lastOutboundInterface = outboundInterface;
       if (mode == ConnectionMode.vpnTun && outboundInterface == null) {
-        _appendLog('Physical outbound interface was not detected; using Xray auto mode.');
-      } else if (outboundInterface != null) {
-        _appendLog('Physical outbound interface: $outboundInterface');
+        throw StateError(
+          'Не найден активный физический сетевой интерфейс с маршрутом в '
+          'интернет. Подключи Wi-Fi, Ethernet или мобильную точку и повтори.',
+        );
+      }
+      if (outboundInterface != null) {
+        _appendAppLog('Physical outbound interface: $outboundInterface.');
       }
       final configFile = await _prepareConfigFile(
         install: install,
@@ -273,6 +287,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       );
       await _validateConfig(install, configFile, assetDirectory);
       if (!_isCurrentOperation(operationId)) return;
+      _appendAppLog('Xray configuration validation passed.');
 
       _status(
         TunnelStatus.connecting,
@@ -292,6 +307,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       );
       _process = startedProcess;
       _listenLogs(startedProcess, processLogs);
+      _appendAppLog('Xray process started: PID ${startedProcess.pid}.');
 
       if (!_isCurrentOperation(operationId)) {
         await _terminateProcessTree(startedProcess, install.executable.path);
@@ -303,6 +319,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       // Closing the OrexRay process then kills Xray even after a crash or a
       // forced process termination that bypasses Dart cleanup.
       await WindowsProcessJob.attach(startedProcess.pid);
+      _appendAppLog('Xray PID ${startedProcess.pid} attached to process job.');
       if (!_isCurrentOperation(operationId)) {
         await _terminateProcessTree(startedProcess, install.executable.path);
         if (_process == startedProcess) _process = null;
@@ -328,6 +345,38 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         );
       }
 
+      if (mode == ConnectionMode.vpnTun) {
+        _status(
+          TunnelStatus.connecting,
+          mode: mode,
+          profile: profile,
+          message: 'Проверяем маршруты Windows…',
+        );
+        final routeStatus = await _waitForTunRouteStatus();
+        _lastTunRouteSummary = routeStatus.summary;
+        _appendAppLog('TUN route check: ${routeStatus.summary}.');
+        if (!routeStatus.ipv4Captured) {
+          final actual = routeStatus.ipv4Interface.isEmpty
+              ? 'не определён'
+              : routeStatus.ipv4Interface;
+          throw StateError(
+            'Windows не направил публичный IPv4-трафик в интерфейс OrexRay. '
+            'Текущий лучший маршрут: $actual. Подключение остановлено, чтобы '
+            'не показывать ложное состояние VPN.',
+          );
+        }
+        if (routeStatus.ipv6Interface.isNotEmpty &&
+            !routeStatus.ipv6Captured) {
+          throw StateError(
+            'Windows не направил публичный IPv6-трафик в интерфейс OrexRay. '
+            'Текущий лучший маршрут: ${routeStatus.ipv6Interface}. '
+            'Подключение остановлено, чтобы не допустить IPv6-утечку.',
+          );
+        }
+      } else {
+        _lastTunRouteSummary = 'not applicable';
+      }
+
       if (mode == ConnectionMode.systemProxy) {
         _status(
           TunnelStatus.connecting,
@@ -351,6 +400,9 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
             _systemProxyEnableFuture = null;
           }
         }
+        _appendAppLog(
+          'Windows system proxy enabled on 127.0.0.1:${_settings.httpPort}.',
+        );
         if (!_isCurrentOperation(operationId)) {
           await _restoreSystemProxy();
           await _terminateProcessTree(startedProcess, install.executable.path);
@@ -370,6 +422,10 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         profile: profile,
         message: _connectedMessage(mode),
         stats: const TrafficStats(),
+      );
+      _appendAppLog(
+        'Connection established: mode=${mode.storageValue}, '
+        'PID=${startedProcess.pid}.',
       );
       _startTelemetry();
 
@@ -404,6 +460,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
 
       if (!canceled && !_disposed) {
         _lastError = _friendlyError(error, mode);
+        _appendAppLog('Connection start failed: $_lastError');
         _status(
           TunnelStatus.error,
           mode: mode,
@@ -428,6 +485,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
     }
     _process = null;
     _lastExitCode = code;
+    _appendAppLog('Xray PID ${process.pid} exited unexpectedly with code $code.');
     _statsTimer?.cancel();
     _durationTimer?.cancel();
     await _closeStatsClient();
@@ -440,6 +498,10 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
     );
     final detail = _bestError(decision.message, logs: processLogs);
     _lastError = detail;
+    _appendAppLog(
+      'Watchdog classification: ${decision.kind.name}; '
+      'restart=${decision.canRestart}. Detail: $detail',
+    );
     final shouldRecover = _desiredTarget?.id == profile.id &&
         _desiredMode == mode &&
         decision.canRestart;
@@ -451,7 +513,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         2 => const Duration(seconds: 3),
         _ => const Duration(seconds: 8),
       };
-      _appendLog(
+      _appendAppLog(
         'Watchdog: ${decision.kind.name}; restart '
         '${_restartBudget.recentRestartCount}/${_restartBudget.maxRestarts} '
         'in ${delay.inSeconds}s.',
@@ -509,18 +571,58 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
     ConnectionMode mode,
     TunnelRecoveryReason reason,
   ) async {
-    _appendLog('Recovery requested: ${reason.name}.');
+    _appendAppLog('Recovery event received: ${reason.name}.');
+
+    if (reason == TunnelRecoveryReason.networkChanged) {
+      if (mode != ConnectionMode.vpnTun) {
+        _appendAppLog(
+          'Network event ignored: ${mode.storageValue} keeps local listeners '
+          'alive and Xray reconnects outbound sockets itself.',
+        );
+        return;
+      }
+
+      final candidate = await _waitForOutboundInterface();
+      if (candidate == null) {
+        _appendAppLog(
+          'Network event deferred: no usable physical interface is ready yet.',
+        );
+        return;
+      }
+      if (candidate == _lastOutboundInterface && _process != null) {
+        _appendAppLog(
+          'Network event ignored: physical interface is still $candidate.',
+        );
+        return;
+      }
+      _appendAppLog(
+        'Physical interface changed: '
+        '${_lastOutboundInterface ?? 'unknown'} -> $candidate. Rebuilding TUN.',
+      );
+    } else {
+      _appendAppLog('System resumed; rebuilding the active connection once.');
+    }
+
     ++_operationId;
     await _stopInternal();
     if (_disposed || _desiredTarget?.id != target.id || _desiredMode != mode) {
       return;
     }
-    await Future<void>.delayed(const Duration(milliseconds: 700));
+    await Future<void>.delayed(const Duration(milliseconds: 900));
     await _startInternal(target, mode, recovery: true);
   }
 
   @override
   Future<TunnelDiagnostics> collectDiagnostics() async {
+    if ((_activeMode ?? _current.mode) == ConnectionMode.vpnTun &&
+        _process != null) {
+      try {
+        final routeStatus = await WindowsNetworkController.tunRouteStatus();
+        _lastTunRouteSummary = routeStatus.summary;
+      } catch (error) {
+        _appendAppLog('Live TUN route diagnostics failed: $error');
+      }
+    }
     final proxyState = await _systemProxy.read();
     final proxyStatus = proxyState.enabled
         ? 'enabled · ${proxyState.server.isEmpty ? 'unknown' : proxyState.server}'
@@ -542,6 +644,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
           : DiagnosticSanitizer.sanitize(_lastError!),
       lastExitCode: _lastExitCode,
       outboundInterface: _lastOutboundInterface,
+      routeSummary: _lastTunRouteSummary,
       restartSummary:
           '$_automaticRestarts automatic · ${_restartBudget.recentRestartCount}/${_restartBudget.maxRestarts} in current window',
       logs: [
@@ -616,7 +719,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       if (clean.isEmpty) return;
       processLogs.add(clean);
       if (processLogs.length > 100) processLogs.removeAt(0);
-      _appendLog(clean);
+      _appendXrayLog(clean);
     }
 
     process.stdout
@@ -629,11 +732,26 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         .listen(capture);
   }
 
-  void _appendLog(String line) {
+  void _appendXrayLog(String message) {
+    _appendDiagnosticLog('[Xray] ${message.trim()}');
+  }
+
+  void _appendAppLog(String message) {
+    final timestamp = DateTime.now().toIso8601String();
+    _appendDiagnosticLog('$timestamp [OrexRay] $message');
+  }
+
+  void _appendDiagnosticLog(String line) {
     final clean = line.trim();
     if (clean.isEmpty) return;
     _logs.add(clean);
-    if (_logs.length > 100) _logs.removeAt(0);
+    while (_logs.length > 100) {
+      // Debug-level Xray traffic can emit hundreds of lines per second. Keep
+      // OrexRay lifecycle/recovery decisions visible by evicting the oldest
+      // Xray line first instead of letting traffic noise drown app logs.
+      final xrayIndex = _logs.indexWhere((entry) => entry.startsWith('[Xray] '));
+      _logs.removeAt(xrayIndex >= 0 ? xrayIndex : 0);
+    }
   }
 
   String _bestError(String fallback, {Iterable<String>? logs}) {
@@ -730,7 +848,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         ),
       );
     } catch (error) {
-      _appendLog('Stats API query failed: $error');
+      _appendAppLog('Stats API query failed: $error');
     } finally {
       _statsPollInFlight = false;
     }
@@ -743,6 +861,41 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       message: _connectedMessage(_activeMode ?? ConnectionMode.localProxy),
       stats: _current.stats.copyWithDuration(duration),
     );
+  }
+
+  Future<WindowsTunRouteStatus> _waitForTunRouteStatus({
+    int attempts = 12,
+  }) async {
+    WindowsTunRouteStatus? last;
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      last = await WindowsNetworkController.tunRouteStatus();
+      if (last.fullyCaptured) return last;
+      if (attempt < attempts) {
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+    }
+    return last ??
+        const WindowsTunRouteStatus(
+          ipv4Interface: '',
+          ipv6Interface: '',
+          ipv4Captured: false,
+          ipv6Captured: false,
+        );
+  }
+
+  Future<String?> _waitForOutboundInterface({int attempts = 6}) async {
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        final value = await WindowsNetworkController.bestOutboundInterface();
+        if (value != null && value.toLowerCase() != 'orexray') return value;
+      } catch (error) {
+        _appendAppLog('Physical interface detection failed: $error');
+      }
+      if (attempt < attempts) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+    }
+    return null;
   }
 
   Future<int> _reserveLoopbackPort() async {
@@ -790,6 +943,10 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
   Future<void> _stopInternal() async {
     _stopping = true;
     final process = _process;
+    _appendAppLog(
+      'Stop requested: PID=${process?.pid ?? 'none'}, '
+      'mode=${(_activeMode ?? _current.mode).storageValue}.',
+    );
     final mode = _activeMode ?? _current.mode;
     final wasActive = process != null ||
         _current.status == TunnelStatus.connecting ||
@@ -811,7 +968,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       try {
         await _proxyRecovery;
       } catch (error) {
-        _appendLog('System proxy recovery failed: $error');
+        _appendAppLog('System proxy recovery failed: $error');
       }
 
       final pendingProxyEnable = _systemProxyEnableFuture;
@@ -819,7 +976,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         try {
           await pendingProxyEnable;
         } catch (error) {
-          _appendLog('System proxy enable failed during shutdown: $error');
+          _appendAppLog('System proxy enable failed during shutdown: $error');
         }
       }
 
@@ -854,6 +1011,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         stats: const TrafficStats(),
       );
       _activeMode = null;
+      _appendAppLog('Connection stopped cleanly.');
     } finally {
       _stopping = false;
     }
@@ -866,7 +1024,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
     try {
       process.kill();
     } catch (error) {
-      _appendLog('Xray terminate failed: $error');
+      _appendAppLog('Xray terminate failed: $error');
     }
 
     if (await _waitForExit(process, const Duration(seconds: 3))) {
@@ -877,7 +1035,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       try {
         await WindowsProcessJob.terminateStaleProcesses(executablePath);
       } catch (error) {
-        _appendLog('Native Xray cleanup failed: $error');
+        _appendAppLog('Native Xray cleanup failed: $error');
       }
     }
 
@@ -891,7 +1049,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
     } on TimeoutException {
       return false;
     } catch (error) {
-      _appendLog('Could not observe Xray exit: $error');
+      _appendAppLog('Could not observe Xray exit: $error');
       return false;
     }
   }
@@ -919,7 +1077,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
     try {
       await client.close();
     } catch (error) {
-      _appendLog('Stats API shutdown failed: $error');
+      _appendAppLog('Stats API shutdown failed: $error');
     }
   }
 
@@ -927,7 +1085,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
     try {
       await _systemProxy.restoreSaved();
     } catch (error) {
-      _appendLog('System proxy restore failed: $error');
+      _appendAppLog('System proxy restore failed: $error');
     }
   }
 
@@ -958,7 +1116,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       try {
         await _proxyRecovery;
       } catch (error) {
-        _appendLog('System proxy recovery failed: $error');
+        _appendAppLog('System proxy recovery failed: $error');
       }
     }
 

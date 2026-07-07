@@ -15,6 +15,9 @@ class WindowsLifecycleController {
         _settings = settings;
 
   static const _channel = MethodChannel('ru.orex.ray/windows_lifecycle');
+  static const _networkDebounce = Duration(seconds: 3);
+  static const _resumeDebounce = Duration(milliseconds: 1200);
+  static const _networkCooldown = Duration(seconds: 8);
 
   final TunnelController _tunnel;
   final ConnectionSettingsController _settings;
@@ -22,6 +25,9 @@ class WindowsLifecycleController {
   bool _exitInProgress = false;
   String? _lastTrayState;
   Timer? _recoveryDebounce;
+  bool _recoveryInProgress = false;
+  TunnelRecoveryReason? _pendingRecoveryReason;
+  DateTime? _networkCooldownUntil;
   bool? _lastStartupEnabled;
 
   Future<void> initialize() async {
@@ -65,12 +71,49 @@ class WindowsLifecycleController {
     unawaited(_syncTrayStatus());
   }
 
-
   void _scheduleRecovery(TunnelRecoveryReason reason) {
+    final now = DateTime.now();
+    if (reason == TunnelRecoveryReason.networkChanged &&
+        _networkCooldownUntil?.isAfter(now) == true) {
+      return;
+    }
+
+    if (_recoveryInProgress) {
+      // Re-evaluate the network after the current recovery. A second physical
+      // switch can happen while Xray is stopping/starting; dropping it would
+      // leave the new TUN bound to the adapter that just disappeared. Resume
+      // is stronger than a generic interface notification.
+      if (_pendingRecoveryReason != TunnelRecoveryReason.systemResume ||
+          reason == TunnelRecoveryReason.systemResume) {
+        _pendingRecoveryReason = reason;
+      }
+      return;
+    }
+
     _recoveryDebounce?.cancel();
-    _recoveryDebounce = Timer(const Duration(seconds: 2), () {
-      unawaited(_tunnel.recover(reason));
-    });
+    final delay = reason == TunnelRecoveryReason.systemResume
+        ? _resumeDebounce
+        : _networkDebounce;
+    _recoveryDebounce = Timer(delay, () => unawaited(_runRecovery(reason)));
+  }
+
+  Future<void> _runRecovery(TunnelRecoveryReason reason) async {
+    if (_recoveryInProgress) return;
+    _recoveryInProgress = true;
+    try {
+      await _tunnel.recover(reason);
+    } finally {
+      _recoveryInProgress = false;
+      _networkCooldownUntil = DateTime.now().add(_networkCooldown);
+      final pending = _pendingRecoveryReason;
+      _pendingRecoveryReason = null;
+      if (pending != null && _initialized) {
+        _recoveryDebounce?.cancel();
+        _recoveryDebounce = Timer(_networkCooldown, () {
+          if (_initialized) _scheduleRecovery(pending);
+        });
+      }
+    }
   }
 
   Future<void> _syncStartupRegistration() async {

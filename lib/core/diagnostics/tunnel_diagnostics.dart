@@ -13,6 +13,7 @@ class TunnelDiagnostics {
     required this.lastError,
     required this.lastExitCode,
     required this.outboundInterface,
+    required this.routeSummary,
     required this.restartSummary,
     required this.logs,
   });
@@ -28,6 +29,7 @@ class TunnelDiagnostics {
   final String? lastError;
   final int? lastExitCode;
   final String? outboundInterface;
+  final String routeSummary;
   final String restartSummary;
   final List<String> logs;
 }

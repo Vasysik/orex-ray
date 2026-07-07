@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/app_version.dart';
 import '../../core/diagnostics/tunnel_diagnostics.dart';
+import '../../core/settings/connection_settings_controller.dart';
+import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/settings_section.dart';
@@ -12,10 +16,12 @@ class DiagnosticsScreen extends StatefulWidget {
   const DiagnosticsScreen({
     super.key,
     required this.tunnel,
+    required this.settings,
     required this.appVersion,
   });
 
   final TunnelController tunnel;
+  final ConnectionSettingsController settings;
   final OrexAppVersion appVersion;
 
   @override
@@ -65,6 +71,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       'Ports: ${ports.isEmpty ? '—' : ports}',
       'System proxy: ${value.systemProxyStatus}',
       'Outbound interface: ${value.outboundInterface ?? '—'}',
+      'TUN route: ${value.routeSummary}',
       'Watchdog: ${value.restartSummary}',
       'Last exit code: ${value.lastExitCode ?? '—'}',
       'Last error: ${value.lastError ?? '—'}',
@@ -85,40 +92,78 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     );
   }
 
+  Future<void> _setLogLevel(String value) async {
+    if (value == 'info' || value == 'debug') {
+      final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              icon: const Icon(Icons.visibility_outlined),
+              title: const Text('Подробные сетевые логи'),
+              content: const Text(
+                'На уровнях «Информация» и «Отладка» Xray может писать адреса '
+                'назначения и другую сетевую диагностику. Используй эти '
+                'режимы только временно при поиске проблемы.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Отмена'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Включить'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!confirmed) return;
+    }
+    await widget.settings.setLogLevel(value);
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final value = _diagnostics;
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        const SettingsPageHeader(
-          title: 'Диагностика',
-          subtitle: 'Состояние Xray, watchdog, порты и безопасный журнал',
-          icon: Icons.monitor_heart_outlined,
+        _DiagnosticsHeader(
+          loading: _loading,
+          canCopy: value != null,
+          onRefresh: _refresh,
+          onCopy: _copy,
         ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        const SizedBox(height: 20),
+        SettingsSection(
+          title: 'Журнал',
+          subtitle: 'Уровень Xray и служебные события OrexRay.',
           children: [
-            OutlinedButton.icon(
-              onPressed: _loading ? null : _refresh,
-              icon: _loading
-                  ? const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh_rounded),
-              label: const Text('Обновить'),
-            ),
-            FilledButton.icon(
-              onPressed: value == null ? null : _copy,
-              icon: const Icon(Icons.copy_rounded),
-              label: const Text('Скопировать отчёт'),
+            ListTile(
+              leading: const Icon(Icons.terminal_rounded, color: OrexColors.copper),
+              title: const Text('Уровень логов'),
+              subtitle: Text(_logLevelTitle(widget.settings.logLevel)),
+              trailing: DropdownButton<String>(
+                value: widget.settings.logLevel,
+                underline: const SizedBox.shrink(),
+                items: const [
+                  DropdownMenuItem(value: 'error', child: Text('Ошибки')),
+                  DropdownMenuItem(
+                    value: 'warning',
+                    child: Text('Предупреждения'),
+                  ),
+                  DropdownMenuItem(value: 'info', child: Text('Информация')),
+                  DropdownMenuItem(value: 'debug', child: Text('Отладка')),
+                ],
+                onChanged: (next) {
+                  if (next != null) _setLogLevel(next);
+                },
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 16),
         if (_error != null)
           GlassPanel(
             borderRadius: 20,
@@ -134,7 +179,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             title: 'Состояние',
             subtitle: 'Текущая runtime-картина без секретов подключения.',
             children: [
-              _DiagnosticRow(label: 'OrexRay', value: widget.appVersion.settingsSubtitle),
+              _DiagnosticRow(
+                label: 'OrexRay',
+                value: widget.appVersion.settingsSubtitle,
+              ),
               _DiagnosticRow(label: 'Xray', value: value.xrayVersion),
               _DiagnosticRow(label: 'Режим', value: value.mode.title),
               _DiagnosticRow(label: 'Профиль', value: value.targetName),
@@ -142,19 +190,38 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               _DiagnosticRow(label: 'PID', value: value.pid?.toString() ?? '—'),
               _DiagnosticRow(
                 label: 'Порты',
-                value: value.ports.entries.map((e) => '${e.key} ${e.value}').join(' · '),
+                value: value.ports.entries
+                    .map((e) => '${e.key} ${e.value}')
+                    .join(' · '),
               ),
-              _DiagnosticRow(label: 'Системный proxy', value: value.systemProxyStatus),
+              _DiagnosticRow(
+                label: 'Системный proxy',
+                value: value.systemProxyStatus,
+              ),
               _DiagnosticRow(
                 label: 'Физический интерфейс',
                 value: value.outboundInterface ?? '—',
               ),
+              _DiagnosticRow(label: 'Маршрут TUN', value: value.routeSummary),
               _DiagnosticRow(label: 'Watchdog', value: value.restartSummary),
               _DiagnosticRow(
                 label: 'Последний exit code',
                 value: value.lastExitCode?.toString() ?? '—',
               ),
-              _DiagnosticRow(label: 'Последняя ошибка', value: value.lastError ?? '—'),
+              _DiagnosticRow(
+                label: 'Последняя ошибка',
+                value: value.lastError ?? '—',
+              ),
+              if (Platform.isWindows && value.mode == ConnectionMode.vpnTun)
+                const ListTile(
+                  leading: Icon(Icons.info_outline_rounded),
+                  title: Text('Значок сети Windows'),
+                  subtitle: Text(
+                    'NCSI может показывать «Нет доступа к интернету» именно '
+                    'для виртуального TUN-адаптера. Проверка «Маршрут TUN» '
+                    'выше показывает фактический лучший маршрут Windows.',
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -164,8 +231,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Последние ${value.logs.length} строк лога',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Последние ${value.logs.length} строк лога',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 10),
                 SelectableText(
                   value.logs.isEmpty ? 'Журнал пока пуст.' : value.logs.join('\n'),
@@ -179,6 +248,80 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _DiagnosticsHeader extends StatelessWidget {
+  const _DiagnosticsHeader({
+    required this.loading,
+    required this.canCopy,
+    required this.onRefresh,
+    required this.onCopy,
+  });
+
+  final bool loading;
+  final bool canCopy;
+  final VoidCallback onRefresh;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Диагностика', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 4),
+        Text(
+          'Состояние Xray, watchdog, маршруты и безопасный журнал',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+
+    final actions = Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        OutlinedButton.icon(
+          onPressed: loading ? null : onRefresh,
+          icon: loading
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh_rounded),
+          label: const Text('Обновить'),
+        ),
+        OutlinedButton.icon(
+          onPressed: canCopy ? onCopy : null,
+          icon: const Icon(Icons.copy_rounded),
+          label: const Text('Скопировать отчёт'),
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 700) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(child: title),
+              const SizedBox(width: 20),
+              actions,
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            title,
+            const SizedBox(height: 14),
+            actions,
+          ],
+        );
+      },
     );
   }
 }
@@ -198,3 +341,10 @@ class _DiagnosticRow extends StatelessWidget {
     );
   }
 }
+
+String _logLevelTitle(String value) => switch (value) {
+      'warning' => 'Предупреждения',
+      'info' => 'Информация',
+      'debug' => 'Отладка',
+      _ => 'Только ошибки',
+    };

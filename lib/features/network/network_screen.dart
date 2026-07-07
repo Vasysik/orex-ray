@@ -19,7 +19,7 @@ class NetworkScreen extends StatelessWidget {
         children: [
           const SettingsPageHeader(
             title: 'Сеть',
-            subtitle: 'DNS, маршрутизация и диагностика Xray',
+            subtitle: 'DNS и маршрутизация Xray',
             icon: Icons.public_rounded,
           ),
           const SizedBox(height: 22),
@@ -90,72 +90,10 @@ class NetworkScreen extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          SettingsSection(
-            title: 'Диагностика',
-            subtitle: 'Более подробный уровень создаёт больше логов Xray.',
-            children: [
-              ListTile(
-                leading: const Icon(Icons.terminal_rounded, color: OrexColors.copper),
-                title: const Text('Уровень логов Xray'),
-                subtitle: Text(_logLevelTitle(settings.logLevel)),
-                trailing: DropdownButton<String>(
-                  value: settings.logLevel,
-                  underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(value: 'error', child: Text('Ошибки')),
-                    DropdownMenuItem(value: 'warning', child: Text('Предупреждения')),
-                    DropdownMenuItem(value: 'info', child: Text('Информация')),
-                    DropdownMenuItem(value: 'debug', child: Text('Отладка')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      _setLogLevel(context, settings, value);
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
   }
-}
-
-
-Future<void> _setLogLevel(
-  BuildContext context,
-  ConnectionSettingsController settings,
-  String value,
-) async {
-  if (value == 'info' || value == 'debug') {
-    final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            icon: const Icon(Icons.visibility_outlined),
-            title: const Text('Подробные сетевые логи'),
-            content: const Text(
-              'На уровнях «Информация» и «Отладка» Xray может писать в logcat '
-              'адреса назначения и другую сетевую диагностику. Используй эти '
-              'режимы только временно при поиске проблемы.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Отмена'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Включить'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-    if (!confirmed) return;
-  }
-  await settings.setLogLevel(value);
 }
 
 Future<void> _editCustomDns(
@@ -175,10 +113,3 @@ Future<void> _editCustomDns(
     },
   );
 }
-
-String _logLevelTitle(String value) => switch (value) {
-      'warning' => 'Предупреждения',
-      'info' => 'Информация',
-      'debug' => 'Отладка',
-      _ => 'Только ошибки',
-    };

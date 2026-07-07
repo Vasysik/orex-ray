@@ -82,7 +82,11 @@ class _AppShellState extends State<AppShell> {
       GeoDataScreen(controller: widget.geoData, settings: widget.settings),
       BackgroundScreen(settings: widget.settings),
       AppearanceScreen(theme: widget.theme),
-      DiagnosticsScreen(tunnel: widget.tunnel, appVersion: widget.appVersion),
+      DiagnosticsScreen(
+        tunnel: widget.tunnel,
+        settings: widget.settings,
+        appVersion: widget.appVersion,
+      ),
       AboutScreen(appVersion: widget.appVersion),
       MoreScreen(
         showApps: !Platform.isWindows,

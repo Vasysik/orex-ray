@@ -173,10 +173,6 @@ class TunnelController extends ChangeNotifier {
 
   Future<void> recover(TunnelRecoveryReason reason) async {
     if (_closing || !_engineSnapshot.isConnected) return;
-    if (reason == TunnelRecoveryReason.networkChanged &&
-        _engineSnapshot.stats.duration < const Duration(seconds: 5)) {
-      return;
-    }
     if (_engine case TunnelRecoverySink recovery) {
       await recovery.recover(reason);
       _syncFromEngine();
@@ -199,6 +195,7 @@ class TunnelController extends ChangeNotifier {
       lastError: snapshot.errorMessage,
       lastExitCode: null,
       outboundInterface: null,
+      routeSummary: 'not available',
       restartSummary: _settings.restartServiceOnKill ? 'enabled' : 'disabled',
       logs: const [],
     );

@@ -9,6 +9,8 @@
 #include <shlobj.h>
 
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <cwchar>
 #include <optional>
 #include <string>
@@ -137,36 +139,132 @@ bool SetStartupEnabled(bool enabled) {
   return status == ERROR_SUCCESS;
 }
 
+bool IsOrexRayInterfaceName(const wchar_t* name) {
+  return name != nullptr && _wcsicmp(name, L"OrexRay") == 0;
+}
+
+bool IsUsableOutboundAdapter(const IP_ADAPTER_ADDRESSES* adapter) {
+  if (adapter == nullptr || adapter->FriendlyName == nullptr ||
+      adapter->OperStatus != IfOperStatusUp ||
+      adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK ||
+      adapter->IfType == IF_TYPE_TUNNEL ||
+      IsOrexRayInterfaceName(adapter->FriendlyName) ||
+      adapter->FirstUnicastAddress == nullptr ||
+      adapter->FirstGatewayAddress == nullptr) {
+    return false;
+  }
+  return true;
+}
+
+ULONG AdapterMetric(const IP_ADAPTER_ADDRESSES* adapter) {
+  if (adapter == nullptr) return std::numeric_limits<ULONG>::max();
+  const ULONG ipv4 = adapter->Ipv4Metric;
+  const ULONG ipv6 = adapter->Ipv6Metric;
+  if (ipv4 == 0) return ipv6 == 0 ? std::numeric_limits<ULONG>::max() : ipv6;
+  if (ipv6 == 0) return ipv4;
+  return ipv4 < ipv6 ? ipv4 : ipv6;
+}
+
 std::string BestOutboundInterfaceName() {
-  DWORD interface_index = 0;
-  // 1.1.1.1 is byte-order invariant, so this avoids Winsock initialization.
-  if (GetBestInterface(0x01010101, &interface_index) != NO_ERROR) {
+  ULONG size = 0;
+  constexpr ULONG flags =
+      GAA_FLAG_INCLUDE_PREFIX | GAA_FLAG_INCLUDE_GATEWAYS;
+  const ULONG initial = GetAdaptersAddresses(
+      AF_UNSPEC, flags, nullptr, nullptr, &size);
+  if (initial != ERROR_BUFFER_OVERFLOW || size == 0) return std::string();
+
+  std::vector<unsigned char> buffer(size);
+  auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+  if (GetAdaptersAddresses(AF_UNSPEC, flags, nullptr, adapters, &size) !=
+      NO_ERROR) {
     return std::string();
   }
 
-  ULONG size = 0;
-  GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, nullptr,
-                       &size);
-  if (size == 0) return std::string();
-  std::vector<unsigned char> buffer(size);
-  auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
-  if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr,
-                           adapters, &size) != NO_ERROR) {
+  DWORD best_route_index = 0;
+  // Prefer Windows' current route decision when it still points to a usable
+  // physical adapter. The OrexRay TUN can own the default route while running,
+  // so a fallback scan below intentionally excludes the managed TUN adapter.
+  const bool has_best_route =
+      GetBestInterface(0x01010101, &best_route_index) == NO_ERROR;
+
+  const IP_ADAPTER_ADDRESSES* fallback = nullptr;
+  ULONG fallback_metric = std::numeric_limits<ULONG>::max();
+  for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next) {
+    if (!IsUsableOutboundAdapter(adapter)) continue;
+
+    if (has_best_route &&
+        (adapter->IfIndex == best_route_index ||
+         adapter->Ipv6IfIndex == best_route_index)) {
+      return Utf8FromUtf16(adapter->FriendlyName);
+    }
+
+    const ULONG metric = AdapterMetric(adapter);
+    if (fallback == nullptr || metric < fallback_metric) {
+      fallback = adapter;
+      fallback_metric = metric;
+    }
+  }
+
+  return fallback == nullptr ? std::string()
+                             : Utf8FromUtf16(fallback->FriendlyName);
+}
+
+bool IsManagedTunNotification(const PMIB_IPINTERFACE_ROW row) {
+  if (row == nullptr) return false;
+  wchar_t alias[IF_MAX_STRING_SIZE + 1] = {};
+  if (ConvertInterfaceLuidToAlias(&row->InterfaceLuid, alias,
+                                  ARRAYSIZE(alias)) != NO_ERROR) {
+    return false;
+  }
+  return IsOrexRayInterfaceName(alias);
+}
+
+std::string InterfaceNameForIndex(NET_IFINDEX index) {
+  if (index == 0) return std::string();
+  NET_LUID luid{};
+  if (ConvertInterfaceIndexToLuid(index, &luid) != NO_ERROR) {
     return std::string();
   }
-  for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next) {
-    if (adapter->IfIndex != interface_index &&
-        adapter->Ipv6IfIndex != interface_index) {
-      continue;
-    }
-    if (adapter->OperStatus != IfOperStatusUp ||
-        adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK ||
-        adapter->FriendlyName == nullptr) {
-      return std::string();
-    }
-    return Utf8FromUtf16(adapter->FriendlyName);
+  wchar_t alias[IF_MAX_STRING_SIZE + 1] = {};
+  if (ConvertInterfaceLuidToAlias(&luid, alias, ARRAYSIZE(alias)) != NO_ERROR) {
+    return std::string();
   }
-  return std::string();
+  return Utf8FromUtf16(alias);
+}
+
+std::string BestIpv4RouteInterfaceName() {
+  DWORD index = 0;
+  if (GetBestInterface(0x01010101, &index) != NO_ERROR) return std::string();
+  return InterfaceNameForIndex(index);
+}
+
+std::string BestIpv6RouteInterfaceName() {
+  sockaddr_in6 destination{};
+  destination.sin6_family = AF_INET6;
+  const unsigned char address[16] = {
+      0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x11,
+  };
+  memcpy(&destination.sin6_addr, address, sizeof(address));
+  DWORD index = 0;
+  if (GetBestInterfaceEx(reinterpret_cast<sockaddr*>(&destination), &index) !=
+      NO_ERROR) {
+    return std::string();
+  }
+  return InterfaceNameForIndex(index);
+}
+
+flutter::EncodableMap TunRouteStatus() {
+  const std::string ipv4 = BestIpv4RouteInterfaceName();
+  const std::string ipv6 = BestIpv6RouteInterfaceName();
+  return flutter::EncodableMap{
+      {flutter::EncodableValue("ipv4Interface"), flutter::EncodableValue(ipv4)},
+      {flutter::EncodableValue("ipv6Interface"), flutter::EncodableValue(ipv6)},
+      {flutter::EncodableValue("ipv4Captured"),
+       flutter::EncodableValue(ipv4 == "OrexRay")},
+      {flutter::EncodableValue("ipv6Captured"),
+       flutter::EncodableValue(ipv6 == "OrexRay")},
+  };
 }
 
 std::wstring KnownFolderPath(REFKNOWNFOLDERID folder_id) {
@@ -445,6 +543,11 @@ bool FlutterWindow::OnCreate() {
           return;
         }
 
+        if (call.method_name() == "getTunRouteStatus") {
+          result->Success(flutter::EncodableValue(TunRouteStatus()));
+          return;
+        }
+
         if (call.method_name() == "completeExit") {
           KillTimer(GetHandle(), kExitFallbackTimerId);
           exit_requested_ = true;
@@ -464,7 +567,8 @@ bool FlutterWindow::OnCreate() {
 
   NotifyIpInterfaceChange(
       AF_UNSPEC,
-      [](PVOID context, PMIB_IPINTERFACE_ROW, MIB_NOTIFICATION_TYPE) {
+      [](PVOID context, PMIB_IPINTERFACE_ROW row, MIB_NOTIFICATION_TYPE) {
+        if (IsManagedTunNotification(row)) return;
         const HWND window = reinterpret_cast<HWND>(context);
         if (window != nullptr) PostMessageW(window, kNetworkChangedMessage, 0, 0);
       },
