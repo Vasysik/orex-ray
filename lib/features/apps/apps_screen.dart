@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -21,12 +19,6 @@ class AppsScreen extends StatefulWidget {
 class _AppsScreenState extends State<AppsScreen> {
   String _query = '';
   bool _selectedOnly = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (Platform.isAndroid) unawaited(widget.controller.loadApps());
-  }
 
   @override
   Widget build(BuildContext context) {

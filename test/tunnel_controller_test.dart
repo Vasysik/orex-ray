@@ -10,9 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   test('controller connects selected imported profile in selected mode', () async {
     SharedPreferences.setMockInitialValues({});
-    final profiles = await ProfilesController.load(
-      automaticLatencyRefresh: false,
-    );
+    final profiles = await ProfilesController.load();
     final settings = await ConnectionSettingsController.load(
       operatingSystem: 'windows',
     );
@@ -52,8 +50,8 @@ void main() {
     );
 
     expect(settings.mode, ConnectionMode.vpnTun);
-    expect(settings.dnsPreset, DnsPreset.system);
-    expect(settings.dnsServers, isEmpty);
+    expect(settings.dnsPreset, DnsPreset.automatic);
+    expect(settings.dnsServers, ['1.1.1.1', '8.8.8.8']);
     expect(settings.supportedModes, contains(ConnectionMode.localProxy));
     expect(settings.supportedModes, isNot(contains(ConnectionMode.systemProxy)));
 
@@ -115,10 +113,23 @@ void main() {
 
     expect(settings.allowLan, isFalse);
     expect(settings.logLevel, 'error');
-    expect(settings.dnsPreset, DnsPreset.system);
+    expect(settings.dnsPreset, DnsPreset.automatic);
     expect(settings.localProxyInVpn, isTrue);
     expect(settings.showNotificationPing, isTrue);
     expect(settings.closeToTray, isFalse);
+  });
+
+  test('explicit system DNS preference is preserved', () async {
+    SharedPreferences.setMockInitialValues({
+      'orex_ray_dns_preset_v1': 'system',
+    });
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    addTearDown(settings.dispose);
+
+    expect(settings.dnsPreset, DnsPreset.system);
+    expect(settings.dnsServers, isEmpty);
   });
 
   test('Windows closes to tray by default', () async {
@@ -133,9 +144,7 @@ void main() {
 
   test('shutdown awaits engine stop and dispose exactly once', () async {
     SharedPreferences.setMockInitialValues({});
-    final profiles = await ProfilesController.load(
-      automaticLatencyRefresh: false,
-    );
+    final profiles = await ProfilesController.load();
     final settings = await ConnectionSettingsController.load(
       operatingSystem: 'windows',
     );
@@ -160,9 +169,7 @@ void main() {
 
   test('regular controller disposal does not stop a background tunnel', () async {
     SharedPreferences.setMockInitialValues({});
-    final profiles = await ProfilesController.load(
-      automaticLatencyRefresh: false,
-    );
+    final profiles = await ProfilesController.load();
     final settings = await ConnectionSettingsController.load(
       operatingSystem: 'android',
     );
@@ -184,9 +191,7 @@ void main() {
 
   test('switching profile while connected restarts the active tunnel', () async {
     SharedPreferences.setMockInitialValues({});
-    final profiles = await ProfilesController.load(
-      automaticLatencyRefresh: false,
-    );
+    final profiles = await ProfilesController.load();
     final settings = await ConnectionSettingsController.load(
       operatingSystem: 'android',
     );

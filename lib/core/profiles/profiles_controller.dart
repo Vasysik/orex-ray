@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -14,26 +14,11 @@ class ProfilesController extends ChangeNotifier {
     required List<BalancerProfile> balancers,
     required String? selectedId,
     required LatencyProbe latencyProbe,
-    required bool automaticLatencyRefresh,
   })  : _repository = repository,
         _profiles = List<TunnelProfile>.from(profiles),
         _balancers = List<BalancerProfile>.from(balancers),
         _selectedId = selectedId,
-        _latencyProbe = latencyProbe,
-        _automaticLatencyRefresh = automaticLatencyRefresh {
-    if (_automaticLatencyRefresh) {
-      _pingTimer = Timer.periodic(
-        const Duration(minutes: 1),
-        (_) => unawaited(refreshAllLatencies()),
-      );
-      if (_profiles.isNotEmpty) {
-        _initialPingTimer = Timer(
-          const Duration(milliseconds: 700),
-          () => unawaited(refreshAllLatencies()),
-        );
-      }
-    }
-  }
+        _latencyProbe = latencyProbe;
 
   final ProfileRepository _repository;
   final VlessLinkParser _parser = const VlessLinkParser();
@@ -41,15 +26,12 @@ class ProfilesController extends ChangeNotifier {
   final List<TunnelProfile> _profiles;
   final List<BalancerProfile> _balancers;
   String? _selectedId;
-  final bool _automaticLatencyRefresh;
-  Timer? _pingTimer;
-  Timer? _initialPingTimer;
+  static const _maxProfiles = 500;
   bool _refreshingLatency = false;
   bool _disposed = false;
 
   static Future<ProfilesController> load({
     LatencyProbe latencyProbe = const LatencyProbe(),
-    bool automaticLatencyRefresh = true,
   }) async {
     final repository = await ProfileRepository.load();
     final profiles = repository.readProfiles();
@@ -68,7 +50,6 @@ class ProfilesController extends ChangeNotifier {
       balancers: balancers,
       selectedId: selectedId,
       latencyProbe: latencyProbe,
-      automaticLatencyRefresh: automaticLatencyRefresh,
     );
   }
 
@@ -131,7 +112,17 @@ class ProfilesController extends ChangeNotifier {
 
   Future<TunnelProfile> importVlessLink(String link) async {
     final previousSelection = _selectedId;
-    final profile = _parser.parse(link);
+    var profile = _parser.parse(link);
+    final legacyIndex = _profiles.indexWhere(
+      (item) => _sameConnectionProfile(item, profile),
+    );
+    if (legacyIndex >= 0 && _profiles[legacyIndex].id != profile.id) {
+      profile = profile.copyWith(id: _profiles[legacyIndex].id);
+    }
+    if (_profiles.length >= _maxProfiles &&
+        !_profiles.any((item) => item.id == profile.id)) {
+      throw const FormatException('Можно сохранить не больше 500 профилей');
+    }
     final existingIndex = _profiles.indexWhere((item) => item.id == profile.id);
     if (existingIndex >= 0) {
       final old = _profiles[existingIndex];
@@ -144,11 +135,14 @@ class ProfilesController extends ChangeNotifier {
     }
     await _persist();
     _notifyListeners();
-    if (_automaticLatencyRefresh) unawaited(refreshLatency(profile.id));
     return profile;
   }
 
   Future<TunnelProfile> createProfile(TunnelProfile profile) async {
+    _validateProfileInput(profile);
+    if (_profiles.length >= _maxProfiles) {
+      throw const FormatException('Можно сохранить не больше 500 профилей');
+    }
     if (_profiles.any((item) => item.id == profile.id)) {
       throw const FormatException('Профиль с таким ID уже существует');
     }
@@ -158,17 +152,16 @@ class ProfilesController extends ChangeNotifier {
     }
     await _persist();
     _notifyListeners();
-    if (_automaticLatencyRefresh) unawaited(refreshLatency(profile.id));
     return profile;
   }
 
   Future<void> updateProfile(TunnelProfile profile) async {
+    _validateProfileInput(profile);
     final index = _profiles.indexWhere((item) => item.id == profile.id);
     if (index < 0) return;
     _profiles[index] = profile;
     await _repository.saveProfiles(_profiles);
     _notifyListeners();
-    if (_automaticLatencyRefresh) unawaited(refreshLatency(profile.id));
   }
 
   Future<BalancerProfile> saveBalancer({
@@ -187,15 +180,25 @@ class ProfilesController extends ChangeNotifier {
     if (name.trim().isEmpty) {
       throw const FormatException('Укажи имя балансировщика');
     }
+    if (name.trim().length > 256) {
+      throw const FormatException('Имя балансировщика слишком длинное');
+    }
+    if (probeUrl.length > 8192) {
+      throw const FormatException('URL проверки слишком длинный');
+    }
+    if (memberIds.length > _maxProfiles) {
+      throw const FormatException('Слишком много участников балансировщика');
+    }
     if (uniqueMembers.length < 2) {
       throw const FormatException('Выбери минимум два профиля');
     }
     final uri = Uri.tryParse(probeUrl.trim());
     final needsObservation = strategy == BalancerStrategy.leastPing ||
         (fallbackTarget?.trim().isNotEmpty ?? false);
-    if (needsObservation &&
-        (uri == null || !uri.hasScheme || !uri.hasAuthority)) {
-      throw const FormatException('Некорректный URL проверки');
+    if (needsObservation && !_isSafeProbeUri(uri)) {
+      throw const FormatException(
+        'URL проверки должен быть публичным HTTP/HTTPS адресом',
+      );
     }
 
     final normalizedFallback = fallbackTarget?.trim();
@@ -223,7 +226,7 @@ class ProfilesController extends ChangeNotifier {
       memberIds: uniqueMembers,
       strategy: strategy,
       probeUrl: probeUrl.trim(),
-      probeIntervalSeconds: probeIntervalSeconds.clamp(5, 3600).toInt(),
+      probeIntervalSeconds: probeIntervalSeconds.clamp(30, 3600).toInt(),
       fallbackTarget: normalizedFallback == null || normalizedFallback.isEmpty
           ? null
           : normalizedFallback,
@@ -293,7 +296,7 @@ class ProfilesController extends ChangeNotifier {
     final latency = await _latencyProbe.measure(profile);
     if (_disposed) return;
     final currentIndex = _profiles.indexWhere((item) => item.id == id);
-    if (currentIndex < 0) return;
+    if (currentIndex < 0 || _profiles[currentIndex].latencyMs == latency) return;
     _profiles[currentIndex] = _profiles[currentIndex].copyWith(
       latencyMs: latency,
       clearLatency: latency == null,
@@ -307,23 +310,132 @@ class ProfilesController extends ChangeNotifier {
     if (_disposed || _refreshingLatency || _profiles.isEmpty) return;
     _refreshingLatency = true;
     _notifyListeners();
+    var changed = false;
     try {
       for (final profile in List<TunnelProfile>.from(_profiles)) {
         final latency = await _latencyProbe.measure(profile);
         if (_disposed) return;
         final index = _profiles.indexWhere((item) => item.id == profile.id);
-        if (index >= 0) {
+        if (index >= 0 && _profiles[index].latencyMs != latency) {
           _profiles[index] = _profiles[index].copyWith(
             latencyMs: latency,
             clearLatency: latency == null,
           );
-          _notifyListeners();
+          changed = true;
         }
       }
-      if (!_disposed) await _repository.saveProfiles(_profiles);
+      if (!_disposed && changed) await _repository.saveProfiles(_profiles);
     } finally {
       _refreshingLatency = false;
       _notifyListeners();
+    }
+  }
+
+  bool _isSafeProbeUri(Uri? uri) {
+    if (uri == null || !uri.hasAuthority || uri.userInfo.isNotEmpty) {
+      return false;
+    }
+    if (uri.scheme != 'http' && uri.scheme != 'https') return false;
+    final host = uri.host.trim().toLowerCase();
+    if (host.isEmpty ||
+        host == 'localhost' ||
+        host.endsWith('.localhost') ||
+        host.endsWith('.local')) {
+      return false;
+    }
+
+    final address = InternetAddress.tryParse(host);
+    if (address == null) return true;
+    final bytes = address.rawAddress;
+    if (address.type == InternetAddressType.IPv4) {
+      return _isPublicIpv4(bytes);
+    }
+
+    final unspecified = bytes.every((value) => value == 0);
+    final loopback =
+        bytes.take(15).every((value) => value == 0) && bytes[15] == 1;
+    final uniqueLocal = bytes[0] == 0xfc || bytes[0] == 0xfd;
+    final linkLocal = bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80;
+    final multicast = bytes[0] == 0xff;
+    final ipv4Mapped = bytes.take(10).every((value) => value == 0) &&
+        bytes[10] == 0xff &&
+        bytes[11] == 0xff;
+    if (ipv4Mapped) {
+      return _isPublicIpv4(bytes.sublist(12));
+    }
+    return !unspecified && !loopback && !uniqueLocal && !linkLocal && !multicast;
+  }
+
+  bool _isPublicIpv4(List<int> bytes) {
+    final first = bytes[0];
+    final second = bytes[1];
+    final third = bytes[2];
+    return first != 0 &&
+        first != 10 &&
+        first != 127 &&
+        !(first == 100 && second >= 64 && second <= 127) &&
+        !(first == 169 && second == 254) &&
+        !(first == 172 && second >= 16 && second <= 31) &&
+        !(first == 192 && second == 0 && third == 0) &&
+        !(first == 192 && second == 168) &&
+        !(first == 198 && (second == 18 || second == 19)) &&
+        first < 224;
+  }
+
+  bool _sameConnectionProfile(TunnelProfile left, TunnelProfile right) {
+    final leftAlpn = [...left.alpn]..sort();
+    final rightAlpn = [...right.alpn]..sort();
+    return left.address.toLowerCase() == right.address.toLowerCase() &&
+        left.port == right.port &&
+        left.userId == right.userId &&
+        left.encryption == right.encryption &&
+        left.flow == right.flow &&
+        left.security == right.security &&
+        left.transport == right.transport &&
+        left.serverName.toLowerCase() == right.serverName.toLowerCase() &&
+        left.fingerprint == right.fingerprint &&
+        left.realityPassword == right.realityPassword &&
+        left.shortId == right.shortId &&
+        left.spiderX == right.spiderX &&
+        left.path == right.path &&
+        left.host.toLowerCase() == right.host.toLowerCase() &&
+        left.serviceName == right.serviceName &&
+        left.grpcMode == right.grpcMode &&
+        listEquals(leftAlpn, rightAlpn) &&
+        left.allowInsecure == right.allowInsecure;
+  }
+
+  void _validateProfileInput(TunnelProfile profile) {
+    void check(String value, int limit, String fieldName) {
+      if (value.length > limit) {
+        throw FormatException('$fieldName слишком длинный');
+      }
+    }
+
+    check(profile.name, 256, 'Имя профиля');
+    check(profile.address, 1024, 'Адрес сервера');
+    check(profile.sourceLink, 64 * 1024, 'Исходная ссылка');
+    for (final field in <(String, String)>[
+      ('VLESS ID', profile.userId),
+      ('Encryption', profile.encryption),
+      ('Flow', profile.flow),
+      ('Security', profile.security),
+      ('Transport', profile.transport),
+      ('SNI', profile.serverName),
+      ('Fingerprint', profile.fingerprint),
+      ('REALITY key', profile.realityPassword),
+      ('Short ID', profile.shortId),
+      ('Spider X', profile.spiderX),
+      ('Path', profile.path),
+      ('Host', profile.host),
+      ('Service name', profile.serviceName),
+      ('gRPC mode', profile.grpcMode),
+    ]) {
+      check(field.$2, 4096, field.$1);
+    }
+    if (profile.alpn.length > 16 ||
+        profile.alpn.any((value) => value.length > 4096)) {
+      throw const FormatException('Слишком много или слишком длинные ALPN-значения');
     }
   }
 
@@ -342,8 +454,6 @@ class ProfilesController extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    _pingTimer?.cancel();
-    _initialPingTimer?.cancel();
     super.dispose();
   }
 }

@@ -16,7 +16,17 @@ class VlessLinkFormatException implements Exception {
 class VlessLinkParser {
   const VlessLinkParser();
 
+  static const _maxLinkLength = 64 * 1024;
+  static const _maxNameLength = 256;
+  static const _maxAddressLength = 1024;
+  static const _maxFieldLength = 4096;
+  static const _maxAlpnItems = 16;
+
   TunnelProfile parse(String input) {
+    if (input.length > _maxLinkLength) {
+      throw const VlessLinkFormatException('VLESS-ссылка больше 64 КБ');
+    }
+
     final raw = input.trim();
     if (raw.isEmpty) {
       throw const VlessLinkFormatException('Вставьте ссылку vless://');
@@ -31,6 +41,12 @@ class VlessLinkParser {
     }
     if (uri.host.trim().isEmpty) {
       throw const VlessLinkFormatException('В ссылке нет адреса сервера');
+    }
+
+    _requireMaxLength(uri.host, _maxAddressLength, 'Адрес сервера');
+    for (final entry in uri.queryParameters.entries) {
+      _requireMaxLength(entry.key, 256, 'Имя параметра');
+      _requireMaxLength(entry.value, _maxFieldLength, 'Параметр ${entry.key}');
     }
 
     final query = uri.queryParameters;
@@ -57,25 +73,49 @@ class VlessLinkParser {
     if (decodedUserId.isEmpty) {
       throw const VlessLinkFormatException('В ссылке пустой VLESS ID');
     }
+    _requireMaxLength(decodedUserId, _maxFieldLength, 'VLESS ID');
+
     final decodedName = _decode(uri.fragment).trim();
+    _requireMaxLength(decodedName, _maxNameLength, 'Имя профиля');
     final name = decodedName.isEmpty ? uri.host : decodedName;
 
-    final canonical = [
-      decodedUserId,
-      uri.host,
-      port,
-      security,
-      transport,
-      serverName,
-      realityPassword,
-      query['sid'] ?? '',
-    ].join('|');
-    final encodedId = base64Url
-        .encode(utf8.encode(canonical))
-        .replaceAll('=', '');
-    final id = encodedId.length >= 24
-        ? encodedId.substring(0, 24)
-        : sha256.convert(utf8.encode(canonical)).toString().substring(0, 24);
+    final encryption = query['encryption']?.trim().isNotEmpty == true
+        ? query['encryption']!.trim()
+        : 'none';
+    final flow = query['flow'] ?? '';
+    final fingerprint = query['fp'] ?? 'chrome';
+    final shortId = query['sid'] ?? '';
+    final spiderX = query['spx'] ?? '';
+    final path = query['path'] ?? '';
+    final host = query['host'] ?? '';
+    final serviceName = query['serviceName'] ?? query['service_name'] ?? '';
+    final grpcMode = query['mode'] ?? '';
+    final alpn = _splitCsv(query['alpn']);
+    final allowInsecure = _parseBool(
+      query['allowInsecure'] ?? query['insecure'],
+    );
+
+    final canonical = jsonEncode(<String, Object?>{
+      'address': uri.host.toLowerCase(),
+      'port': port,
+      'userId': decodedUserId,
+      'encryption': encryption,
+      'flow': flow,
+      'security': security,
+      'transport': transport,
+      'serverName': serverName.toLowerCase(),
+      'fingerprint': fingerprint,
+      'realityPassword': realityPassword,
+      'shortId': shortId,
+      'spiderX': spiderX,
+      'path': path,
+      'host': host.toLowerCase(),
+      'serviceName': serviceName,
+      'grpcMode': grpcMode,
+      'alpn': [...alpn]..sort(),
+      'allowInsecure': allowInsecure,
+    });
+    final id = sha256.convert(utf8.encode(canonical)).toString().substring(0, 32);
 
     return TunnelProfile(
       id: id,
@@ -83,23 +123,21 @@ class VlessLinkParser {
       address: uri.host,
       port: port,
       userId: decodedUserId,
-      encryption: query['encryption']?.trim().isNotEmpty == true
-          ? query['encryption']!.trim()
-          : 'none',
-      flow: query['flow'] ?? '',
+      encryption: encryption,
+      flow: flow,
       security: security,
       transport: transport,
       serverName: serverName,
-      fingerprint: query['fp'] ?? 'chrome',
+      fingerprint: fingerprint,
       realityPassword: realityPassword,
-      shortId: query['sid'] ?? '',
-      spiderX: query['spx'] ?? '',
-      path: query['path'] ?? '',
-      host: query['host'] ?? '',
-      serviceName: query['serviceName'] ?? query['service_name'] ?? '',
-      grpcMode: query['mode'] ?? '',
-      alpn: _splitCsv(query['alpn']),
-      allowInsecure: _parseBool(query['allowInsecure'] ?? query['insecure']),
+      shortId: shortId,
+      spiderX: spiderX,
+      path: path,
+      host: host,
+      serviceName: serviceName,
+      grpcMode: grpcMode,
+      alpn: alpn,
+      allowInsecure: allowInsecure,
       sourceLink: raw,
     );
   }
@@ -123,16 +161,27 @@ class VlessLinkParser {
     }
   }
 
-  List<String> _splitCsv(String? value) => value == null || value.trim().isEmpty
-      ? const []
-      : value
-          .split(',')
-          .map((item) => item.trim())
-          .where((item) => item.isNotEmpty)
-          .toList(growable: false);
+  List<String> _splitCsv(String? value) {
+    if (value == null || value.trim().isEmpty) return const [];
+    final items = value
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+    if (items.length > _maxAlpnItems) {
+      throw const VlessLinkFormatException('Слишком много ALPN-значений');
+    }
+    return items;
+  }
 
   bool _parseBool(String? value) {
     final normalized = value?.trim().toLowerCase();
     return normalized == '1' || normalized == 'true' || normalized == 'yes';
+  }
+
+  void _requireMaxLength(String value, int maxLength, String fieldName) {
+    if (value.length > maxLength) {
+      throw VlessLinkFormatException('$fieldName слишком длинный');
+    }
   }
 }

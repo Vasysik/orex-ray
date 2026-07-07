@@ -12,13 +12,12 @@ void main() {
       'vless://11111111-1111-4111-8111-111111111111@example.com:443'
       '?encryption=none&security=none&type=tcp#Test';
 
-  test('automatic latency refresh can be disabled for deterministic callers',
+  test('import does not trigger automatic latency refresh',
       () async {
     SharedPreferences.setMockInitialValues({});
     final probe = _CountingLatencyProbe();
     final profiles = await ProfilesController.load(
       latencyProbe: probe,
-      automaticLatencyRefresh: false,
     );
     addTearDown(profiles.dispose);
 
@@ -36,7 +35,6 @@ void main() {
     final probe = _ControlledLatencyProbe(completer);
     final profiles = await ProfilesController.load(
       latencyProbe: probe,
-      automaticLatencyRefresh: false,
     );
     final profile = const VlessLinkParser().parse(link);
     await profiles.createProfile(profile);
@@ -49,12 +47,10 @@ void main() {
     await expectLater(refresh, completes);
   });
 
-  test('disposing cancels the scheduled initial latency refresh', () async {
+  test('default load does not schedule an initial latency refresh', () async {
     SharedPreferences.setMockInitialValues({});
     final saved = const VlessLinkParser().parse(link);
-    final seed = await ProfilesController.load(
-      automaticLatencyRefresh: false,
-    );
+    final seed = await ProfilesController.load();
     await seed.createProfile(saved);
     seed.dispose();
 
@@ -66,11 +62,22 @@ void main() {
     expect(probe.calls, 0);
   });
 
+  test('reimport preserves a legacy ID for the same connection', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    final parsed = const VlessLinkParser().parse(link);
+    await profiles.createProfile(parsed.copyWith(id: 'legacy-profile-id'));
+    final reimported = await profiles.importVlessLink(link);
+
+    expect(reimported.id, 'legacy-profile-id');
+    expect(profiles.profiles, hasLength(1));
+  });
+
   test('adding another profile does not change the active selection', () async {
     SharedPreferences.setMockInitialValues({});
-    final profiles = await ProfilesController.load(
-      automaticLatencyRefresh: false,
-    );
+    final profiles = await ProfilesController.load();
     addTearDown(profiles.dispose);
 
     final first = await profiles.importVlessLink(link);
@@ -90,9 +97,7 @@ void main() {
   test('balancer fallback survives persistence and does not steal selection',
       () async {
     SharedPreferences.setMockInitialValues({});
-    final profiles = await ProfilesController.load(
-      automaticLatencyRefresh: false,
-    );
+    final profiles = await ProfilesController.load();
     addTearDown(profiles.dispose);
 
     final first = await profiles.importVlessLink(link);
@@ -129,6 +134,50 @@ void main() {
           .fallbackTarget,
       isNull,
     );
+  });
+
+  test('balancer probe rejects local destinations', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    final first = await profiles.importVlessLink(link);
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+
+    await expectLater(
+      profiles.saveBalancer(
+        name: 'Unsafe',
+        memberIds: [first.id, second.id],
+        strategy: BalancerStrategy.leastPing,
+        probeUrl: 'http://127.0.0.1:8080/health',
+        probeIntervalSeconds: 5,
+      ),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('balancer probe interval is clamped to 30 seconds', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    final first = await profiles.importVlessLink(link);
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+    final balancer = await profiles.saveBalancer(
+      name: 'Safe',
+      memberIds: [first.id, second.id],
+      strategy: BalancerStrategy.leastPing,
+      probeUrl: 'https://www.gstatic.com/generate_204',
+      probeIntervalSeconds: 5,
+    );
+
+    expect(balancer.probeIntervalSeconds, 30);
   });
 }
 

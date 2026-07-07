@@ -12,7 +12,6 @@ import '../../core/xray/xray_config_builder.dart';
 import 'windows_process_job.dart';
 import 'windows_system_proxy_controller.dart';
 import 'xray_core_manager.dart';
-import 'xray_stats_parser.dart';
 
 class WindowsXrayEngine implements TunnelEngine {
   WindowsXrayEngine({
@@ -35,9 +34,27 @@ class WindowsXrayEngine implements TunnelEngine {
     _proxyRecovery = _systemProxy.recoverIfNeeded();
   }
 
-  static const _proxyBypass =
-      '<local>;localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;'
-      '172.2*;172.3*;192.168.*';
+  static const _minimalProxyBypass = '<local>;localhost;127.*';
+  static const _privateProxyBypass = <String>[
+    '10.*',
+    '172.16.*',
+    '172.17.*',
+    '172.18.*',
+    '172.19.*',
+    '172.20.*',
+    '172.21.*',
+    '172.22.*',
+    '172.23.*',
+    '172.24.*',
+    '172.25.*',
+    '172.26.*',
+    '172.27.*',
+    '172.28.*',
+    '172.29.*',
+    '172.30.*',
+    '172.31.*',
+    '192.168.*',
+  ];
 
   final ConnectionSettingsController _settings;
   final XrayCoreManager _coreManager;
@@ -52,12 +69,6 @@ class WindowsXrayEngine implements TunnelEngine {
   Process? _process;
   Timer? _statsTimer;
   DateTime? _connectedAt;
-  int? _statsApiPort;
-  String? _xrayExecutablePath;
-  bool _statsPollInFlight = false;
-  DateTime? _lastStatsAt;
-  int? _lastDownloadValue;
-  int? _lastUploadValue;
   TunnelSnapshot _current;
   ConnectionMode? _activeMode;
   bool _stopping = false;
@@ -159,10 +170,6 @@ class WindowsXrayEngine implements TunnelEngine {
       await WindowsProcessJob.terminateStaleProcesses(install.executable.path);
       if (!_isCurrentOperation(operationId)) return;
 
-      final statsApiPort = await _reserveLoopbackPort();
-      _statsApiPort = statsApiPort;
-      _xrayExecutablePath = install.executable.path;
-
       final configFile =
           File(p.join(install.directory.path, 'orexray-config.json'));
       final config = switch (mode) {
@@ -181,7 +188,6 @@ class WindowsXrayEngine implements TunnelEngine {
             geoProxyRules: _settings.geoProxyRules,
             geoBlockRules: _settings.geoBlockRules,
             logLevel: _settings.logLevel,
-            apiPort: statsApiPort,
           ),
         ConnectionMode.systemProxy || ConnectionMode.localProxy =>
           _configBuilder.buildLocalProxy(
@@ -196,7 +202,6 @@ class WindowsXrayEngine implements TunnelEngine {
             geoProxyRules: _settings.geoProxyRules,
             geoBlockRules: _settings.geoBlockRules,
             logLevel: _settings.logLevel,
-            apiPort: statsApiPort,
           ),
       };
       await configFile.writeAsString(config, flush: true);
@@ -266,7 +271,9 @@ class WindowsXrayEngine implements TunnelEngine {
         final enableFuture = _systemProxy
             .enable(
               server: '127.0.0.1:${_settings.httpPort}',
-              bypass: _proxyBypass,
+              bypass: _proxyBypass(
+                includePrivateNetworks: _settings.bypassPrivateNetworks,
+              ),
             )
             .then<void>((_) {});
         _systemProxyEnableFuture = enableFuture;
@@ -286,9 +293,6 @@ class WindowsXrayEngine implements TunnelEngine {
       }
 
       _connectedAt = DateTime.now();
-      _lastStatsAt = null;
-      _lastDownloadValue = null;
-      _lastUploadValue = null;
       _status(
         TunnelStatus.connected,
         mode: mode,
@@ -296,7 +300,7 @@ class WindowsXrayEngine implements TunnelEngine {
         message: _connectedMessage(mode),
         stats: const TrafficStats(),
       );
-      _startStats();
+      _startDurationTicker();
 
       unawaited(startedProcess.exitCode.then((code) async {
         if (_process != startedProcess ||
@@ -449,78 +453,13 @@ class WindowsXrayEngine implements TunnelEngine {
     return text;
   }
 
-  void _startStats() {
+  void _startDurationTicker() {
     _statsTimer?.cancel();
     _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(_pollStats());
+      final connectedAt = _connectedAt;
+      if (_process == null || connectedAt == null) return;
+      _updateStatsDurationOnly(DateTime.now().difference(connectedAt));
     });
-    unawaited(_pollStats());
-  }
-
-  Future<void> _pollStats() async {
-    if (_process == null || _connectedAt == null || _statsPollInFlight) return;
-    final executable = _xrayExecutablePath;
-    final apiPort = _statsApiPort;
-    if (executable == null || apiPort == null) return;
-
-    _statsPollInFlight = true;
-    try {
-      final duration = DateTime.now().difference(_connectedAt!);
-      final result = await Process.run(
-        executable,
-        [
-          'api',
-          'statsquery',
-          '--server=127.0.0.1:$apiPort',
-        ],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      );
-      if (result.exitCode != 0) {
-        _updateStatsDurationOnly(duration);
-        return;
-      }
-
-      final totals = parseXrayInboundStats(result.stdout.toString());
-      final download = totals.downloadBytes;
-      final upload = totals.uploadBytes;
-      final now = DateTime.now();
-      final seconds = _lastStatsAt == null
-          ? 0.0
-          : now.difference(_lastStatsAt!).inMilliseconds / 1000.0;
-      final downBps = seconds > 0 && _lastDownloadValue != null
-          ? ((download - _lastDownloadValue!) / seconds)
-              .round()
-              .clamp(0, 1 << 60)
-              .toInt()
-          : 0;
-      final upBps = seconds > 0 && _lastUploadValue != null
-          ? ((upload - _lastUploadValue!) / seconds)
-              .round()
-              .clamp(0, 1 << 60)
-              .toInt()
-          : 0;
-
-      _lastStatsAt = now;
-      _lastDownloadValue = download;
-      _lastUploadValue = upload;
-      _status(
-        TunnelStatus.connected,
-        mode: _activeMode,
-        message: _connectedMessage(_activeMode ?? ConnectionMode.localProxy),
-        stats: TrafficStats(
-          downloadBytes: download,
-          uploadBytes: upload,
-          downloadBytesPerSecond: downBps,
-          uploadBytesPerSecond: upBps,
-          duration: duration,
-        ),
-      );
-    } catch (_) {
-      _updateStatsDurationOnly(DateTime.now().difference(_connectedAt!));
-    } finally {
-      _statsPollInFlight = false;
-    }
   }
 
   void _updateStatsDurationOnly(Duration duration) {
@@ -532,11 +471,9 @@ class WindowsXrayEngine implements TunnelEngine {
     );
   }
 
-  Future<int> _reserveLoopbackPort() async {
-    final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    final port = socket.port;
-    await socket.close();
-    return port;
+  String _proxyBypass({required bool includePrivateNetworks}) {
+    if (!includePrivateNetworks) return _minimalProxyBypass;
+    return '$_minimalProxyBypass;${_privateProxyBypass.join(';')}';
   }
 
   @override
@@ -663,12 +600,6 @@ class WindowsXrayEngine implements TunnelEngine {
 
   void _resetRuntimeState() {
     _connectedAt = null;
-    _statsApiPort = null;
-    _xrayExecutablePath = null;
-    _statsPollInFlight = false;
-    _lastStatsAt = null;
-    _lastDownloadValue = null;
-    _lastUploadValue = null;
   }
 
   Future<void> _restoreSystemProxy() async {

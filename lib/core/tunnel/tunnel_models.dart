@@ -371,7 +371,7 @@ class BalancerProfile {
       probeUrl: (json['probeUrl'] as String? ??
               'https://www.gstatic.com/generate_204')
           .trim(),
-      probeIntervalSeconds: interval.clamp(5, 3600).toInt(),
+      probeIntervalSeconds: interval.clamp(30, 3600).toInt(),
       fallbackTarget: fallbackTarget == null || fallbackTarget.isEmpty
           ? null
           : fallbackTarget,

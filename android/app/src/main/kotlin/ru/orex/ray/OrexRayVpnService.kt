@@ -59,6 +59,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         private const val NOTIFICATION_CHANNEL_ID = "orexray_vpn"
         private const val NOTIFICATION_ID = 7701
         private const val STOP_REQUEST_CODE = 7702
+        private const val NOTIFICATION_MIN_UPDATE_MS = 5_000L
     }
 
     private data class TrafficDelta(val download: Long, val upload: Long)
@@ -92,6 +93,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var activeAppRoutingMode = APP_ROUTING_ALL
     private var activeAppPackages = emptyList<String>()
     private var activeStartIntent: Intent? = null
+    private var lastQuickSettingsStatus: String? = null
+    private var lastNotificationFingerprint: String? = null
+    private var lastNotificationUpdateElapsedMs = 0L
 
     @Volatile
     private var stopping = false
@@ -117,15 +121,24 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             }
 
             ACTION_UPDATE_METADATA -> {
-                commandIntent.getStringExtra(EXTRA_TARGET_NAME)
+                val nextTargetName = commandIntent.getStringExtra(EXTRA_TARGET_NAME)
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
-                    ?.let { activeTargetName = it }
-                activeLatencyMs = commandIntent.getIntExtra(EXTRA_LATENCY_MS, -1)
+                    ?: activeTargetName
+                val nextLatencyMs = commandIntent.getIntExtra(EXTRA_LATENCY_MS, -1)
                     .takeIf { it >= 0 }
+                if (nextTargetName == activeTargetName && nextLatencyMs == activeLatencyMs) {
+                    return restartMode()
+                }
+
+                activeTargetName = nextTargetName
+                activeLatencyMs = nextLatencyMs
                 if (restartServiceOnKill) updateRestartMetadata()
-                if (activeMode == MODE_VPN) updateQuickTileMetadata()
-                if (coreController?.isRunning == true) updateRunningNotification()
+                if (activeMode == MODE_VPN) {
+                    updateQuickTileMetadata()
+                    OrexRayQuickSettingsTileService.requestRefresh(this)
+                }
+                if (coreController?.isRunning == true) updateRunningNotification(force = true)
                 return restartMode()
             }
 
@@ -202,6 +215,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
                 activeStartIntent = Intent(commandIntent)
                 activeMode = mode
+                lastQuickSettingsStatus = null
+                lastNotificationFingerprint = null
+                lastNotificationUpdateElapsedMs = 0L
                 startInForeground(
                     if (mode == MODE_VPN) {
                         "Подготавливаем защищённый VPN…"
@@ -314,7 +330,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             }
             emitConnected()
             startStatsLoop()
-            updateRunningNotification()
+            updateRunningNotification(force = true)
             debugInfo("Xray started successfully mode=$mode")
         } catch (error: Throwable) {
             Log.e(TAG, "Could not start Xray mode=$mode", error)
@@ -365,13 +381,18 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             .setSession("OrexRay")
             .setMtu(activeMtu)
             .addAddress("10.77.0.1", 24)
+            .addAddress("fd77:6f72:6578::1", 64)
             .addRoute("0.0.0.0", 0)
+            .addRoute("::", 0)
 
         activeDnsServers.forEach { builder.addDnsServer(it) }
 
         when (activeAppRoutingMode) {
             APP_ROUTING_ONLY -> {
-                activeAppPackages.forEach { addAllowedPackage(builder, it) }
+                val addedPackages = activeAppPackages.count { addAllowedPackage(builder, it) }
+                if (addedPackages == 0) {
+                    error("Ни одно выбранное приложение больше не установлено")
+                }
             }
 
             APP_ROUTING_EXCLUDE -> {
@@ -389,11 +410,13 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         return builder.establish()
     }
 
-    private fun addAllowedPackage(builder: Builder, packageName: String) {
-        try {
+    private fun addAllowedPackage(builder: Builder, packageName: String): Boolean {
+        return try {
             builder.addAllowedApplication(packageName)
+            true
         } catch (_: PackageManager.NameNotFoundException) {
             Log.w(TAG, "Allowed package disappeared: $packageName")
+            false
         }
     }
 
@@ -442,7 +465,11 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
     private fun emitTunnelEvent(value: Map<String, Any?>) {
         OrexRayTunnelEvents.emit(this, value)
-        OrexRayQuickSettingsTileService.requestRefresh(this)
+        val status = value["status"] as? String
+        if (status != null && status != lastQuickSettingsStatus) {
+            lastQuickSettingsStatus = status
+            OrexRayQuickSettingsTileService.requestRefresh(this)
+        }
     }
 
     private fun emitConnecting(message: String, mode: String = activeMode) {
@@ -563,7 +590,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
 
-    private fun updateRunningNotification() {
+    private fun updateRunningNotification(force: Boolean = false) {
         val parts = mutableListOf<String>()
         if (showNotificationSpeed) {
             parts += "↓ ${formatSpeed(downloadBytesPerSecond)}"
@@ -579,12 +606,32 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 "SOCKS :$activeSocksPort · HTTP :$activeHttpPort"
             }
         }
-        updateNotification(parts.joinToString(" · "))
+        updateNotification(parts.joinToString(" · "), force)
     }
 
-    private fun updateNotification(text: String) {
+    private fun updateNotification(text: String, force: Boolean) {
+        val fingerprint = listOf(
+            activeTargetName,
+            activeMode,
+            activeLocalProxyInVpn.toString(),
+            activeSocksPort.toString(),
+            activeHttpPort.toString(),
+            text,
+        ).joinToString("|")
+        if (fingerprint == lastNotificationFingerprint) return
+
+        val now = SystemClock.elapsedRealtime()
+        if (!force &&
+            lastNotificationUpdateElapsedMs > 0L &&
+            now - lastNotificationUpdateElapsedMs < NOTIFICATION_MIN_UPDATE_MS
+        ) {
+            return
+        }
+
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildNotification(text))
+        lastNotificationFingerprint = fingerprint
+        lastNotificationUpdateElapsedMs = now
     }
 
     private fun buildNotification(text: String): Notification {

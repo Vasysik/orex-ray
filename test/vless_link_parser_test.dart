@@ -21,6 +21,29 @@ void main() {
     expect(profile.flow, 'xtls-rprx-vision');
   });
 
+  test('same UUID on different endpoints gets different IDs', () {
+    final first = parser.parse(
+      'vless://11111111-1111-4111-8111-111111111111@one.example:443'
+      '?encryption=none&security=none&type=tcp#One',
+    );
+    final second = parser.parse(
+      'vless://11111111-1111-4111-8111-111111111111@two.example:8443'
+      '?encryption=none&security=none&type=ws&path=%2Fws#Two',
+    );
+
+    expect(first.id, isNot(second.id));
+    expect(first.id, hasLength(32));
+    expect(second.id, hasLength(32));
+  });
+
+  test('rejects oversized VLESS input', () {
+    final oversized = 'vless://${List.filled(64 * 1024, 'a').join()}';
+    expect(
+      () => parser.parse(oversized),
+      throwsA(isA<VlessLinkFormatException>()),
+    );
+  });
+
   test('rejects non-VLESS links', () {
     expect(
       () => parser.parse('https://example.com'),

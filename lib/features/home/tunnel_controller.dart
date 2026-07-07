@@ -19,6 +19,9 @@ class TunnelController extends ChangeNotifier {
     _engineSubscription = _engine.snapshots.listen((value) {
       if (_closing) return;
       _engineSnapshot = value;
+      if (!value.isConnected && !value.isBusy) {
+        _lastRuntimeMetadataKey = null;
+      }
       notifyListeners();
     });
     _profiles.addListener(_onDependencyChanged);
@@ -36,6 +39,7 @@ class TunnelController extends ChangeNotifier {
   bool _dependenciesDetached = false;
   bool _closing = false;
   bool _disposed = false;
+  String? _lastRuntimeMetadataKey;
 
   Set<ConnectionMode> get supportedModes => {
         for (final mode in _settings.supportedModes)
@@ -191,13 +195,21 @@ class TunnelController extends ChangeNotifier {
         _engine is TunnelRuntimeMetadataSink) {
       final refreshed = _profiles.targetById(active.id);
       if (refreshed != null) {
-        unawaited(
-          (_engine as TunnelRuntimeMetadataSink).updateTargetMetadata(refreshed),
-        );
+        final metadataKey = _runtimeMetadataKey(refreshed);
+        if (metadataKey != _lastRuntimeMetadataKey) {
+          _lastRuntimeMetadataKey = metadataKey;
+          unawaited(
+            (_engine as TunnelRuntimeMetadataSink).updateTargetMetadata(refreshed),
+          );
+        }
       }
     }
     notifyListeners();
   }
+
+
+  String _runtimeMetadataKey(TunnelTarget target) =>
+      '${target.id}\u0000${target.name}\u0000${target.latencyMs ?? -1}';
 
   @override
   void dispose() {

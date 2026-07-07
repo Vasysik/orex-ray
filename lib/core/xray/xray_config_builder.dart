@@ -34,9 +34,9 @@ class XrayConfigBuilder {
           'settings': {
             'name': 'OrexRay',
             'mtu': mtu,
-            'gateway': ['10.77.0.1/24'],
+            'gateway': ['10.77.0.1/24', 'fd77:6f72:6578::1/64'],
             if (dnsServers.isNotEmpty) 'dns': dnsServers,
-            'autoSystemRoutingTable': ['0.0.0.0/0'],
+            'autoSystemRoutingTable': ['0.0.0.0/0', '::/0'],
             'autoOutboundsInterface': 'auto',
           },
           'sniffing': _sniffing(sniffingEnabled),

@@ -15,9 +15,7 @@ void main() {
     'home shows the empty state without filesystem or platform setup',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
-      final profiles = await ProfilesController.load(
-        automaticLatencyRefresh: false,
-      );
+      final profiles = await ProfilesController.load();
       final settings = await ConnectionSettingsController.load(
         operatingSystem: 'linux',
       );

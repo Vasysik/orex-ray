@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -56,6 +57,15 @@ class _AppShellState extends State<AppShell> {
   static const _moreIndex = 9;
 
   int _index = 0;
+  bool _appsPageLoaded = false;
+
+  void _selectPage(int index) {
+    if (index == _appsIndex && !_appsPageLoaded) {
+      _appsPageLoaded = true;
+      unawaited(widget.appRouting.loadApps());
+    }
+    setState(() => _index = index);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +73,9 @@ class _AppShellState extends State<AppShell> {
       HomeScreen(tunnel: widget.tunnel),
       ProfilesScreen(profiles: widget.profiles, tunnel: widget.tunnel),
       ConnectionScreen(tunnel: widget.tunnel, settings: widget.settings),
-      AppsScreen(controller: widget.appRouting),
+      _appsPageLoaded
+          ? AppsScreen(controller: widget.appRouting)
+          : const SizedBox.shrink(),
       NetworkScreen(settings: widget.settings),
       GeoDataScreen(controller: widget.geoData, settings: widget.settings),
       BackgroundScreen(settings: widget.settings),
@@ -71,12 +83,12 @@ class _AppShellState extends State<AppShell> {
       AboutScreen(appVersion: widget.appVersion),
       MoreScreen(
         showApps: !Platform.isWindows,
-        onOpenApps: () => setState(() => _index = _appsIndex),
-        onOpenNetwork: () => setState(() => _index = _networkIndex),
-        onOpenGeoData: () => setState(() => _index = _geoDataIndex),
-        onOpenBackground: () => setState(() => _index = _backgroundIndex),
-        onOpenAppearance: () => setState(() => _index = _appearanceIndex),
-        onOpenAbout: () => setState(() => _index = _aboutIndex),
+        onOpenApps: () => _selectPage(_appsIndex),
+        onOpenNetwork: () => _selectPage(_networkIndex),
+        onOpenGeoData: () => _selectPage(_geoDataIndex),
+        onOpenBackground: () => _selectPage(_backgroundIndex),
+        onOpenAppearance: () => _selectPage(_appearanceIndex),
+        onOpenAbout: () => _selectPage(_aboutIndex),
       ),
     ];
 
@@ -152,9 +164,8 @@ class _AppShellState extends State<AppShell> {
                           width: 132,
                           child: NavigationRail(
                             selectedIndex: desktopIndex,
-                            onDestinationSelected: (value) => setState(
-                              () => _index = desktopPageIndices[value],
-                            ),
+                            onDestinationSelected: (value) =>
+                                _selectPage(desktopPageIndices[value]),
                             labelType: NavigationRailLabelType.all,
                             groupAlignment: -0.85,
                             destinations: desktopDestinations,
@@ -188,9 +199,7 @@ class _AppShellState extends State<AppShell> {
                       child: NavigationBar(
                         selectedIndex: mobileSelected,
                         onDestinationSelected: (value) {
-                          setState(
-                            () => _index = value == 3 ? _moreIndex : value,
-                          );
+                          _selectPage(value == 3 ? _moreIndex : value);
                         },
                         destinations: const [
                           NavigationDestination(

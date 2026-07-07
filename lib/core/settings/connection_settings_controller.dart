@@ -16,7 +16,7 @@ enum DnsPreset {
 
   String get title => switch (this) {
         DnsPreset.system => 'Системный DNS',
-        DnsPreset.automatic => 'Cloudflare + Google',
+        DnsPreset.automatic => 'DNS через VPN',
         DnsPreset.cloudflare => 'Cloudflare',
         DnsPreset.google => 'Google',
         DnsPreset.custom => 'Свой DNS',
@@ -24,7 +24,7 @@ enum DnsPreset {
 
   String get description => switch (this) {
         DnsPreset.system => 'Не задавать DNS в VPN и использовать DNS текущей сети',
-        DnsPreset.automatic => '1.1.1.1 и 8.8.8.8',
+        DnsPreset.automatic => 'DNS приложений: 1.1.1.1 и 8.8.8.8 через туннель',
         DnsPreset.cloudflare => '1.1.1.1 и 1.0.0.1',
         DnsPreset.google => '8.8.8.8 и 8.8.4.4',
         DnsPreset.custom => 'Адреса, заданные вручную',
@@ -35,7 +35,8 @@ enum DnsPreset {
         'cloudflare' => DnsPreset.cloudflare,
         'google' => DnsPreset.google,
         'custom' => DnsPreset.custom,
-        _ => DnsPreset.system,
+        'system' => DnsPreset.system,
+        _ => DnsPreset.automatic,
       };
 }
 

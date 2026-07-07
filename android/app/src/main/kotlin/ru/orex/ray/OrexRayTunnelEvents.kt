@@ -28,9 +28,10 @@ object OrexRayTunnelEvents {
     fun emit(context: Context, value: Map<String, Any?>) {
         OrexRayRuntimeStateStore.save(context, value)
         lastEvent = value
+        val eventSink = synchronized(this) { sink } ?: return
         mainHandler.post {
             synchronized(this) {
-                sink?.success(value)
+                if (sink === eventSink) eventSink.success(value)
             }
         }
     }

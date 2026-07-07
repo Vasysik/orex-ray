@@ -47,6 +47,10 @@ class GeoDataController extends ChangeNotifier {
   static const _autoUpdateKey = 'orex_ray_geodata_auto_update_v1';
   static const _intervalKey = 'orex_ray_geodata_interval_hours_v1';
   static const _lastCheckedKey = 'orex_ray_geodata_last_checked_v1';
+  static const _maxAssetBytes = 256 * 1024 * 1024;
+  static const _maxChecksumBytes = 16 * 1024;
+  static const _networkTimeout = Duration(seconds: 60);
+  static const _progressInterval = Duration(milliseconds: 250);
 
   static const _releaseBase =
       'https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release';
@@ -223,7 +227,10 @@ class GeoDataController extends ChangeNotifier {
     _message = silent ? null : 'Проверяем GeoData…';
     notifyListeners();
 
-    final client = HttpClient()..userAgent = _userAgent;
+    final client = HttpClient()
+      ..userAgent = _userAgent
+      ..connectionTimeout = const Duration(seconds: 15)
+      ..idleTimeout = const Duration(seconds: 30);
     try {
       const files = ['geoip.dat', 'geosite.dat'];
       for (var index = 0; index < files.length; index++) {
@@ -260,34 +267,74 @@ class GeoDataController extends ChangeNotifier {
     final expectedHash = await _downloadText(
       client,
       Uri.parse('$_releaseBase/$fileName.sha256sum'),
+      maxBytes: _maxChecksumBytes,
     ).then(_parseSha256);
 
+    final destination = File(p.join(_directory.path, fileName));
+    if (await destination.exists()) {
+      final localHash = await sha256.bind(destination.openRead()).first;
+      if (localHash.toString().toLowerCase() == expectedHash) {
+        _progress = (fileIndex + 1) / fileCount;
+        notifyListeners();
+        return;
+      }
+    }
+
     final uri = Uri.parse('$_releaseBase/$fileName');
-    final request = await client.getUrl(uri);
-    final response = await request.close();
+    final request = await client.getUrl(uri).timeout(_networkTimeout);
+    request.followRedirects = true;
+    request.maxRedirects = 5;
+    final response = await request.close().timeout(_networkTimeout);
     if (response.statusCode != HttpStatus.ok) {
       throw HttpException(
         'Сервер вернул HTTP ${response.statusCode} для $fileName',
         uri: uri,
       );
     }
+    if (response.contentLength > _maxAssetBytes) {
+      throw FormatException('$fileName больше 256 МБ');
+    }
 
     final temp = File(p.join(_directory.path, '.$fileName.download'));
+    if (await temp.exists()) await temp.delete();
     final sink = temp.openWrite();
     final total = response.contentLength;
     var received = 0;
+    var lastProgressAt = DateTime.fromMillisecondsSinceEpoch(0);
+    Object? downloadError;
+    StackTrace? downloadStackTrace;
     try {
-      await for (final chunk in response) {
-        sink.add(chunk);
+      await for (final chunk in response.timeout(_networkTimeout)) {
         received += chunk.length;
-        if (total > 0) {
+        if (received > _maxAssetBytes) {
+          throw FormatException('$fileName больше 256 МБ');
+        }
+        sink.add(chunk);
+        final now = DateTime.now();
+        if (total > 0 && now.difference(lastProgressAt) >= _progressInterval) {
+          lastProgressAt = now;
           _progress = (fileIndex + (received / total)) / fileCount;
           notifyListeners();
         }
       }
+      await sink.flush();
+    } catch (error, stackTrace) {
+      downloadError = error;
+      downloadStackTrace = stackTrace;
     } finally {
       await sink.close();
     }
+    if (downloadError != null) {
+      try {
+        if (await temp.exists()) await temp.delete();
+      } catch (_) {
+        // Preserve the original network/size error.
+      }
+      Error.throwWithStackTrace(downloadError, downloadStackTrace!);
+    }
+
+    _progress = (fileIndex + 1) / fileCount;
+    notifyListeners();
 
     final actualHash = await sha256.bind(temp.openRead()).first;
     final actual = actualHash.toString().toLowerCase();
@@ -300,7 +347,6 @@ class GeoDataController extends ChangeNotifier {
       throw StateError('SHA-256 не совпал для $fileName');
     }
 
-    final destination = File(p.join(_directory.path, fileName));
     final backup = File('${destination.path}.bak');
     if (await backup.exists()) await backup.delete();
     if (await destination.exists()) await destination.rename(backup.path);
@@ -315,13 +361,30 @@ class GeoDataController extends ChangeNotifier {
     }
   }
 
-  Future<String> _downloadText(HttpClient client, Uri uri) async {
-    final request = await client.getUrl(uri);
-    final response = await request.close();
+  Future<String> _downloadText(
+    HttpClient client,
+    Uri uri, {
+    required int maxBytes,
+  }) async {
+    final request = await client.getUrl(uri).timeout(_networkTimeout);
+    request.followRedirects = true;
+    request.maxRedirects = 5;
+    final response = await request.close().timeout(_networkTimeout);
     if (response.statusCode != HttpStatus.ok) {
       throw HttpException('HTTP ${response.statusCode}', uri: uri);
     }
-    return utf8.decoder.bind(response).join();
+    if (response.contentLength > maxBytes) {
+      throw const FormatException('Ответ сервера GeoData слишком большой');
+    }
+
+    final bytes = <int>[];
+    await for (final chunk in response.timeout(_networkTimeout)) {
+      bytes.addAll(chunk);
+      if (bytes.length > maxBytes) {
+        throw const FormatException('Ответ сервера GeoData слишком большой');
+      }
+    }
+    return utf8.decode(bytes);
   }
 
   String _parseSha256(String value) {

@@ -50,13 +50,18 @@ class ProfileRepository {
           'write',
           {'key': _secureProfilesKey, 'value': legacyPayload},
         );
+        securePayload = legacyPayload;
+      }
+
+      if (securePayload != null &&
+          securePayload.isNotEmpty &&
+          prefs.containsKey(_profilesKey)) {
         final removed = await prefs.remove(_profilesKey);
-        if (!removed) {
+        if (!removed && prefs.containsKey(_profilesKey)) {
           throw StateError(
-            'Защищённая миграция выполнена, но старый открытый профиль не удалён',
+            'Защищённая копия профилей существует, но старая открытая копия не удалена',
           );
         }
-        securePayload = legacyPayload;
       }
 
       return ProfileRepository._(

@@ -160,6 +160,14 @@ class AppRoutingController extends ChangeNotifier {
       _apps = apps;
 
       final installed = apps.map((app) => app.packageName).toSet();
+      final selectedBefore = _selectedPackages.length;
+      _selectedPackages.removeWhere((packageName) => !installed.contains(packageName));
+      if (_selectedPackages.length != selectedBefore) {
+        await _preferences.setStringList(
+          _packagesKey,
+          _selectedPackages.toList()..sort(),
+        );
+      }
       final stale = _iconNotifiers.keys.where((key) => !installed.contains(key)).toList();
       for (final key in stale) {
         _iconNotifiers.remove(key)?.dispose();

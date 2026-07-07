@@ -66,9 +66,7 @@ Future<_ConnectionHarness> _pumpConnectionScreen(
   required TunnelStatus status,
 }) async {
   SharedPreferences.setMockInitialValues({});
-  final profiles = await ProfilesController.load(
-    automaticLatencyRefresh: false,
-  );
+  final profiles = await ProfilesController.load();
   final settings = await ConnectionSettingsController.load(
     operatingSystem: 'android',
   );

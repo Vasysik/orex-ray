@@ -24,7 +24,14 @@ void main() {
     final reality = stream['realitySettings'] as Map<String, dynamic>;
 
     expect(inbound['protocol'], 'tun');
-    expect(inbound['settings']['autoSystemRoutingTable'], ['0.0.0.0/0']);
+    expect(
+      inbound['settings']['gateway'],
+      ['10.77.0.1/24', 'fd77:6f72:6578::1/64'],
+    );
+    expect(
+      inbound['settings']['autoSystemRoutingTable'],
+      ['0.0.0.0/0', '::/0'],
+    );
     expect(outbound['protocol'], 'vless');
     expect(outbound['settings']['address'], 'example.com');
     expect(stream['network'], 'raw');
