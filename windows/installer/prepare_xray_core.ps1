@@ -1,14 +1,16 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$Version = '26.3.27'
-$ExpectedSha256 = 'd004c39288ce9ada487c6f398c7c545f7d749e44bdfdd59dbc9f865afba4e1ad'
+$Version = '26.4.13'
 $ArchiveName = "Xray-windows-64-v$Version.zip"
 $DownloadUrl = "https://github.com/XTLS/Xray-core/releases/download/v$Version/Xray-windows-64.zip"
+$DigestUrl = "$DownloadUrl.dgst"
+$HashFileName = "xray-core.sha256"
 $ReleaseDir = Join-Path $PSScriptRoot '..\..\build\windows\x64\runner\Release'
 $TargetDir = Join-Path $ReleaseDir 'xray-core'
 $TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("orexray-xray-" + [guid]::NewGuid().ToString('N'))
 $ArchivePath = Join-Path $TempRoot $ArchiveName
+$DigestPath = Join-Path $TempRoot ($ArchiveName + '.dgst')
 $ExtractDir = Join-Path $TempRoot 'extracted'
 
 function Download-FileWithRetry {
@@ -72,12 +74,30 @@ function Download-FileWithRetry {
   throw "Failed to download $Uri after retries. Last error: $LastError"
 }
 
+function Read-Sha256FromDigest {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+  )
+
+  $Text = Get-Content -Raw -Path $Path
+  $Match = [regex]::Match($Text, '(?i)\b[a-f0-9]{64}\b')
+  if (-not $Match.Success) {
+    throw "Could not read SHA-256 from digest file: $Path"
+  }
+  return $Match.Value.ToLowerInvariant()
+}
+
 try {
   if (-not (Test-Path $ReleaseDir)) {
     throw "Windows release build not found: $ReleaseDir. Run flutter build windows --release first."
   }
 
   New-Item -ItemType Directory -Force -Path $TempRoot, $ExtractDir | Out-Null
+
+  Write-Host "Downloading official digest for pinned Xray Core v$Version..."
+  Download-FileWithRetry -Uri $DigestUrl -Destination $DigestPath
+  $ExpectedSha256 = Read-Sha256FromDigest -Path $DigestPath
 
   $ExistingArchivePath = Join-Path $TargetDir $ArchiveName
   $ReusedExistingArchive = $false
@@ -121,6 +141,7 @@ try {
   Copy-Item -Force $GeoIpFiles[0].FullName (Join-Path $TargetDir 'geoip.dat')
   Copy-Item -Force $GeoSiteFiles[0].FullName (Join-Path $TargetDir 'geosite.dat')
   Copy-Item -Force $ArchivePath (Join-Path $TargetDir $ArchiveName)
+  Set-Content -NoNewline -Encoding ASCII -Path (Join-Path $TargetDir $HashFileName) -Value $ExpectedSha256
 
   Write-Host "Bundled verified Xray Core v$Version into $TargetDir"
 } finally {
