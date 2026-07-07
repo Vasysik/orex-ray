@@ -24,6 +24,7 @@ void main() {
     final reality = stream['realitySettings'] as Map<String, dynamic>;
 
     expect(inbound['protocol'], 'tun');
+    expect(inbound['settings']['mtu'], [1500]);
     expect(
       inbound['settings']['gateway'],
       ['10.77.0.1/24', 'fd77:6f72:6578::1/64'],

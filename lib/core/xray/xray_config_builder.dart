@@ -34,7 +34,9 @@ class XrayConfigBuilder {
           'protocol': 'tun',
           'settings': {
             'name': 'OrexRay',
-            'mtu': mtu,
+            // Xray 26.4.13 models TUN MTU as repeated uint32: one value is
+            // duplicated internally for IPv4/IPv6 by the core.
+            'mtu': [mtu],
             'gateway': ['10.77.0.1/24', 'fd77:6f72:6578::1/64'],
             if (dnsServers.isNotEmpty) 'dns': dnsServers,
             'autoSystemRoutingTable': ['0.0.0.0/0', '::/0'],
