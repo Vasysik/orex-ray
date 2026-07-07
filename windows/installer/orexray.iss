@@ -14,7 +14,7 @@ AppId={{EE5EB640-8D42-4DE4-8DB7-48737F03B1CD}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\Programs\OrexRay
+DefaultDirName={autopf}\OrexRay
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\..\build\windows\x64\installer
@@ -22,7 +22,8 @@ OutputBaseFilename=OrexRay-Setup-{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
+UsePreviousAppDir=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile=..\runner\resources\app_icon.ico
@@ -38,8 +39,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser

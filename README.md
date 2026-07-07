@@ -266,6 +266,10 @@ core.
 - `allowInsecure` снижает TLS-защиту и по умолчанию выключен;
 - пользовательская GeoData доверяется Xray parser;
 - сторонний Xray core остаётся частью доверенной вычислительной базы;
+- Windows release устанавливается в Program Files; bundled `xray.exe`,
+  `wintun.dll` и GeoData перепроверяются по закреплённому архиву перед запуском;
+- автозапуск с повышенными правами является opt-in и разрешён только для
+  Program Files-установки;
 - Windows-профили ещё требуют отдельного прохода по защищённому локальному
   хранению перед более широкой desktop-раздачей.
 
@@ -335,6 +339,7 @@ Windows release и установщик собираются по той же с
 
 ```powershell
 flutter build windows --release --no-pub
+powershell -ExecutionPolicy Bypass -File windows\installer\prepare_xray_core.ps1
 # затем собрать Inno Setup installer по командам из docs/release-builds.md
 ```
 

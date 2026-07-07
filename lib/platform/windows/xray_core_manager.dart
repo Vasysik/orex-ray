@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -11,10 +12,14 @@ class XrayCoreInstall {
   const XrayCoreInstall({
     required this.directory,
     required this.executable,
+    required this.assetDirectory,
+    required this.elevatedAssetDirectory,
   });
 
   final Directory directory;
   final File executable;
+  final Directory assetDirectory;
+  final Directory elevatedAssetDirectory;
 }
 
 class XrayCoreManager {
@@ -23,6 +28,7 @@ class XrayCoreManager {
   }) : _userAgent = 'OrexRay/${appVersion.version}';
 
   static const _version = '26.3.27';
+  static const _zipName = 'Xray-windows-64-v$_version.zip';
   static const _zipUrl =
       'https://github.com/XTLS/Xray-core/releases/download/v$_version/Xray-windows-64.zip';
   static const _zipSha256 =
@@ -40,11 +46,82 @@ class XrayCoreManager {
     void Function(double progress)? onProgress,
   }) async {
     final support = await getApplicationSupportDirectory();
-    final root = Directory(p.join(support.path, 'xray-core'));
+    final assetDirectory = Directory(p.join(support.path, 'xray-core'));
+    await assetDirectory.create(recursive: true);
+
+    final bundledRoot = Directory(
+      p.join(File(Platform.resolvedExecutable).parent.path, 'xray-core'),
+    );
+    final bundledArchive = File(p.join(bundledRoot.path, _zipName));
+    if (await bundledArchive.exists()) {
+      try {
+        return await _verifyInstall(
+          runtimeDirectory: bundledRoot,
+          trustedArchive: bundledArchive,
+          assetDirectory: assetDirectory,
+        );
+      } catch (error) {
+        if (!kDebugMode) {
+          throw StateError(
+            'Встроенный Xray Core повреждён или был изменён. '
+            'Переустанови OrexRay из доверенного установщика.\n$error',
+          );
+        }
+      }
+    }
+
+    if (!kDebugMode) {
+      throw StateError(
+        'В release-сборке отсутствует встроенный Xray Core. '
+        'Пересобери Windows-релиз через windows/installer/prepare_xray_core.ps1 '
+        'и переустанови OrexRay.',
+      );
+    }
+
+    return _ensureDevelopmentInstall(
+      support: support,
+      assetDirectory: assetDirectory,
+      onProgress: onProgress,
+    );
+  }
+
+  Future<XrayCoreInstall> _verifyInstall({
+    required Directory runtimeDirectory,
+    required File trustedArchive,
+    required Directory assetDirectory,
+  }) async {
+    final archive = await _readTrustedArchive(trustedArchive);
+    final executable = File(p.join(runtimeDirectory.path, 'xray.exe'));
+    final wintun = File(p.join(runtimeDirectory.path, 'wintun.dll'));
+    if (!await executable.exists() || !await wintun.exists()) {
+      throw StateError('Встроенный Xray Core неполный.');
+    }
+    if (!await _matchesTrustedArchive(
+      archive,
+      runtimeDirectory,
+      fileNames: {..._requiredRuntimeFiles, ..._optionalDataFiles},
+    )) {
+      throw StateError('Файлы Xray Core не совпали с доверенным архивом.');
+    }
+
+    await _initializeAssets(archive, assetDirectory);
+    return XrayCoreInstall(
+      directory: runtimeDirectory,
+      executable: executable,
+      assetDirectory: assetDirectory,
+      elevatedAssetDirectory: runtimeDirectory,
+    );
+  }
+
+  Future<XrayCoreInstall> _ensureDevelopmentInstall({
+    required Directory support,
+    required Directory assetDirectory,
+    void Function(double progress)? onProgress,
+  }) async {
+    final root = Directory(p.join(support.path, 'xray-core-dev'));
     final executable = File(p.join(root.path, 'xray.exe'));
     final wintun = File(p.join(root.path, 'wintun.dll'));
-    final trustedArchive =
-        File(p.join(root.path, 'Xray-windows-64-v$_version.zip'));
+    final trustedArchive = File(p.join(root.path, _zipName));
 
     await root.create(recursive: true);
     await _removeLegacyDownloads(root);
@@ -60,7 +137,13 @@ class XrayCoreManager {
           await executable.exists() &&
           await wintun.exists() &&
           await _matchesTrustedArchive(trustedContents, root)) {
-        return XrayCoreInstall(directory: root, executable: executable);
+        await _initializeAssets(trustedContents, assetDirectory);
+        return XrayCoreInstall(
+          directory: root,
+          executable: executable,
+          assetDirectory: assetDirectory,
+          elevatedAssetDirectory: assetDirectory,
+        );
       }
     }
 
@@ -78,6 +161,7 @@ class XrayCoreManager {
 
     final archive = trustedContents ?? await _readTrustedArchive(trustedArchive);
     await _extractTrustedRuntime(archive, root);
+    await _initializeAssets(archive, assetDirectory);
 
     if (!await executable.exists() || !await wintun.exists()) {
       throw StateError(
@@ -88,7 +172,12 @@ class XrayCoreManager {
       throw StateError('Установленные файлы Xray не прошли повторную проверку.');
     }
 
-    return XrayCoreInstall(directory: root, executable: executable);
+    return XrayCoreInstall(
+      directory: root,
+      executable: executable,
+      assetDirectory: assetDirectory,
+      elevatedAssetDirectory: assetDirectory,
+    );
   }
 
   Future<void> _download(
@@ -168,17 +257,26 @@ class XrayCoreManager {
     Directory destination,
   ) async {
     final entries = _runtimeEntries(archive);
-
     for (final fileName in _requiredRuntimeFiles) {
       final entry = entries[fileName];
       if (entry == null) {
         throw FormatException('В архиве Xray отсутствует $fileName.');
       }
-      await _writeEntryAtomically(entry, File(p.join(destination.path, fileName)));
+      await _writeEntryAtomically(
+        entry,
+        File(p.join(destination.path, fileName)),
+      );
     }
+  }
 
+  Future<void> _initializeAssets(
+    Archive archive,
+    Directory assetDirectory,
+  ) async {
+    await assetDirectory.create(recursive: true);
+    final entries = _runtimeEntries(archive);
     for (final fileName in _optionalDataFiles) {
-      final output = File(p.join(destination.path, fileName));
+      final output = File(p.join(assetDirectory.path, fileName));
       if (await output.exists()) continue;
       final entry = entries[fileName];
       if (entry != null) await _writeEntryAtomically(entry, output);
@@ -187,11 +285,12 @@ class XrayCoreManager {
 
   Future<bool> _matchesTrustedArchive(
     Archive archive,
-    Directory destination,
-  ) async {
+    Directory destination, {
+    Set<String> fileNames = _requiredRuntimeFiles,
+  }) async {
     try {
       final entries = _runtimeEntries(archive);
-      for (final fileName in _requiredRuntimeFiles) {
+      for (final fileName in fileNames) {
         final entry = entries[fileName];
         final installed = File(p.join(destination.path, fileName));
         if (entry == null || !await installed.exists()) return false;
@@ -216,7 +315,9 @@ class XrayCoreManager {
       totalSize += entry.size;
       if (entry.size > _maxUncompressedBytes ||
           totalSize > _maxUncompressedBytes) {
-        throw const FormatException('Архив Xray Core слишком велик после распаковки.');
+        throw const FormatException(
+          'Архив Xray Core слишком велик после распаковки.',
+        );
       }
     }
     return archive;

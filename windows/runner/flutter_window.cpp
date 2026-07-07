@@ -1,8 +1,10 @@
 #include "flutter_window.h"
 
 #include <shellapi.h>
+#include <shlobj.h>
 
 #include <cstdint>
+#include <cwchar>
 #include <optional>
 #include <string>
 
@@ -66,6 +68,97 @@ std::wstring Utf8ToWide(const std::string& value) {
     return std::wstring();
   }
   return result;
+}
+
+bool IsProcessElevated() {
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+  TOKEN_ELEVATION elevation{};
+  DWORD size = 0;
+  const bool elevated =
+      GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation),
+                          &size) != FALSE &&
+      elevation.TokenIsElevated != 0;
+  CloseHandle(token);
+  return elevated;
+}
+
+std::wstring ModulePath() {
+  std::wstring buffer(MAX_PATH, L'\0');
+  for (;;) {
+    const DWORD length = GetModuleFileNameW(
+        nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0) return std::wstring();
+    if (length < buffer.size()) {
+      buffer.resize(length);
+      return buffer;
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+}
+
+std::wstring KnownFolderPath(REFKNOWNFOLDERID folder_id) {
+  PWSTR raw_path = nullptr;
+  if (FAILED(SHGetKnownFolderPath(folder_id, KF_FLAG_DEFAULT, nullptr,
+                                  &raw_path)) ||
+      raw_path == nullptr) {
+    return std::wstring();
+  }
+  const std::wstring path(raw_path);
+  CoTaskMemFree(raw_path);
+  return path;
+}
+
+bool IsPathInsideDirectory(const std::wstring& path,
+                           const std::wstring& directory) {
+  if (path.empty() || directory.empty()) return false;
+  std::wstring prefix = directory;
+  while (!prefix.empty() &&
+         (prefix.back() == L'\\' || prefix.back() == L'/')) {
+    prefix.pop_back();
+  }
+  prefix.push_back(L'\\');
+  if (path.size() <= prefix.size()) return false;
+  return _wcsnicmp(path.c_str(), prefix.c_str(), prefix.size()) == 0;
+}
+
+bool IsProtectedInstall() {
+  const std::wstring executable = ModulePath();
+  if (executable.empty()) return false;
+  const KNOWNFOLDERID* folders[] = {
+      &FOLDERID_ProgramFiles,
+      &FOLDERID_ProgramFilesX64,
+      &FOLDERID_ProgramFilesX86,
+  };
+  for (const KNOWNFOLDERID* folder : folders) {
+    if (IsPathInsideDirectory(executable, KnownFolderPath(*folder))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool RestartElevated() {
+  if (!IsProtectedInstall()) return false;
+  const std::wstring executable = ModulePath();
+  if (executable.empty()) return false;
+  const size_t separator = executable.find_last_of(L"\\/");
+  const std::wstring working_directory = separator == std::wstring::npos
+      ? std::wstring()
+      : executable.substr(0, separator);
+
+  SHELLEXECUTEINFOW info{};
+  info.cbSize = sizeof(info);
+  info.fMask = SEE_MASK_NOCLOSEPROCESS;
+  info.lpVerb = L"runas";
+  info.lpFile = executable.c_str();
+  info.lpParameters = L"--orexray-elevated-restart";
+  info.lpDirectory =
+      working_directory.empty() ? nullptr : working_directory.c_str();
+  info.nShow = SW_SHOWNORMAL;
+  if (!ShellExecuteExW(&info)) return false;
+  if (info.hProcess != nullptr) CloseHandle(info.hProcess);
+  return true;
 }
 
 TrayStatus ParseTrayStatus(const std::string& value) {
@@ -163,6 +256,27 @@ bool FlutterWindow::OnCreate() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
+        if (call.method_name() == "isProcessElevated") {
+          result->Success(flutter::EncodableValue(IsProcessElevated()));
+          return;
+        }
+
+        if (call.method_name() == "isProtectedInstall") {
+          result->Success(flutter::EncodableValue(IsProtectedInstall()));
+          return;
+        }
+
+        if (call.method_name() == "restartElevated") {
+          if (!IsProtectedInstall()) {
+            result->Error(
+                "unsafe_install_location",
+                "Automatic elevation is only allowed from Program Files");
+            return;
+          }
+          result->Success(flutter::EncodableValue(RestartElevated()));
+          return;
+        }
+
         if (call.method_name() == "setCloseToTray") {
           const auto* value = call.arguments() == nullptr
                                   ? nullptr

@@ -208,12 +208,29 @@ class _ModeSelector extends StatelessWidget {
                     for (final mode in modes)
                       ButtonSegment<ConnectionMode>(
                         value: mode,
-                        icon: Icon(_modeIcon(mode)),
+                        icon: Icon(
+                          _modeIcon(mode),
+                          color: tunnel.mode == mode ? OrexColors.copper : null,
+                        ),
                         label: Text(mode.shortTitle),
                         tooltip: mode.description,
                       ),
                   ],
                   selected: {tunnel.mode},
+                  style: ButtonStyle(
+                    backgroundColor: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return OrexColors.copper.withValues(alpha: 0.24);
+                      }
+                      return Theme.of(context)
+                          .colorScheme
+                          .surface
+                          .withValues(alpha: 0.28);
+                    }),
+                    side: const WidgetStatePropertyAll(
+                      BorderSide(color: Colors.transparent),
+                    ),
+                  ),
                   onSelectionChanged: tunnel.canChangeMode
                       ? (selection) => tunnel.setMode(selection.first)
                       : null,

@@ -213,7 +213,12 @@ flutter pub get
 flutter analyze --no-pub
 flutter test --no-pub
 flutter build windows --release --no-pub
+powershell -ExecutionPolicy Bypass -File windows\installer\prepare_xray_core.ps1
 ```
+
+Последняя команда скачивает закреплённый Xray Core, проверяет SHA-256 и кладёт
+`xray.exe`, `wintun.dll` и доверенный архив в release bundle. Release-сборка без
+этого каталога fail-closed и не скачивает исполняемый core в профиль пользователя.
 
 Готовое приложение находится в:
 
@@ -226,8 +231,10 @@ native DLL.
 
 ## 10. Windows installer вместо zip
 
-Схема повторяет Orex Messenger: Inno Setup забирает **всю** release-папку и
-собирает один user-level `.exe` установщик.
+Inno Setup забирает **всю** release-папку и собирает системный `.exe`
+установщик. Начиная с 0.6.5 OrexRay ставится в Program Files, чтобы приложение,
+Flutter plugins, `xray.exe` и `wintun.dll` не оставались user-writable перед
+запуском с повышенными правами.
 
 Установить Inno Setup один раз:
 
@@ -272,15 +279,21 @@ build\windows\x64\installer\OrexRay-Setup-<version-from-pubspec>.exe
 
 Установщик:
 
-- ставит OrexRay в `%LOCALAPPDATA%\Programs\OrexRay`;
-- не требует админских прав для самой установки;
+- требует UAC один раз для установки в `%ProgramFiles%\OrexRay`;
 - создаёт пункт в меню «Пуск»;
 - предлагает необязательный ярлык на рабочем столе;
 - забирает все DLL и данные из `build\windows\x64\runner\Release\`;
-- запускает OrexRay после установки, если пользователь не снял галочку.
+- запускает OrexRay после установки **без elevation**;
+- не переиспользует старый `%LOCALAPPDATA%` installation path.
 
-Режим Windows VPN/TUN всё равно может потребовать запуск самого OrexRay с
-правами администратора. Это не причина делать весь установщик системным или
-требующим UAC: системный и локальный proxy-режимы работают без elevation.
+Перед переходом с 0.6.4 и более старой user-level установки рекомендуется
+удалить старую версию, чтобы не оставлять второй ярлык на user-writable копию.
+Профили и настройки находятся в app-data и при обычном uninstall не удаляются.
+
+Для Windows VPN/TUN можно включить в `Фоновая работа → Windows` настройку
+`Запускать с правами администратора`. На следующем запуске OrexRay запросит UAC.
+Автоповышение разрешено только когда сам `orex_ray.exe` находится в Program Files;
+portable/user-level сборка автоматически повышаться не будет. Системный и
+локальный proxy-режимы по-прежнему можно использовать без elevation.
 
 При смене версии обновляй только `pubspec.yaml`. Команды выше читают эту строку и передают в Inno Setup Flutter-вид `x.y.z+n` для имени установщика и Windows-вид `x.y.z.n` для version resource.

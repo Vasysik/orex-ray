@@ -1,6 +1,7 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
+#include <shellapi.h>
 
 #include <string>
 #include <vector>
@@ -15,6 +16,22 @@ constexpr wchar_t kSingleInstanceMutex[] =
     L"Local\\OrexRay.SingleInstance.5A3EA2E2-91F2-4DC7-94D4-4E0B4C5586B2";
 constexpr wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 constexpr wchar_t kWindowTitle[] = L"OrexRay";
+
+
+bool HasCommandLineFlag(const wchar_t* expected) {
+  int argument_count = 0;
+  wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
+  if (arguments == nullptr) return false;
+  bool found = false;
+  for (int index = 1; index < argument_count; ++index) {
+    if (_wcsicmp(arguments[index], expected) == 0) {
+      found = true;
+      break;
+    }
+  }
+  LocalFree(arguments);
+  return found;
+}
 
 bool ActivateWindow(HWND window) {
   if (window == nullptr) return false;
@@ -45,22 +62,36 @@ bool ActivateExistingInstance(int attempts) {
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t* command_line, _In_ int show_command) {
-  // Also catch a still-running pre-single-instance OrexRay build. This keeps a
-  // user from accidentally starting the new build next to an older window.
-  if (ActivateExistingInstance(1)) {
+  // Never search the current working directory for DLL dependencies. The
+  // application directory remains available, and the installer/restart path
+  // sets it to the protected Program Files location.
+  SetDllDirectoryW(L"");
+
+  const bool elevated_restart =
+      HasCommandLineFlag(L"--orexray-elevated-restart");
+
+  // A normal second launch activates the existing window. An elevated restart
+  // deliberately waits for the unelevated process to release the mutex.
+  if (!elevated_restart && ActivateExistingInstance(1)) {
     return EXIT_SUCCESS;
   }
 
-  HANDLE single_instance =
-      CreateMutexW(nullptr, FALSE, kSingleInstanceMutex);
-  if (single_instance == nullptr) {
-    return EXIT_FAILURE;
-  }
-  if (GetLastError() == ERROR_ALREADY_EXISTS) {
-    ActivateExistingInstance(40);
+  HANDLE single_instance = nullptr;
+  const int mutex_attempts = elevated_restart ? 100 : 1;
+  for (int attempt = 0; attempt < mutex_attempts; ++attempt) {
+    single_instance = CreateMutexW(nullptr, FALSE, kSingleInstanceMutex);
+    if (single_instance == nullptr) return EXIT_FAILURE;
+    if (GetLastError() != ERROR_ALREADY_EXISTS) break;
+
     CloseHandle(single_instance);
-    return EXIT_SUCCESS;
+    single_instance = nullptr;
+    if (!elevated_restart) {
+      ActivateExistingInstance(40);
+      return EXIT_SUCCESS;
+    }
+    Sleep(100);
   }
+  if (single_instance == nullptr) return EXIT_FAILURE;
 
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.

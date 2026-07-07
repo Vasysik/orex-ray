@@ -3,15 +3,18 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/app_version.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../core/xray/xray_config_builder.dart';
+import 'windows_elevation_controller.dart';
 import 'windows_process_job.dart';
 import 'windows_system_proxy_controller.dart';
 import 'xray_core_manager.dart';
+import 'xray_stats_client.dart';
 
 class WindowsXrayEngine implements TunnelEngine {
   WindowsXrayEngine({
@@ -68,7 +71,15 @@ class WindowsXrayEngine implements TunnelEngine {
   Future<void>? _stopFuture;
   Process? _process;
   Timer? _statsTimer;
+  Timer? _durationTimer;
   DateTime? _connectedAt;
+  XrayStatsClient? _statsClient;
+  bool _statsPollInFlight = false;
+  DateTime? _lastStatsAt;
+  int? _lastDownloadValue;
+  int? _lastUploadValue;
+  File? _configFile;
+  String? _managedExecutablePath;
   TunnelSnapshot _current;
   ConnectionMode? _activeMode;
   bool _stopping = false;
@@ -162,6 +173,7 @@ class WindowsXrayEngine implements TunnelEngine {
         },
       );
       if (!_isCurrentOperation(operationId)) return;
+      _managedExecutablePath = install.executable.path;
 
       // Recover from old OrexRay versions that could leave their managed
       // xray.exe alive after the Flutter process exited. The native side only
@@ -170,8 +182,16 @@ class WindowsXrayEngine implements TunnelEngine {
       await WindowsProcessJob.terminateStaleProcesses(install.executable.path);
       if (!_isCurrentOperation(operationId)) return;
 
-      final configFile =
-          File(p.join(install.directory.path, 'orexray-config.json'));
+      final elevated = await WindowsElevationController.isElevated();
+      final assetDirectory = elevated
+          ? install.elevatedAssetDirectory
+          : install.assetDirectory;
+      final statsApiPort = await _reserveLoopbackPort();
+      final configFile = await _prepareConfigFile(
+        install: install,
+        elevated: elevated,
+      );
+      _configFile = configFile;
       final config = switch (mode) {
         ConnectionMode.vpnTun => _configBuilder.buildWindowsTun(
             profile,
@@ -188,6 +208,7 @@ class WindowsXrayEngine implements TunnelEngine {
             geoProxyRules: _settings.geoProxyRules,
             geoBlockRules: _settings.geoBlockRules,
             logLevel: _settings.logLevel,
+            apiPort: statsApiPort,
           ),
         ConnectionMode.systemProxy || ConnectionMode.localProxy =>
           _configBuilder.buildLocalProxy(
@@ -202,6 +223,7 @@ class WindowsXrayEngine implements TunnelEngine {
             geoProxyRules: _settings.geoProxyRules,
             geoBlockRules: _settings.geoBlockRules,
             logLevel: _settings.logLevel,
+            apiPort: statsApiPort,
           ),
       };
       await configFile.writeAsString(config, flush: true);
@@ -213,7 +235,7 @@ class WindowsXrayEngine implements TunnelEngine {
         profile: profile,
         message: 'Проверяем конфигурацию…',
       );
-      await _validateConfig(install, configFile);
+      await _validateConfig(install, configFile, assetDirectory);
       if (!_isCurrentOperation(operationId)) return;
 
       _status(
@@ -227,12 +249,15 @@ class WindowsXrayEngine implements TunnelEngine {
         ['run', '-c', configFile.path],
         workingDirectory: install.directory.path,
         mode: ProcessStartMode.normal,
+        environment: {
+          'XRAY_LOCATION_ASSET': assetDirectory.path,
+        },
       );
       _process = startedProcess;
       _listenLogs(startedProcess);
 
       if (!_isCurrentOperation(operationId)) {
-        await _terminateProcessTree(startedProcess);
+        await _terminateProcessTree(startedProcess, install.executable.path);
         if (_process == startedProcess) _process = null;
         return;
       }
@@ -242,7 +267,7 @@ class WindowsXrayEngine implements TunnelEngine {
       // forced process termination that bypasses Dart cleanup.
       await WindowsProcessJob.attach(startedProcess.pid);
       if (!_isCurrentOperation(operationId)) {
-        await _terminateProcessTree(startedProcess);
+        await _terminateProcessTree(startedProcess, install.executable.path);
         if (_process == startedProcess) _process = null;
         return;
       }
@@ -252,7 +277,7 @@ class WindowsXrayEngine implements TunnelEngine {
         Future<int?>.delayed(const Duration(milliseconds: 900), () => null),
       ]);
       if (!_isCurrentOperation(operationId)) {
-        await _terminateProcessTree(startedProcess);
+        await _terminateProcessTree(startedProcess, install.executable.path);
         if (_process == startedProcess) _process = null;
         return;
       }
@@ -286,13 +311,17 @@ class WindowsXrayEngine implements TunnelEngine {
         }
         if (!_isCurrentOperation(operationId)) {
           await _restoreSystemProxy();
-          await _terminateProcessTree(startedProcess);
+          await _terminateProcessTree(startedProcess, install.executable.path);
           if (_process == startedProcess) _process = null;
           return;
         }
       }
 
       _connectedAt = DateTime.now();
+      _lastStatsAt = null;
+      _lastDownloadValue = null;
+      _lastUploadValue = null;
+      _statsClient = XrayStatsClient(port: statsApiPort);
       _status(
         TunnelStatus.connected,
         mode: mode,
@@ -300,7 +329,7 @@ class WindowsXrayEngine implements TunnelEngine {
         message: _connectedMessage(mode),
         stats: const TrafficStats(),
       );
-      _startDurationTicker();
+      _startTelemetry();
 
       unawaited(startedProcess.exitCode.then((code) async {
         if (_process != startedProcess ||
@@ -310,6 +339,8 @@ class WindowsXrayEngine implements TunnelEngine {
         }
         _process = null;
         _statsTimer?.cancel();
+        _durationTimer?.cancel();
+        await _closeStatsClient();
         if (_activeMode == ConnectionMode.systemProxy) {
           await _restoreSystemProxy();
         }
@@ -329,10 +360,15 @@ class WindowsXrayEngine implements TunnelEngine {
       final canceled = !_isCurrentOperation(operationId);
       final process = startedProcess;
       if (process != null) {
-        await _terminateProcessTree(process);
+        await _terminateProcessTree(
+          process,
+          _managedExecutablePath ?? '',
+        );
         if (_process == process) _process = null;
       }
       _statsTimer?.cancel();
+      _durationTimer?.cancel();
+      await _closeStatsClient();
       if (mode == ConnectionMode.systemProxy) {
         await _restoreSystemProxy();
       }
@@ -354,12 +390,16 @@ class WindowsXrayEngine implements TunnelEngine {
   Future<void> _validateConfig(
     XrayCoreInstall install,
     File configFile,
+    Directory assetDirectory,
   ) async {
     final process = await Process.start(
       install.executable.path,
       ['run', '-test', '-c', configFile.path],
       workingDirectory: install.directory.path,
       mode: ProcessStartMode.normal,
+      environment: {
+        'XRAY_LOCATION_ASSET': assetDirectory.path,
+      },
     );
     _process = process;
 
@@ -399,7 +439,7 @@ class WindowsXrayEngine implements TunnelEngine {
         );
       }
     } catch (_) {
-      await _terminateProcessTree(process);
+      await _terminateProcessTree(process, install.executable.path);
       rethrow;
     } finally {
       if (_process == process) _process = null;
@@ -453,13 +493,74 @@ class WindowsXrayEngine implements TunnelEngine {
     return text;
   }
 
-  void _startDurationTicker() {
+  void _startTelemetry() {
     _statsTimer?.cancel();
-    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _durationTimer?.cancel();
+
+    final interval = Duration(seconds: _settings.statsIntervalSeconds);
+    _statsTimer = Timer.periodic(interval, (_) => unawaited(_pollStats()));
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final connectedAt = _connectedAt;
       if (_process == null || connectedAt == null) return;
       _updateStatsDurationOnly(DateTime.now().difference(connectedAt));
     });
+    unawaited(_pollStats());
+  }
+
+  Future<void> _pollStats() async {
+    final client = _statsClient;
+    final connectedAt = _connectedAt;
+    if (_process == null ||
+        client == null ||
+        connectedAt == null ||
+        _statsPollInFlight) {
+      return;
+    }
+
+    _statsPollInFlight = true;
+    try {
+      final totals = await client.queryInboundTotals();
+      if (_process == null || _connectedAt != connectedAt) return;
+
+      final now = DateTime.now();
+      final seconds = _lastStatsAt == null
+          ? 0.0
+          : now.difference(_lastStatsAt!).inMilliseconds / 1000.0;
+      final download = totals.downloadBytes;
+      final upload = totals.uploadBytes;
+      final downBps = seconds > 0 && _lastDownloadValue != null
+          ? ((download - _lastDownloadValue!) / seconds)
+              .round()
+              .clamp(0, 1 << 60)
+              .toInt()
+          : 0;
+      final upBps = seconds > 0 && _lastUploadValue != null
+          ? ((upload - _lastUploadValue!) / seconds)
+              .round()
+              .clamp(0, 1 << 60)
+              .toInt()
+          : 0;
+
+      _lastStatsAt = now;
+      _lastDownloadValue = download;
+      _lastUploadValue = upload;
+      _status(
+        TunnelStatus.connected,
+        mode: _activeMode,
+        message: _connectedMessage(_activeMode ?? ConnectionMode.localProxy),
+        stats: TrafficStats(
+          downloadBytes: download,
+          uploadBytes: upload,
+          downloadBytesPerSecond: downBps,
+          uploadBytesPerSecond: upBps,
+          duration: now.difference(connectedAt),
+        ),
+      );
+    } catch (error) {
+      _appendLog('Stats API query failed: $error');
+    } finally {
+      _statsPollInFlight = false;
+    }
   }
 
   void _updateStatsDurationOnly(Duration duration) {
@@ -469,6 +570,26 @@ class WindowsXrayEngine implements TunnelEngine {
       message: _connectedMessage(_activeMode ?? ConnectionMode.localProxy),
       stats: _current.stats.copyWithDuration(duration),
     );
+  }
+
+  Future<int> _reserveLoopbackPort() async {
+    final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final port = socket.port;
+    await socket.close();
+    return port;
+  }
+
+  Future<File> _prepareConfigFile({
+    required XrayCoreInstall install,
+    required bool elevated,
+  }) async {
+    if (elevated) {
+      return File(p.join(install.directory.path, 'orexray-config.json'));
+    }
+    final support = await getApplicationSupportDirectory();
+    final directory = Directory(p.join(support.path, 'xray-runtime'));
+    await directory.create(recursive: true);
+    return File(p.join(directory.path, 'orexray-config.json'));
   }
 
   String _proxyBypass({required bool includePrivateNetworks}) {
@@ -507,6 +628,8 @@ class WindowsXrayEngine implements TunnelEngine {
       );
     }
     _statsTimer?.cancel();
+    _durationTimer?.cancel();
+    await _closeStatsClient();
 
     try {
       try {
@@ -529,7 +652,10 @@ class WindowsXrayEngine implements TunnelEngine {
       }
 
       if (process != null) {
-        final stopped = await _terminateProcessTree(process);
+        final stopped = await _terminateProcessTree(
+          process,
+          _managedExecutablePath ?? '',
+        );
         if (!stopped) {
           _status(
             TunnelStatus.error,
@@ -557,7 +683,10 @@ class WindowsXrayEngine implements TunnelEngine {
     }
   }
 
-  Future<bool> _terminateProcessTree(Process process) async {
+  Future<bool> _terminateProcessTree(
+    Process process,
+    String executablePath,
+  ) async {
     try {
       process.kill();
     } catch (error) {
@@ -568,19 +697,12 @@ class WindowsXrayEngine implements TunnelEngine {
       return true;
     }
 
-    try {
-      final result = await Process.run(
-        'taskkill',
-        ['/PID', '${process.pid}', '/T', '/F'],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      );
-      if (result.exitCode != 0) {
-        final output = '${result.stderr}\n${result.stdout}'.trim();
-        if (output.isNotEmpty) _appendLog(output);
+    if (executablePath.isNotEmpty) {
+      try {
+        await WindowsProcessJob.terminateStaleProcesses(executablePath);
+      } catch (error) {
+        _appendLog('Native Xray cleanup failed: $error');
       }
-    } catch (error) {
-      _appendLog('taskkill failed: $error');
     }
 
     return _waitForExit(process, const Duration(seconds: 2));
@@ -600,6 +722,29 @@ class WindowsXrayEngine implements TunnelEngine {
 
   void _resetRuntimeState() {
     _connectedAt = null;
+    _statsPollInFlight = false;
+    _lastStatsAt = null;
+    _lastDownloadValue = null;
+    _lastUploadValue = null;
+    _managedExecutablePath = null;
+    final configFile = _configFile;
+    _configFile = null;
+    if (configFile != null) {
+      unawaited(
+        configFile.delete().then<void>((_) {}).catchError((_) {}),
+      );
+    }
+  }
+
+  Future<void> _closeStatsClient() async {
+    final client = _statsClient;
+    _statsClient = null;
+    if (client == null) return;
+    try {
+      await client.close();
+    } catch (error) {
+      _appendLog('Stats API shutdown failed: $error');
+    }
   }
 
   Future<void> _restoreSystemProxy() async {
@@ -642,6 +787,8 @@ class WindowsXrayEngine implements TunnelEngine {
     }
 
     _statsTimer?.cancel();
+    _durationTimer?.cancel();
+    await _closeStatsClient();
     if (!_snapshots.isClosed) await _snapshots.close();
   }
 }

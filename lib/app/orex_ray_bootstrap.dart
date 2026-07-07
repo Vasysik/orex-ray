@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -7,6 +8,7 @@ import '../core/apps/app_routing_controller.dart';
 import '../core/geodata/geodata_controller.dart';
 import '../core/profiles/profiles_controller.dart';
 import '../core/settings/connection_settings_controller.dart';
+import '../platform/windows/windows_elevation_controller.dart';
 import '../shared/theme/glass.dart';
 import '../shared/theme/orex_theme.dart';
 import '../shared/theme/theme_controller.dart';
@@ -56,6 +58,14 @@ class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
       _versionFuture,
       geoDataFuture,
     ]);
+    final settings = results[2] as ConnectionSettingsController;
+    if (Platform.isWindows &&
+        await WindowsElevationController.maybeRestartOnStartup(
+          enabled: settings.windowsRunAsAdministrator,
+        )) {
+      exit(0);
+    }
+
     await minimumSplash;
     final appVersion = results[4] as OrexAppVersion;
     final geoData = results[5] as GeoDataController;
@@ -63,7 +73,7 @@ class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
     return _BootstrapData(
       theme: results[0] as ThemeController,
       profiles: results[1] as ProfilesController,
-      settings: results[2] as ConnectionSettingsController,
+      settings: settings,
       appRouting: results[3] as AppRoutingController,
       geoData: geoData,
       appVersion: appVersion,

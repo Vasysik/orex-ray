@@ -91,6 +91,20 @@ class BackgroundScreen extends StatelessWidget {
                   value: settings.closeToTray,
                   onChanged: settings.setCloseToTray,
                 ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(
+                    Icons.admin_panel_settings_outlined,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Запускать с правами администратора'),
+                  subtitle: const Text(
+                    'На следующем запуске запросит UAC. Автоповышение работает '
+                    'только для защищённой установки OrexRay в Program Files.',
+                  ),
+                  value: settings.windowsRunAsAdministrator,
+                  onChanged: settings.setWindowsRunAsAdministrator,
+                ),
               ],
             ),
           ],
