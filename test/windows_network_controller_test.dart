@@ -37,6 +37,9 @@ void main() {
 
     expect(value.ipv4Interface, 'OrexRay');
     expect(value.ipv6Interface, 'Wi-Fi');
-    expect(value.summary, 'IPv4 → OrexRay ✓ · IPv6 → Wi-Fi ✗');
+    expect(
+      value.summary,
+      'IPv4 best route → OrexRay · IPv6 best route → Wi-Fi',
+    );
   });
 }

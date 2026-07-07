@@ -17,7 +17,7 @@ class WindowsLifecycleController {
   static const _channel = MethodChannel('ru.orex.ray/windows_lifecycle');
   static const _networkDebounce = Duration(seconds: 3);
   static const _resumeDebounce = Duration(milliseconds: 1200);
-  static const _networkCooldown = Duration(seconds: 8);
+  static const _networkCooldown = Duration(seconds: 4);
 
   final TunnelController _tunnel;
   final ConnectionSettingsController _settings;
@@ -72,12 +72,6 @@ class WindowsLifecycleController {
   }
 
   void _scheduleRecovery(TunnelRecoveryReason reason) {
-    final now = DateTime.now();
-    if (reason == TunnelRecoveryReason.networkChanged &&
-        _networkCooldownUntil?.isAfter(now) == true) {
-      return;
-    }
-
     if (_recoveryInProgress) {
       // Re-evaluate the network after the current recovery. A second physical
       // switch can happen while Xray is stopping/starting; dropping it would
@@ -87,6 +81,21 @@ class WindowsLifecycleController {
           reason == TunnelRecoveryReason.systemResume) {
         _pendingRecoveryReason = reason;
       }
+      return;
+    }
+
+    final now = DateTime.now();
+    final cooldownUntil = _networkCooldownUntil;
+    if (reason == TunnelRecoveryReason.networkChanged &&
+        cooldownUntil?.isAfter(now) == true) {
+      // Do not drop a real interface transition just because it happened soon
+      // after a previous recovery. Re-check once the short anti-loop cooldown
+      // expires; the engine will ignore it if the physical adapter is unchanged.
+      _recoveryDebounce?.cancel();
+      _recoveryDebounce = Timer(
+        cooldownUntil!.difference(now),
+        () => unawaited(_runRecovery(reason)),
+      );
       return;
     }
 
@@ -110,7 +119,7 @@ class WindowsLifecycleController {
       if (pending != null && _initialized) {
         _recoveryDebounce?.cancel();
         _recoveryDebounce = Timer(_networkCooldown, () {
-          if (_initialized) _scheduleRecovery(pending);
+          if (_initialized) unawaited(_runRecovery(pending));
         });
       }
     }

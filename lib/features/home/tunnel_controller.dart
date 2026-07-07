@@ -28,12 +28,21 @@ class TunnelController extends ChangeNotifier {
       if (!value.isConnected && !value.isBusy) {
         _lastRuntimeMetadataKey = null;
       }
+      if (value.isConnected) {
+        _startEgressRefreshLoop();
+      } else {
+        _stopEgressRefreshLoop();
+      }
       if (becameConnected) unawaited(refreshEgressIdentity(force: true));
       notifyListeners();
     });
     _profiles.addListener(_onDependencyChanged);
     _settings.addListener(_onDependencyChanged);
     unawaited(_loadEgressCache());
+    if (_engineSnapshot.isConnected) {
+      _startEgressRefreshLoop();
+      unawaited(refreshEgressIdentity(force: true));
+    }
   }
 
   final TunnelEngine _engine;
@@ -49,9 +58,17 @@ class TunnelController extends ChangeNotifier {
   bool _disposed = false;
   String? _lastRuntimeMetadataKey;
   static const _egressCacheKey = 'orex_ray_egress_identity_v1';
+  static const _egressRefreshInterval = Duration(minutes: 5);
+  static const _egressRetryDelays = <Duration>[
+    Duration.zero,
+    Duration(seconds: 1),
+    Duration(seconds: 3),
+    Duration(seconds: 6),
+  ];
   final Map<String, EgressIdentity> _egressIdentities = {};
   final ValueNotifier<int> _egressRevision = ValueNotifier<int>(0);
   bool _egressRefreshInFlight = false;
+  Timer? _egressRefreshTimer;
 
   Set<ConnectionMode> get supportedModes => {
         for (final mode in _settings.supportedModes)
@@ -176,6 +193,9 @@ class TunnelController extends ChangeNotifier {
     if (_engine case TunnelRecoverySink recovery) {
       await recovery.recover(reason);
       _syncFromEngine();
+      if (_engineSnapshot.isConnected) {
+        unawaited(refreshEgressIdentity(force: true));
+      }
     }
   }
 
@@ -206,15 +226,85 @@ class TunnelController extends ChangeNotifier {
     final target = _engineSnapshot.profile;
     if (target == null) return;
     final cached = _egressIdentities[target.id];
-    if (!force && cached != null &&
-        DateTime.now().difference(cached.checkedAt) < const Duration(minutes: 10)) {
+    if (!force &&
+        cached != null &&
+        DateTime.now().difference(cached.checkedAt) <
+            _egressRefreshInterval) {
       return;
     }
-    if (_engineSnapshot.mode == ConnectionMode.vpnTun && !_settings.localProxyInVpn) {
+    if (_engineSnapshot.mode == ConnectionMode.vpnTun &&
+        !_settings.localProxyInVpn) {
       return;
     }
 
     _egressRefreshInFlight = true;
+    Object? lastError;
+    try {
+      _logDiagnostic(
+        'Egress identity refresh started: mode=${_engineSnapshot.mode.storageValue}.',
+      );
+      for (var attempt = 0; attempt < _egressRetryDelays.length; attempt++) {
+        if (!_isEgressTargetActive(target.id)) return;
+        final delay = _egressRetryDelays[attempt];
+        if (delay > Duration.zero) await Future<void>.delayed(delay);
+        if (!_isEgressTargetActive(target.id)) return;
+
+        try {
+          await _waitForEgressProxy();
+          final identity = await _probeEgressIdentity();
+          if (!_isEgressTargetActive(target.id)) return;
+          _egressIdentities[target.id] = identity;
+          await _saveEgressCache();
+          _logDiagnostic(
+            'Egress identity updated: country=${identity.countryCode}, '
+            'WARP=${identity.warp ? 'on' : 'off'}.',
+          );
+          if (!_closing) _egressRevision.value++;
+          return;
+        } catch (error) {
+          lastError = error;
+          _logDiagnostic(
+            'Egress identity attempt ${attempt + 1}/${_egressRetryDelays.length} '
+            'failed: $error',
+          );
+        }
+      }
+      _logDiagnostic(
+        'Egress identity refresh failed after ${_egressRetryDelays.length} '
+        'attempts: ${lastError ?? 'unknown error'}. A periodic retry is scheduled.',
+      );
+    } finally {
+      _egressRefreshInFlight = false;
+    }
+  }
+
+  Future<void> _waitForEgressProxy({int attempts = 8}) async {
+    Object? lastError;
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      Socket? socket;
+      try {
+        socket = await Socket.connect(
+          InternetAddress.loopbackIPv4,
+          _settings.httpPort,
+          timeout: const Duration(milliseconds: 700),
+        );
+        socket.destroy();
+        return;
+      } catch (error) {
+        lastError = error;
+        socket?.destroy();
+      }
+      if (attempt < attempts) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+    }
+    throw StateError(
+      'Local HTTP proxy 127.0.0.1:${_settings.httpPort} is not ready: '
+      '${lastError ?? 'connection failed'}',
+    );
+  }
+
+  Future<EgressIdentity> _probeEgressIdentity() async {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 5)
       ..idleTimeout = const Duration(seconds: 8)
@@ -224,22 +314,52 @@ class TunnelController extends ChangeNotifier {
           .getUrl(Uri.https('www.cloudflare.com', '/cdn-cgi/trace'))
           .timeout(const Duration(seconds: 8));
       final response = await request.close().timeout(const Duration(seconds: 8));
-      if (response.statusCode != HttpStatus.ok) return;
+      if (response.statusCode != HttpStatus.ok) {
+        throw HttpException(
+          'Cloudflare trace returned HTTP ${response.statusCode}',
+        );
+      }
       final body = await utf8.decoder
           .bind(response)
           .join()
           .timeout(const Duration(seconds: 8));
-      if (body.length > 16 * 1024) return;
+      if (body.length > 16 * 1024) {
+        throw const FormatException('Cloudflare trace response is too large');
+      }
       final identity = parseCloudflareTrace(body);
-      if (identity == null || _engineSnapshot.profile?.id != target.id) return;
-      _egressIdentities[target.id] = identity;
-      await _saveEgressCache();
-      if (!_closing) _egressRevision.value++;
-    } catch (_) {
-      // Egress identity is cosmetic and must never affect the tunnel.
+      if (identity == null) {
+        throw const FormatException(
+          'Cloudflare trace response has no valid country code',
+        );
+      }
+      return identity;
     } finally {
       client.close(force: true);
-      _egressRefreshInFlight = false;
+    }
+  }
+
+  bool _isEgressTargetActive(String targetId) {
+    return !_closing &&
+        _engineSnapshot.isConnected &&
+        _engineSnapshot.profile?.id == targetId;
+  }
+
+  void _startEgressRefreshLoop() {
+    if (!Platform.isWindows || _egressRefreshTimer != null) return;
+    _egressRefreshTimer = Timer.periodic(
+      _egressRefreshInterval,
+      (_) => unawaited(refreshEgressIdentity(force: true)),
+    );
+  }
+
+  void _stopEgressRefreshLoop() {
+    _egressRefreshTimer?.cancel();
+    _egressRefreshTimer = null;
+  }
+
+  void _logDiagnostic(String message) {
+    if (_engine case TunnelDiagnosticEventSink sink) {
+      sink.addDiagnosticEvent(message);
     }
   }
 
@@ -272,6 +392,7 @@ class TunnelController extends ChangeNotifier {
 
   Future<void> _shutdown() async {
     _closing = true;
+    _stopEgressRefreshLoop();
     _detachDependencies();
     await _cancelEngineSubscription();
     try {
@@ -283,6 +404,7 @@ class TunnelController extends ChangeNotifier {
 
   Future<void> _disposeWithoutStopping() async {
     _closing = true;
+    _stopEgressRefreshLoop();
     _detachDependencies();
     await _cancelEngineSubscription();
     await _disposeEngine();
@@ -334,6 +456,7 @@ class TunnelController extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     _closing = true;
+    _stopEgressRefreshLoop();
     _detachDependencies();
     _egressRevision.dispose();
     unawaited(_shutdownFuture ??= _disposeWithoutStopping());

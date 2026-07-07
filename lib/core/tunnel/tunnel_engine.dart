@@ -38,3 +38,10 @@ abstract interface class TunnelRecoverySink {
 abstract interface class TunnelDiagnosticsProvider {
   Future<TunnelDiagnostics> collectDiagnostics();
 }
+
+/// Optional sink for app-level diagnostic events that should appear in the
+/// diagnostics report alongside engine logs. Implementations must never log
+/// profile credentials or raw connection links.
+abstract interface class TunnelDiagnosticEventSink {
+  void addDiagnosticEvent(String message);
+}

@@ -19,7 +19,11 @@ import 'xray_core_manager.dart';
 import 'xray_stats_client.dart';
 import 'xray_watchdog.dart';
 
-class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagnosticsProvider {
+class WindowsXrayEngine implements
+    TunnelEngine,
+    TunnelRecoverySink,
+    TunnelDiagnosticsProvider,
+    TunnelDiagnosticEventSink {
   WindowsXrayEngine({
     required ConnectionSettingsController settings,
     OrexAppVersion appVersion = OrexAppVersion.fallback,
@@ -346,32 +350,22 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
       }
 
       if (mode == ConnectionMode.vpnTun) {
-        _status(
-          TunnelStatus.connecting,
-          mode: mode,
-          profile: profile,
-          message: 'Проверяем маршруты Windows…',
-        );
-        final routeStatus = await _waitForTunRouteStatus();
-        _lastTunRouteSummary = routeStatus.summary;
-        _appendAppLog('TUN route check: ${routeStatus.summary}.');
-        if (!routeStatus.ipv4Captured) {
-          final actual = routeStatus.ipv4Interface.isEmpty
-              ? 'не определён'
-              : routeStatus.ipv4Interface;
-          throw StateError(
-            'Windows не направил публичный IPv4-трафик в интерфейс OrexRay. '
-            'Текущий лучший маршрут: $actual. Подключение остановлено, чтобы '
-            'не показывать ложное состояние VPN.',
+        try {
+          final routeStatus = await WindowsNetworkController.tunRouteStatus();
+          _lastTunRouteSummary = 'advisory · ${routeStatus.summary}';
+          _appendAppLog(
+            'TUN route observation (advisory): ${routeStatus.summary}.',
           );
-        }
-        if (routeStatus.ipv6Interface.isNotEmpty &&
-            !routeStatus.ipv6Captured) {
-          throw StateError(
-            'Windows не направил публичный IPv6-трафик в интерфейс OrexRay. '
-            'Текущий лучший маршрут: ${routeStatus.ipv6Interface}. '
-            'Подключение остановлено, чтобы не допустить IPv6-утечку.',
-          );
+          if (!routeStatus.fullyCaptured) {
+            _appendAppLog(
+              'Windows best-route API does not identify OrexRay as the best '
+              'public route. Continuing because this API is not a reliable '
+              'health check for Xray TUN traffic.',
+            );
+          }
+        } catch (error) {
+          _lastTunRouteSummary = 'advisory check unavailable';
+          _appendAppLog('TUN route observation failed: $error');
         }
       } else {
         _lastTunRouteSummary = 'not applicable';
@@ -582,7 +576,11 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         return;
       }
 
-      final candidate = await _waitForOutboundInterface();
+      final candidate = await _waitForOutboundInterface(
+        attempts: 10,
+        previousInterface: _lastOutboundInterface,
+        waitForChange: true,
+      );
       if (candidate == null) {
         _appendAppLog(
           'Network event deferred: no usable physical interface is ready yet.',
@@ -618,7 +616,7 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         _process != null) {
       try {
         final routeStatus = await WindowsNetworkController.tunRouteStatus();
-        _lastTunRouteSummary = routeStatus.summary;
+        _lastTunRouteSummary = 'advisory · ${routeStatus.summary}';
       } catch (error) {
         _appendAppLog('Live TUN route diagnostics failed: $error');
       }
@@ -731,6 +729,9 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
         .transform(const LineSplitter())
         .listen(capture);
   }
+
+  @override
+  void addDiagnosticEvent(String message) => _appendAppLog(message);
 
   void _appendXrayLog(String message) {
     _appendDiagnosticLog('[Xray] ${message.trim()}');
@@ -863,39 +864,47 @@ class WindowsXrayEngine implements TunnelEngine, TunnelRecoverySink, TunnelDiagn
     );
   }
 
-  Future<WindowsTunRouteStatus> _waitForTunRouteStatus({
-    int attempts = 12,
+  Future<String?> _waitForOutboundInterface({
+    int attempts = 8,
+    String? previousInterface,
+    bool waitForChange = false,
   }) async {
-    WindowsTunRouteStatus? last;
-    for (var attempt = 1; attempt <= attempts; attempt++) {
-      last = await WindowsNetworkController.tunRouteStatus();
-      if (last.fullyCaptured) return last;
-      if (attempt < attempts) {
-        await Future<void>.delayed(const Duration(milliseconds: 400));
-      }
-    }
-    return last ??
-        const WindowsTunRouteStatus(
-          ipv4Interface: '',
-          ipv6Interface: '',
-          ipv4Captured: false,
-          ipv6Captured: false,
-        );
-  }
+    String? lastCandidate;
+    String? fallbackCandidate;
+    var stableSamples = 0;
 
-  Future<String?> _waitForOutboundInterface({int attempts = 6}) async {
     for (var attempt = 1; attempt <= attempts; attempt++) {
       try {
         final value = await WindowsNetworkController.bestOutboundInterface();
-        if (value != null && value.toLowerCase() != 'orexray') return value;
+        if (value != null && value.toLowerCase() != 'orexray') {
+          if (value == lastCandidate) {
+            stableSamples++;
+          } else {
+            lastCandidate = value;
+            stableSamples = 1;
+          }
+          fallbackCandidate = value;
+
+          final changed =
+              previousInterface == null || value != previousInterface;
+          if (stableSamples >= 2 && (!waitForChange || changed)) {
+            return value;
+          }
+        }
       } catch (error) {
         _appendAppLog('Physical interface detection failed: $error');
       }
       if (attempt < attempts) {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
       }
     }
-    return null;
+
+    // For a generic network notification the physical interface may remain the
+    // same (DHCP renewals, address changes, metric updates). Return the stable
+    // fallback only after the full settle window so callers can safely ignore
+    // noise without missing a real Wi-Fi/Ethernet transition that appeared a
+    // little later.
+    return fallbackCandidate;
   }
 
   Future<int> _reserveLoopbackPort() async {

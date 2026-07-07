@@ -39,7 +39,7 @@ void main() {
   testWidgets(
     'connected VPN visually disables proxy port and MTU rows',
     (tester) async {
-      await _pumpConnectionScreen(
+      final harness = await _pumpConnectionScreen(
         tester,
         status: TunnelStatus.connected,
       );
@@ -54,6 +54,7 @@ void main() {
       await tester.pumpAndSettle();
       _expectDisabledListTile(tester, 'MTU', disabledColor);
 
+      harness.tunnel.dispose();
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     },
@@ -89,7 +90,7 @@ Future<_ConnectionHarness> _pumpConnectionScreen(
   );
   await tester.pump();
 
-  return _ConnectionHarness(settings: settings);
+  return _ConnectionHarness(settings: settings, tunnel: tunnel);
 }
 
 void _expectDisabledListTile(
@@ -113,9 +114,10 @@ void _expectDisabledListTile(
 }
 
 class _ConnectionHarness {
-  const _ConnectionHarness({required this.settings});
+  const _ConnectionHarness({required this.settings, required this.tunnel});
 
   final ConnectionSettingsController settings;
+  final TunnelController tunnel;
 }
 
 class _StaticTunnelEngine implements TunnelEngine {

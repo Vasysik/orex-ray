@@ -26,12 +26,9 @@ class WindowsTunRouteStatus {
       ipv4Captured && (ipv6Interface.isEmpty || ipv6Captured);
 
   String get summary {
-    final ipv4Name = ipv4Interface.isEmpty ? 'unknown' : ipv4Interface;
-    final ipv4 = '$ipv4Name ${ipv4Captured ? '✓' : '✗'}';
-    final ipv6 = ipv6Interface.isEmpty
-        ? 'unavailable'
-        : '$ipv6Interface ${ipv6Captured ? '✓' : '✗'}';
-    return 'IPv4 → $ipv4 · IPv6 → $ipv6';
+    final ipv4 = ipv4Interface.isEmpty ? 'unknown' : ipv4Interface;
+    final ipv6 = ipv6Interface.isEmpty ? 'unavailable' : ipv6Interface;
+    return 'IPv4 best route → $ipv4 · IPv6 best route → $ipv6';
   }
 }
 
