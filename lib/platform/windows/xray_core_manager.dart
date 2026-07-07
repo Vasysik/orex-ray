@@ -32,7 +32,8 @@ class XrayCoreManager {
   static const _zipName = 'Xray-windows-64-v$_version.zip';
   static const _zipUrl =
       'https://github.com/XTLS/Xray-core/releases/download/v$_version/Xray-windows-64.zip';
-  static const _digestUrl = '$_zipUrl.dgst';
+  static const _zipSha256 =
+      '8b8bac59966883e97d6b11a91c6db6115e6bbfcea4c94695bb77de6356ef0034';
   static const _hashFileName = 'xray-core.sha256';
   static const _maxDownloadBytes = 64 * 1024 * 1024;
   static const _maxArchiveEntries = 128;
@@ -54,20 +55,19 @@ class XrayCoreManager {
       p.join(File(Platform.resolvedExecutable).parent.path, 'xray-core'),
     );
     final bundledArchive = File(p.join(bundledRoot.path, _zipName));
-    final bundledHash = File(p.join(bundledRoot.path, _hashFileName));
-    if (await bundledArchive.exists() && await bundledHash.exists()) {
+    if (await bundledArchive.exists()) {
       try {
         return await _verifyInstall(
           runtimeDirectory: bundledRoot,
           trustedArchive: bundledArchive,
-          expectedHash: await _readExpectedHash(bundledHash),
+          expectedHash: _zipSha256,
           assetDirectory: assetDirectory,
         );
       } catch (error) {
         if (!kDebugMode) {
           throw StateError(
             'Встроенный Xray Core повреждён или был изменён. '
-            'Переустанови OrexRay из доверенного установщика.\n$error',
+            'Открой «Диагностика» и выбери «Переустановить Xray Core».\n$error',
           );
         }
       }
@@ -77,7 +77,7 @@ class XrayCoreManager {
       throw StateError(
         'В release-сборке отсутствует встроенный Xray Core. '
         'Пересобери Windows-релиз через windows/installer/prepare_xray_core.ps1 '
-        'и переустанови OrexRay.',
+        'и повтори сборку release.',
       );
     }
 
@@ -117,6 +117,80 @@ class XrayCoreManager {
     );
   }
 
+  Future<void> reinstall({
+    void Function(double progress)? onProgress,
+  }) async {
+    final support = await getApplicationSupportDirectory();
+    final assetDirectory = Directory(p.join(support.path, 'xray-core'));
+    await assetDirectory.create(recursive: true);
+
+    final runtimeDirectory = Directory(
+      p.join(File(Platform.resolvedExecutable).parent.path, 'xray-core'),
+    );
+    if (kDebugMode) {
+      final developmentRoot = Directory(p.join(support.path, 'xray-core-dev'));
+      if (await developmentRoot.exists()) {
+        await developmentRoot.delete(recursive: true);
+      }
+      await _ensureDevelopmentInstall(
+        support: support,
+        assetDirectory: assetDirectory,
+        onProgress: onProgress,
+      );
+      return;
+    }
+
+    await runtimeDirectory.create(recursive: true);
+    final trustedArchive = File(p.join(runtimeDirectory.path, _zipName));
+    Archive archive;
+    if (await trustedArchive.exists()) {
+      try {
+        archive = await _readTrustedArchive(trustedArchive, _zipSha256);
+      } catch (_) {
+        archive = await _downloadTrustedArchive(
+          trustedArchive,
+          onProgress: onProgress,
+        );
+      }
+    } else {
+      archive = await _downloadTrustedArchive(
+        trustedArchive,
+        onProgress: onProgress,
+      );
+    }
+
+    await _extractTrustedRuntime(archive, runtimeDirectory);
+    await _restoreBundledData(archive, runtimeDirectory);
+    await File(p.join(runtimeDirectory.path, _hashFileName))
+        .writeAsString('$_zipSha256\n', flush: true);
+
+    if (!await _matchesTrustedArchive(
+      archive,
+      runtimeDirectory,
+      fileNames: {..._requiredRuntimeFiles, ..._optionalDataFiles},
+    )) {
+      throw StateError('Переустановленный Xray Core не прошёл проверку.');
+    }
+    await _initializeAssets(archive, assetDirectory);
+  }
+
+  Future<Archive> _downloadTrustedArchive(
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
+    final temporary = File('${destination.path}.download');
+    if (await temporary.exists()) await temporary.delete();
+    try {
+      await _download(_zipUrl, temporary, onProgress: onProgress);
+      await _verifyExpectedHash(temporary, _zipSha256);
+      final archive = await _readTrustedArchive(temporary, _zipSha256);
+      await _replaceFileAtomically(temporary, destination);
+      return archive;
+    } finally {
+      if (await temporary.exists()) await temporary.delete();
+    }
+  }
+
   Future<XrayCoreInstall> _ensureDevelopmentInstall({
     required Directory support,
     required Directory assetDirectory,
@@ -126,23 +200,17 @@ class XrayCoreManager {
     final executable = File(p.join(root.path, 'xray.exe'));
     final wintun = File(p.join(root.path, 'wintun.dll'));
     final trustedArchive = File(p.join(root.path, _zipName));
-    final trustedHash = File(p.join(root.path, _hashFileName));
 
     await root.create(recursive: true);
     await _removeLegacyDownloads(root);
 
     Archive? trustedContents;
-    String? expectedHash;
-    if (await trustedHash.exists()) {
+    if (await trustedArchive.exists()) {
       try {
-        expectedHash = await _readExpectedHash(trustedHash);
-      } catch (_) {
-        await trustedHash.delete();
-      }
-    }
-    if (await trustedArchive.exists() && expectedHash != null) {
-      try {
-        trustedContents = await _readTrustedArchive(trustedArchive, expectedHash);
+        trustedContents = await _readTrustedArchive(
+          trustedArchive,
+          _zipSha256,
+        );
       } catch (_) {
         await trustedArchive.delete();
       }
@@ -160,26 +228,20 @@ class XrayCoreManager {
       }
     }
 
-    if (!await trustedArchive.exists() || expectedHash == null) {
-      final digestTemporary = File('${trustedHash.path}.download');
+    if (!await trustedArchive.exists()) {
       final temporary = File('${trustedArchive.path}.download');
-      if (await digestTemporary.exists()) await digestTemporary.delete();
       if (await temporary.exists()) await temporary.delete();
       try {
-        await _download(_digestUrl, digestTemporary);
-        expectedHash = await _readExpectedHash(digestTemporary);
         await _download(_zipUrl, temporary, onProgress: onProgress);
-        await _verifyExpectedHash(temporary, expectedHash);
+        await _verifyExpectedHash(temporary, _zipSha256);
         await temporary.rename(trustedArchive.path);
-        await trustedHash.writeAsString('$expectedHash\n', flush: true);
       } finally {
-        if (await digestTemporary.exists()) await digestTemporary.delete();
         if (await temporary.exists()) await temporary.delete();
       }
     }
 
     final archive = trustedContents ??
-        await _readTrustedArchive(trustedArchive, expectedHash!);
+        await _readTrustedArchive(trustedArchive, _zipSha256);
     await _extractTrustedRuntime(archive, root);
     await _initializeAssets(archive, assetDirectory);
 
@@ -250,15 +312,6 @@ class XrayCoreManager {
     }
   }
 
-  Future<String> _readExpectedHash(File file) async {
-    final text = await file.readAsString();
-    final match = RegExp(r'(?i)\b[a-f0-9]{64}\b').firstMatch(text);
-    if (match == null) {
-      throw const FormatException('Не удалось прочитать SHA-256 Xray Core.');
-    }
-    return match.group(0)!.toLowerCase();
-  }
-
   Future<void> _verifyExpectedHash(File file, String expectedHash) async {
     if (!await file.exists() || await file.length() > _maxDownloadBytes) {
       throw StateError('SHA-256 скачанного Xray Core не совпал.');
@@ -298,6 +351,38 @@ class XrayCoreManager {
         entry,
         File(p.join(destination.path, fileName)),
       );
+    }
+  }
+
+  Future<void> _restoreBundledData(
+    Archive archive,
+    Directory destination,
+  ) async {
+    final entries = _runtimeEntries(archive);
+    for (final fileName in _optionalDataFiles) {
+      final entry = entries[fileName];
+      if (entry == null) {
+        throw FormatException('В архиве Xray отсутствует $fileName.');
+      }
+      await _writeEntryAtomically(
+        entry,
+        File(p.join(destination.path, fileName)),
+      );
+    }
+  }
+
+  Future<void> _replaceFileAtomically(File source, File destination) async {
+    final backup = File('${destination.path}.old');
+    if (await backup.exists()) await backup.delete();
+    if (await destination.exists()) await destination.rename(backup.path);
+    try {
+      await source.rename(destination.path);
+      if (await backup.exists()) await backup.delete();
+    } catch (_) {
+      if (await backup.exists() && !await destination.exists()) {
+        await backup.rename(destination.path);
+      }
+      rethrow;
     }
   }
 

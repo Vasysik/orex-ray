@@ -216,9 +216,12 @@ flutter build windows --release --no-pub
 powershell -ExecutionPolicy Bypass -File windows\installer\prepare_xray_core.ps1
 ```
 
-Последняя команда скачивает закреплённый Xray Core, проверяет SHA-256 и кладёт
-`xray.exe`, `wintun.dll` и доверенный архив в release bundle. Release-сборка без
-этого каталога fail-closed и не скачивает исполняемый core в профиль пользователя.
+Последняя команда скачивает закреплённый Xray Core 26.4.13, проверяет его по
+SHA-256, зафиксированному в исходниках OrexRay, и кладёт `xray.exe`, `wintun.dll`,
+GeoData и доверенный архив в release bundle. Release-сборка без этого каталога
+fail-closed. Повреждённый Core можно восстановить из экрана **Диагностика** без
+переустановки всего OrexRay; скачанный при ремонте архив проходит ту же pinned
+SHA-256 проверку.
 
 Готовое приложение находится в:
 

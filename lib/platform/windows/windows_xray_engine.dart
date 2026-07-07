@@ -23,7 +23,8 @@ class WindowsXrayEngine implements
     TunnelEngine,
     TunnelRecoverySink,
     TunnelDiagnosticsProvider,
-    TunnelDiagnosticEventSink {
+    TunnelDiagnosticEventSink,
+    TunnelCoreMaintenance {
   WindowsXrayEngine({
     required ConnectionSettingsController settings,
     OrexAppVersion appVersion = OrexAppVersion.fallback,
@@ -608,6 +609,25 @@ class WindowsXrayEngine implements
     }
     await Future<void>.delayed(const Duration(milliseconds: 900));
     await _startInternal(target, mode, recovery: true);
+  }
+
+  @override
+  Future<void> reinstallCore({
+    void Function(double progress)? onProgress,
+  }) async {
+    if (_process != null || _current.isBusy || _current.isConnected) {
+      throw StateError('Сначала отключи активное соединение.');
+    }
+    final protectedInstall = await WindowsElevationController.isProtectedInstall();
+    if (protectedInstall && !await WindowsElevationController.isElevated()) {
+      throw StateError(
+        'Для записи в Program Files нужны права администратора.',
+      );
+    }
+    _appendAppLog('Xray Core reinstall requested.');
+    await _coreManager.reinstall(onProgress: onProgress);
+    _appendAppLog('Xray Core ${XrayCoreManager.version} reinstalled and verified.');
+    _lastError = null;
   }
 
   @override

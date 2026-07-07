@@ -4,13 +4,12 @@ Set-StrictMode -Version Latest
 $Version = '26.4.13'
 $ArchiveName = "Xray-windows-64-v$Version.zip"
 $DownloadUrl = "https://github.com/XTLS/Xray-core/releases/download/v$Version/Xray-windows-64.zip"
-$DigestUrl = "$DownloadUrl.dgst"
+$ExpectedSha256 = '8b8bac59966883e97d6b11a91c6db6115e6bbfcea4c94695bb77de6356ef0034'
 $HashFileName = "xray-core.sha256"
 $ReleaseDir = Join-Path $PSScriptRoot '..\..\build\windows\x64\runner\Release'
 $TargetDir = Join-Path $ReleaseDir 'xray-core'
 $TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("orexray-xray-" + [guid]::NewGuid().ToString('N'))
 $ArchivePath = Join-Path $TempRoot $ArchiveName
-$DigestPath = Join-Path $TempRoot ($ArchiveName + '.dgst')
 $ExtractDir = Join-Path $TempRoot 'extracted'
 
 function Download-FileWithRetry {
@@ -74,30 +73,12 @@ function Download-FileWithRetry {
   throw "Failed to download $Uri after retries. Last error: $LastError"
 }
 
-function Read-Sha256FromDigest {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$Path
-  )
-
-  $Text = Get-Content -Raw -Path $Path
-  $Match = [regex]::Match($Text, '(?i)\b[a-f0-9]{64}\b')
-  if (-not $Match.Success) {
-    throw "Could not read SHA-256 from digest file: $Path"
-  }
-  return $Match.Value.ToLowerInvariant()
-}
-
 try {
   if (-not (Test-Path $ReleaseDir)) {
     throw "Windows release build not found: $ReleaseDir. Run flutter build windows --release first."
   }
 
   New-Item -ItemType Directory -Force -Path $TempRoot, $ExtractDir | Out-Null
-
-  Write-Host "Downloading official digest for pinned Xray Core v$Version..."
-  Download-FileWithRetry -Uri $DigestUrl -Destination $DigestPath
-  $ExpectedSha256 = Read-Sha256FromDigest -Path $DigestPath
 
   $ExistingArchivePath = Join-Path $TargetDir $ArchiveName
   $ReusedExistingArchive = $false

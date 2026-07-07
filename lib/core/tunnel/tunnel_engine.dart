@@ -45,3 +45,9 @@ abstract interface class TunnelDiagnosticsProvider {
 abstract interface class TunnelDiagnosticEventSink {
   void addDiagnosticEvent(String message);
 }
+
+/// Optional maintenance hook for engines with a replaceable Xray runtime.
+/// Implementations must verify the pinned artifact before writing any file.
+abstract interface class TunnelCoreMaintenance {
+  Future<void> reinstallCore({void Function(double progress)? onProgress});
+}

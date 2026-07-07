@@ -7,6 +7,7 @@ import '../../core/app_version.dart';
 import '../../core/diagnostics/tunnel_diagnostics.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_models.dart';
+import '../../platform/windows/windows_elevation_controller.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/settings_section.dart';
@@ -32,6 +33,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   TunnelDiagnostics? _diagnostics;
   Object? _error;
   bool _loading = false;
+  bool _repairingCore = false;
+  double? _repairProgress;
 
   @override
   void initState() {
@@ -90,6 +93,78 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Диагностический отчёт скопирован')),
     );
+  }
+
+  Future<void> _reinstallXrayCore() async {
+    if (_repairingCore) return;
+    if (!widget.tunnel.canReinstallXrayCore) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сначала отключи активное соединение.')),
+      );
+      return;
+    }
+
+    if (Platform.isWindows &&
+        await WindowsElevationController.isProtectedInstall() &&
+        !await WindowsElevationController.isElevated()) {
+      if (!mounted) return;
+      final restart = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              icon: const Icon(Icons.admin_panel_settings_outlined),
+              title: const Text('Нужны права администратора'),
+              content: const Text(
+                'Xray Core установлен в Program Files. OrexRay перезапустится '
+                'с правами администратора; после перезапуска снова открой '
+                '«Диагностика» и нажми «Переустановить Xray Core».',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Отмена'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Перезапустить'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!restart) return;
+      await WindowsElevationController.restartElevated();
+      return;
+    }
+
+    setState(() {
+      _repairingCore = true;
+      _repairProgress = null;
+    });
+    try {
+      await widget.tunnel.reinstallXrayCore(
+        onProgress: (value) {
+          if (!mounted) return;
+          setState(() => _repairProgress = value.clamp(0.0, 1.0).toDouble());
+        },
+      );
+      await _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Xray Core переустановлен и проверен.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось переустановить Xray Core: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _repairingCore = false;
+          _repairProgress = null;
+        });
+      }
+    }
   }
 
   Future<void> _setLogLevel(String value) async {
@@ -163,6 +238,42 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             ),
           ],
         ),
+        if (Platform.isWindows) ...[
+          const SizedBox(height: 16),
+          SettingsSection(
+            title: 'Xray Core',
+            subtitle: 'Восстановление закреплённой и проверенной версии Core.',
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.system_update_alt_rounded,
+                  color: OrexColors.copper,
+                ),
+                title: const Text('Переустановить Xray Core'),
+                subtitle: Text(
+                  _repairingCore
+                      ? _repairProgress == null
+                          ? 'Подготавливаем восстановление…'
+                          : 'Загрузка · ${(_repairProgress! * 100).round()}%'
+                      : 'Восстанавливает xray.exe, wintun.dll и встроенные '
+                        'GeoData из pinned-архива с проверкой SHA-256.',
+                ),
+                trailing: OutlinedButton.icon(
+                  onPressed: _repairingCore || !widget.tunnel.canReinstallXrayCore
+                      ? null
+                      : _reinstallXrayCore,
+                  icon: _repairingCore
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.build_circle_outlined),
+                  label: const Text('Переустановить'),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
         if (_error != null)
           GlassPanel(

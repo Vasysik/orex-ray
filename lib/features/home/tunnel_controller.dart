@@ -199,6 +199,23 @@ class TunnelController extends ChangeNotifier {
     }
   }
 
+  bool get canReinstallXrayCore =>
+      Platform.isWindows &&
+      !_engineSnapshot.isBusy &&
+      !_engineSnapshot.isConnected &&
+      _engine is TunnelCoreMaintenance;
+
+  Future<void> reinstallXrayCore({
+    void Function(double progress)? onProgress,
+  }) async {
+    if (!canReinstallXrayCore) {
+      throw StateError('Сначала отключи активное соединение.');
+    }
+    await (_engine as TunnelCoreMaintenance).reinstallCore(
+      onProgress: onProgress,
+    );
+  }
+
   Future<TunnelDiagnostics> collectDiagnostics() async {
     if (_engine case TunnelDiagnosticsProvider provider) {
       return provider.collectDiagnostics();
