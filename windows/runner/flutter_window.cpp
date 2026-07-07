@@ -1,9 +1,12 @@
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <netioapi.h>
+
 #include "flutter_window.h"
 
 #include <shellapi.h>
 #include <shlobj.h>
-#include <iphlpapi.h>
-#include <netioapi.h>
 
 #include <cstdint>
 #include <cwchar>
