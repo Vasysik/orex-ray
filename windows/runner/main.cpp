@@ -69,6 +69,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   const bool elevated_restart =
       HasCommandLineFlag(L"--orexray-elevated-restart");
+  const bool auto_start = HasCommandLineFlag(L"--orexray-autostart");
 
   // A normal second launch activates the existing window. An elevated restart
   // deliberately waits for the unelevated process to release the mutex.
@@ -110,7 +111,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   std::vector<std::string> command_line_arguments = GetCommandLineArguments();
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
-  FlutterWindow window(project);
+  FlutterWindow window(project, auto_start);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 800);
   if (!window.Create(kWindowTitle, origin, size)) {

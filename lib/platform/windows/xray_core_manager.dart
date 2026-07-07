@@ -28,6 +28,7 @@ class XrayCoreManager {
   }) : _userAgent = 'OrexRay/${appVersion.version}';
 
   static const _version = '26.3.27';
+  static const version = _version;
   static const _zipName = 'Xray-windows-64-v$_version.zip';
   static const _zipUrl =
       'https://github.com/XTLS/Xray-core/releases/download/v$_version/Xray-windows-64.zip';

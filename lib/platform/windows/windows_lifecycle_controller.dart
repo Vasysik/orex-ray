@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../../core/settings/connection_settings_controller.dart';
+import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../features/home/tunnel_controller.dart';
 
@@ -20,6 +21,8 @@ class WindowsLifecycleController {
   bool _initialized = false;
   bool _exitInProgress = false;
   String? _lastTrayState;
+  Timer? _recoveryDebounce;
+  bool? _lastStartupEnabled;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -28,6 +31,7 @@ class WindowsLifecycleController {
     _settings.addListener(_onSettingsChanged);
     _tunnel.addListener(_onTunnelChanged);
     await _syncCloseBehavior();
+    await _syncStartupRegistration();
     await _syncTrayStatus();
   }
 
@@ -39,6 +43,12 @@ class WindowsLifecycleController {
       case 'trayDisconnect':
         await _tunnel.disconnect();
         return;
+      case 'powerResume':
+        _scheduleRecovery(TunnelRecoveryReason.systemResume);
+        return;
+      case 'networkChanged':
+        _scheduleRecovery(TunnelRecoveryReason.networkChanged);
+        return;
       default:
         throw MissingPluginException(
           'Unknown Windows lifecycle method: ${call.method}',
@@ -48,10 +58,33 @@ class WindowsLifecycleController {
 
   void _onSettingsChanged() {
     unawaited(_syncCloseBehavior());
+    unawaited(_syncStartupRegistration());
   }
 
   void _onTunnelChanged() {
     unawaited(_syncTrayStatus());
+  }
+
+
+  void _scheduleRecovery(TunnelRecoveryReason reason) {
+    _recoveryDebounce?.cancel();
+    _recoveryDebounce = Timer(const Duration(seconds: 2), () {
+      unawaited(_tunnel.recover(reason));
+    });
+  }
+
+  Future<void> _syncStartupRegistration() async {
+    if (_lastStartupEnabled == _settings.autoStart) return;
+    try {
+      await _channel.invokeMethod<void>(
+        'setStartupEnabled',
+        _settings.autoStart,
+      );
+      _lastStartupEnabled = _settings.autoStart;
+    } catch (_) {
+      // Startup registration is optional. Keep the previous cached value so a
+      // later settings change or launch can retry without breaking lifecycle.
+    }
   }
 
   Future<void> _shutdownAndExit() async {
@@ -101,6 +134,7 @@ class WindowsLifecycleController {
 
   void dispose() {
     if (!_initialized) return;
+    _recoveryDebounce?.cancel();
     _settings.removeListener(_onSettingsChanged);
     _tunnel.removeListener(_onTunnelChanged);
     _channel.setMethodCallHandler(null);

@@ -12,6 +12,7 @@ import '../core/tunnel/tunnel_engine.dart';
 import '../features/home/tunnel_controller.dart';
 import '../features/shell/app_shell.dart';
 import '../platform/tunnel_engine_factory.dart';
+import '../platform/android/android_startup_controller.dart';
 import '../platform/windows/windows_lifecycle_controller.dart';
 import '../shared/theme/orex_theme.dart';
 import '../shared/theme/theme_controller.dart';
@@ -52,11 +53,13 @@ class _OrexRayAppState extends State<OrexRayApp> {
     settings: widget.connectionSettings,
   );
   WindowsLifecycleController? _windowsLifecycle;
+  bool? _lastAndroidBootSetting;
 
   @override
   void initState() {
     super.initState();
     widget.theme.addListener(_refresh);
+    widget.connectionSettings.addListener(_syncPlatformStartupSettings);
     if (Platform.isWindows) {
       _windowsLifecycle = WindowsLifecycleController(
         tunnel: _tunnel,
@@ -64,6 +67,26 @@ class _OrexRayAppState extends State<OrexRayApp> {
       );
       unawaited(_windowsLifecycle!.initialize());
     }
+    _syncPlatformStartupSettings();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.connectionSettings.autoConnectOnStartup &&
+          _tunnel.selectedProfile != null) {
+        unawaited(Future<void>.delayed(
+          const Duration(milliseconds: 450),
+          _tunnel.connect,
+        ));
+      }
+    });
+  }
+
+  void _syncPlatformStartupSettings() {
+    if (!Platform.isAndroid) return;
+    final enabled = widget.connectionSettings.autoConnectOnStartup;
+    if (_lastAndroidBootSetting == enabled) return;
+    _lastAndroidBootSetting = enabled;
+    unawaited(
+      AndroidStartupController.setAutoConnectOnBoot(enabled).catchError((_) {}),
+    );
   }
 
   void _refresh() => setState(() {});
@@ -71,6 +94,7 @@ class _OrexRayAppState extends State<OrexRayApp> {
   @override
   void dispose() {
     widget.theme.removeListener(_refresh);
+    widget.connectionSettings.removeListener(_syncPlatformStartupSettings);
     _windowsLifecycle?.dispose();
     _tunnel.dispose();
     super.dispose();

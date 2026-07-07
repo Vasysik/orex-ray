@@ -16,6 +16,7 @@ import '../appearance/appearance_screen.dart';
 import '../apps/apps_screen.dart';
 import '../background/background_screen.dart';
 import '../connection/connection_screen.dart';
+import '../diagnostics/diagnostics_screen.dart';
 import '../geodata/geodata_screen.dart';
 import '../home/home_screen.dart';
 import '../home/tunnel_controller.dart';
@@ -53,8 +54,9 @@ class _AppShellState extends State<AppShell> {
   static const _geoDataIndex = 5;
   static const _backgroundIndex = 6;
   static const _appearanceIndex = 7;
-  static const _aboutIndex = 8;
-  static const _moreIndex = 9;
+  static const _diagnosticsIndex = 8;
+  static const _aboutIndex = 9;
+  static const _moreIndex = 10;
 
   int _index = 0;
   bool _appsPageLoaded = false;
@@ -80,6 +82,7 @@ class _AppShellState extends State<AppShell> {
       GeoDataScreen(controller: widget.geoData, settings: widget.settings),
       BackgroundScreen(settings: widget.settings),
       AppearanceScreen(theme: widget.theme),
+      DiagnosticsScreen(tunnel: widget.tunnel, appVersion: widget.appVersion),
       AboutScreen(appVersion: widget.appVersion),
       MoreScreen(
         showApps: !Platform.isWindows,
@@ -88,6 +91,7 @@ class _AppShellState extends State<AppShell> {
         onOpenGeoData: () => _selectPage(_geoDataIndex),
         onOpenBackground: () => _selectPage(_backgroundIndex),
         onOpenAppearance: () => _selectPage(_appearanceIndex),
+        onOpenDiagnostics: () => _selectPage(_diagnosticsIndex),
         onOpenAbout: () => _selectPage(_aboutIndex),
       ),
     ];
@@ -101,8 +105,8 @@ class _AppShellState extends State<AppShell> {
               final desktop = constraints.maxWidth >= 900;
               if (desktop) {
                 final desktopPageIndices = Platform.isWindows
-                    ? const [0, 1, 2, 4, 5, 6, 7, 8]
-                    : const [0, 1, 2, 3, 4, 5, 6, 7, 8];
+                    ? const [0, 1, 2, 4, 5, 6, 7, 8, 9]
+                    : const [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
                 final requestedPageIndex = _index == _moreIndex
                     ? _networkIndex
                     : _index;
@@ -148,6 +152,10 @@ class _AppShellState extends State<AppShell> {
                   const NavigationRailDestination(
                     icon: Icon(Icons.palette_outlined),
                     label: Text('Интерфейс'),
+                  ),
+                  const NavigationRailDestination(
+                    icon: Icon(Icons.monitor_heart_outlined),
+                    label: Text('Диагностика'),
                   ),
                   const NavigationRailDestination(
                     icon: Icon(Icons.info_outline_rounded),

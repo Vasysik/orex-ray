@@ -2,22 +2,27 @@
 
 #include <shellapi.h>
 #include <shlobj.h>
+#include <iphlpapi.h>
+#include <netioapi.h>
 
 #include <cstdint>
 #include <cwchar>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "process_job.h"
 #include "system_proxy_controller.h"
+#include "utils.h"
 
 namespace {
 
 constexpr UINT kTrayCallbackMessage = WM_APP + 77;
 constexpr UINT kCompleteExitMessage = WM_APP + 78;
+constexpr UINT kNetworkChangedMessage = WM_APP + 79;
 constexpr UINT_PTR kExitFallbackTimerId = 7704;
 constexpr UINT kExitFallbackTimeoutMs = 15000;
 
@@ -97,6 +102,70 @@ std::wstring ModulePath() {
   }
 }
 
+
+constexpr wchar_t kStartupRegistryPath[] =
+    L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+constexpr wchar_t kStartupValueName[] = L"OrexRay";
+
+bool SetStartupEnabled(bool enabled) {
+  HKEY key = nullptr;
+  if (RegCreateKeyExW(HKEY_CURRENT_USER, kStartupRegistryPath, 0, nullptr, 0,
+                      KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
+    return false;
+  }
+  LONG status = ERROR_SUCCESS;
+  if (enabled) {
+    const std::wstring executable = ModulePath();
+    if (executable.empty()) {
+      RegCloseKey(key);
+      return false;
+    }
+    const std::wstring command = L"\"" + executable +
+                                 L"\" --orexray-autostart";
+    status = RegSetValueExW(
+        key, kStartupValueName, 0, REG_SZ,
+        reinterpret_cast<const BYTE*>(command.c_str()),
+        static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
+  } else {
+    status = RegDeleteValueW(key, kStartupValueName);
+    if (status == ERROR_FILE_NOT_FOUND) status = ERROR_SUCCESS;
+  }
+  RegCloseKey(key);
+  return status == ERROR_SUCCESS;
+}
+
+std::string BestOutboundInterfaceName() {
+  DWORD interface_index = 0;
+  // 1.1.1.1 is byte-order invariant, so this avoids Winsock initialization.
+  if (GetBestInterface(0x01010101, &interface_index) != NO_ERROR) {
+    return std::string();
+  }
+
+  ULONG size = 0;
+  GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, nullptr,
+                       &size);
+  if (size == 0) return std::string();
+  std::vector<unsigned char> buffer(size);
+  auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+  if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr,
+                           adapters, &size) != NO_ERROR) {
+    return std::string();
+  }
+  for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next) {
+    if (adapter->IfIndex != interface_index &&
+        adapter->Ipv6IfIndex != interface_index) {
+      continue;
+    }
+    if (adapter->OperStatus != IfOperStatusUp ||
+        adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK ||
+        adapter->FriendlyName == nullptr) {
+      return std::string();
+    }
+    return Utf8FromUtf16(adapter->FriendlyName);
+  }
+  return std::string();
+}
+
 std::wstring KnownFolderPath(REFKNOWNFOLDERID folder_id) {
   PWSTR raw_path = nullptr;
   if (FAILED(SHGetKnownFolderPath(folder_id, KF_FLAG_DEFAULT, nullptr,
@@ -152,7 +221,12 @@ bool RestartElevated() {
   info.fMask = SEE_MASK_NOCLOSEPROCESS;
   info.lpVerb = L"runas";
   info.lpFile = executable.c_str();
-  info.lpParameters = L"--orexray-elevated-restart";
+  const bool started_at_login =
+      wcsstr(GetCommandLineW(), L"--orexray-autostart") != nullptr;
+  const std::wstring parameters = started_at_login
+      ? L"--orexray-elevated-restart --orexray-autostart"
+      : L"--orexray-elevated-restart";
+  info.lpParameters = parameters.c_str();
   info.lpDirectory =
       working_directory.empty() ? nullptr : working_directory.c_str();
   info.nShow = SW_SHOWNORMAL;
@@ -171,8 +245,8 @@ TrayStatus ParseTrayStatus(const std::string& value) {
 
 }  // namespace
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project)
-    : project_(project) {}
+FlutterWindow::FlutterWindow(const flutter::DartProject& project, bool start_hidden)
+    : project_(project), start_hidden_(start_hidden) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -346,6 +420,28 @@ bool FlutterWindow::OnCreate() {
           return;
         }
 
+        if (call.method_name() == "setStartupEnabled") {
+          const auto* value = call.arguments() == nullptr
+                                  ? nullptr
+                                  : std::get_if<bool>(call.arguments());
+          if (value == nullptr) {
+            result->Error("invalid_arguments", "Expected a boolean value");
+            return;
+          }
+          if (!SetStartupEnabled(*value)) {
+            result->Error("startup_update_failed",
+                          "Could not update Windows startup registration");
+            return;
+          }
+          result->Success(flutter::EncodableValue());
+          return;
+        }
+
+        if (call.method_name() == "getBestOutboundInterface") {
+          result->Success(flutter::EncodableValue(BestOutboundInterfaceName()));
+          return;
+        }
+
         if (call.method_name() == "completeExit") {
           KillTimer(GetHandle(), kExitFallbackTimerId);
           exit_requested_ = true;
@@ -363,13 +459,27 @@ bool FlutterWindow::OnCreate() {
   taskbar_created_message_ = RegisterWindowMessageW(L"TaskbarCreated");
   tray_icon_.Add(GetHandle(), kTrayCallbackMessage);
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() { this->Show(); });
+  NotifyIpInterfaceChange(
+      AF_UNSPEC,
+      [](PVOID context, PMIB_IPINTERFACE_ROW, MIB_NOTIFICATION_TYPE) {
+        const HWND window = reinterpret_cast<HWND>(context);
+        if (window != nullptr) PostMessageW(window, kNetworkChangedMessage, 0, 0);
+      },
+      reinterpret_cast<PVOID>(GetHandle()), FALSE, &network_change_handle_);
+
+  flutter_controller_->engine()->SetNextFrameCallback([&]() {
+    if (!start_hidden_) this->Show();
+  });
   flutter_controller_->ForceRedraw();
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
   KillTimer(GetHandle(), kExitFallbackTimerId);
+  if (network_change_handle_ != nullptr) {
+    CancelMibChangeNotify2(network_change_handle_);
+    network_change_handle_ = nullptr;
+  }
   tray_icon_.Remove();
   lifecycle_channel_ = nullptr;
   system_proxy_channel_ = nullptr;
@@ -380,6 +490,20 @@ void FlutterWindow::OnDestroy() {
 LRESULT FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                                       WPARAM const wparam,
                                       LPARAM const lparam) noexcept {
+  if (message == WM_POWERBROADCAST && wparam == PBT_APMRESUMEAUTOMATIC) {
+    if (lifecycle_channel_ != nullptr) {
+      lifecycle_channel_->InvokeMethod("powerResume", nullptr);
+    }
+    return TRUE;
+  }
+
+  if (message == kNetworkChangedMessage) {
+    if (lifecycle_channel_ != nullptr) {
+      lifecycle_channel_->InvokeMethod("networkChanged", nullptr);
+    }
+    return 0;
+  }
+
   if (message == WM_CLOSE) {
     if (close_to_tray_ && !exit_requested_) {
       ShowWindow(hwnd, SW_HIDE);

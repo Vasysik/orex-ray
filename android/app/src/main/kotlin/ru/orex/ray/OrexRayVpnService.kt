@@ -21,6 +21,7 @@ import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
 import java.io.File
+import java.util.ArrayDeque
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -72,6 +73,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var coreController: CoreController? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var statsTask: ScheduledFuture<*>? = null
+    private var watchdogTask: ScheduledFuture<*>? = null
+    private val watchdogRestarts = ArrayDeque<Long>()
     private var startedAtElapsedMs = 0L
     private var downloadBytes = 0L
     private var uploadBytes = 0L
@@ -143,6 +146,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             }
 
             ACTION_START -> {
+                watchdogRestarts.clear()
+                OrexRayDiagnosticsStore.automaticRestarts = 0
+                OrexRayDiagnosticsStore.lastError = null
                 val config = commandIntent.getStringExtra(EXTRA_CONFIG)
                 val mode = commandIntent.getStringExtra(EXTRA_MODE) ?: MODE_VPN
                 activeTargetName = commandIntent.getStringExtra(EXTRA_TARGET_NAME)
@@ -249,6 +255,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
     override fun onDestroy() {
         statsTask?.cancel(true)
+        watchdogTask?.cancel(true)
         val controller = coreController
         if (!stopping && controller != null) {
             runCatching { if (controller.isRunning) controller.stopLoop() }
@@ -328,11 +335,16 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                         .onFailure { Log.w(TAG, "Could not save Quick Settings VPN state", it) }
                 }
             }
+            OrexRayDiagnosticsStore.coreRunning = true
             emitConnected()
             startStatsLoop()
+            startWatchdog()
             updateRunningNotification(force = true)
             debugInfo("Xray started successfully mode=$mode")
         } catch (error: Throwable) {
+            OrexRayDiagnosticsStore.coreRunning = false
+            OrexRayDiagnosticsStore.lastError = safeMessage(error)
+            OrexRayDiagnosticsStore.log("Start failed: ${safeMessage(error)}")
             Log.e(TAG, "Could not start Xray mode=$mode", error)
             cleanupAfterFailure()
             restartServiceOnKill = false
@@ -341,6 +353,59 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             stopForegroundCompat()
             stopSelf()
         }
+    }
+
+    private fun startWatchdog() {
+        watchdogTask?.cancel(false)
+        watchdogTask = worker.scheduleAtFixedRate(
+            {
+                if (stopping) return@scheduleAtFixedRate
+                val controller = coreController ?: return@scheduleAtFixedRate
+                if (controller.isRunning || activeStartIntent == null) return@scheduleAtFixedRate
+
+                val now = SystemClock.elapsedRealtime()
+                while (watchdogRestarts.isNotEmpty() &&
+                    now - watchdogRestarts.first() > 60_000L
+                ) {
+                    watchdogRestarts.removeFirst()
+                }
+                if (watchdogRestarts.size >= 3) {
+                    watchdogTask?.cancel(false)
+                    OrexRayDiagnosticsStore.lastError =
+                        "Android watchdog stopped after 3 restarts in one minute"
+                    emitError(
+                        "Xray несколько раз подряд завершился. Watchdog остановлен, чтобы избежать бесконечного цикла.",
+                    )
+                    return@scheduleAtFixedRate
+                }
+
+                watchdogRestarts.addLast(now)
+                OrexRayDiagnosticsStore.automaticRestarts++
+                OrexRayDiagnosticsStore.log(
+                    "Watchdog restart ${watchdogRestarts.size}/3 after unexpected core stop",
+                )
+                restartCoreFromWatchdog()
+            },
+            5,
+            5,
+            TimeUnit.SECONDS,
+        )
+    }
+
+    private fun restartCoreFromWatchdog() {
+        val intent = activeStartIntent ?: return
+        val config = intent.getStringExtra(EXTRA_CONFIG)?.takeIf { it.isNotBlank() } ?: return
+        val mode = intent.getStringExtra(EXTRA_MODE) ?: activeMode
+        watchdogTask?.cancel(false)
+        watchdogTask = null
+        statsTask?.cancel(false)
+        statsTask = null
+        OrexRayDiagnosticsStore.coreRunning = false
+        runCatching { if (coreController?.isRunning == true) coreController?.stopLoop() }
+        runCatching { vpnInterface?.close() }
+        vpnInterface = null
+        Thread.sleep(600)
+        startTunnel(config, mode)
     }
 
     private fun restartMode(): Int = if (restartServiceOnKill) {
@@ -526,6 +591,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
         statsTask?.cancel(false)
         statsTask = null
+        watchdogTask?.cancel(false)
+        watchdogTask = null
+        OrexRayDiagnosticsStore.coreRunning = false
         val controller = coreController
         runCatching { if (controller?.isRunning == true) controller.stopLoop() }
         runCatching { vpnInterface?.close() }
@@ -546,6 +614,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         activeStartIntent = null
         statsTask?.cancel(false)
         statsTask = null
+        watchdogTask?.cancel(false)
+        watchdogTask = null
+        OrexRayDiagnosticsStore.coreRunning = false
         val controller = coreController
         runCatching { if (controller?.isRunning == true) controller.stopLoop() }
         runCatching { vpnInterface?.close() }
@@ -727,6 +798,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
     override fun onEmitStatus(code: Long, message: String?): Long {
         if (!message.isNullOrBlank()) {
+            OrexRayDiagnosticsStore.log("core[$code] $message")
             debugLog("Core status code=$code message=$message")
         }
         return 0L

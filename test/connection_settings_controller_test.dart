@@ -10,11 +10,17 @@ void main() {
       operatingSystem: 'windows',
     );
     expect(settings.windowsRunAsAdministrator, isFalse);
+    expect(settings.autoStart, isFalse);
+    expect(settings.autoConnectOnStartup, isFalse);
 
     await settings.setWindowsRunAsAdministrator(true);
+    await settings.setAutoStart(true);
+    await settings.setAutoConnectOnStartup(true);
     final reloaded = await ConnectionSettingsController.load(
       operatingSystem: 'windows',
     );
     expect(reloaded.windowsRunAsAdministrator, isTrue);
+    expect(reloaded.autoStart, isTrue);
+    expect(reloaded.autoConnectOnStartup, isTrue);
   });
 }

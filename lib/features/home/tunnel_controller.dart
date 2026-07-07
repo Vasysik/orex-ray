@@ -1,7 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/diagnostics/tunnel_diagnostics.dart';
+import '../../core/egress/egress_identity.dart';
 import '../../core/profiles/profiles_controller.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
@@ -18,14 +23,17 @@ class TunnelController extends ChangeNotifier {
         _engineSnapshot = engine.current {
     _engineSubscription = _engine.snapshots.listen((value) {
       if (_closing) return;
+      final becameConnected = value.isConnected && !_engineSnapshot.isConnected;
       _engineSnapshot = value;
       if (!value.isConnected && !value.isBusy) {
         _lastRuntimeMetadataKey = null;
       }
+      if (becameConnected) unawaited(refreshEgressIdentity(force: true));
       notifyListeners();
     });
     _profiles.addListener(_onDependencyChanged);
     _settings.addListener(_onDependencyChanged);
+    unawaited(_loadEgressCache());
   }
 
   final TunnelEngine _engine;
@@ -40,6 +48,10 @@ class TunnelController extends ChangeNotifier {
   bool _closing = false;
   bool _disposed = false;
   String? _lastRuntimeMetadataKey;
+  static const _egressCacheKey = 'orex_ray_egress_identity_v1';
+  final Map<String, EgressIdentity> _egressIdentities = {};
+  final ValueNotifier<int> _egressRevision = ValueNotifier<int>(0);
+  bool _egressRefreshInFlight = false;
 
   Set<ConnectionMode> get supportedModes => {
         for (final mode in _settings.supportedModes)
@@ -68,6 +80,11 @@ class TunnelController extends ChangeNotifier {
   }
 
   TunnelTarget? get selectedProfile => _profiles.selectedTarget;
+
+  EgressIdentity? egressIdentityFor(String targetId) =>
+      _egressIdentities[targetId];
+
+  Listenable get egressChanges => _egressRevision;
 
   List<TunnelTarget> get targets => _profiles.targets;
 
@@ -123,11 +140,16 @@ class TunnelController extends ChangeNotifier {
     final current = snapshot;
     if (current.isBusy) return;
     if (current.isConnected) {
-      await _engine.stop();
-      _syncFromEngine();
+      await disconnect();
       return;
     }
+    await connect();
+  }
 
+  Future<void> connect() async {
+    if (_closing) return;
+    final current = snapshot;
+    if (current.isBusy || current.isConnected) return;
     final profile = _profiles.selectedTarget;
     if (profile == null) {
       _engineSnapshot = current.copyWith(
@@ -137,7 +159,6 @@ class TunnelController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-
     await _engine.start(profile, _settings.mode);
     _syncFromEngine();
   }
@@ -148,6 +169,106 @@ class TunnelController extends ChangeNotifier {
     if (current.status == TunnelStatus.disconnected) return;
     await _engine.stop();
     _syncFromEngine();
+  }
+
+  Future<void> recover(TunnelRecoveryReason reason) async {
+    if (_closing || !_engineSnapshot.isConnected) return;
+    if (reason == TunnelRecoveryReason.networkChanged &&
+        _engineSnapshot.stats.duration < const Duration(seconds: 5)) {
+      return;
+    }
+    if (_engine case TunnelRecoverySink recovery) {
+      await recovery.recover(reason);
+      _syncFromEngine();
+    }
+  }
+
+  Future<TunnelDiagnostics> collectDiagnostics() async {
+    if (_engine case TunnelDiagnosticsProvider provider) {
+      return provider.collectDiagnostics();
+    }
+    return TunnelDiagnostics(
+      platform: Platform.operatingSystem,
+      xrayVersion: 'embedded',
+      mode: snapshot.mode,
+      targetName: snapshot.profile?.name ?? '—',
+      xrayState: snapshot.status.name,
+      pid: null,
+      ports: {'SOCKS': _settings.socksPort, 'HTTP': _settings.httpPort},
+      systemProxyStatus: 'not applicable',
+      lastError: snapshot.errorMessage,
+      lastExitCode: null,
+      outboundInterface: null,
+      restartSummary: _settings.restartServiceOnKill ? 'enabled' : 'disabled',
+      logs: const [],
+    );
+  }
+
+  Future<void> refreshEgressIdentity({bool force = false}) async {
+    if (_egressRefreshInFlight || !_engineSnapshot.isConnected) return;
+    final target = _engineSnapshot.profile;
+    if (target == null) return;
+    final cached = _egressIdentities[target.id];
+    if (!force && cached != null &&
+        DateTime.now().difference(cached.checkedAt) < const Duration(minutes: 10)) {
+      return;
+    }
+    if (_engineSnapshot.mode == ConnectionMode.vpnTun && !_settings.localProxyInVpn) {
+      return;
+    }
+
+    _egressRefreshInFlight = true;
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 5)
+      ..idleTimeout = const Duration(seconds: 8)
+      ..findProxy = (_) => 'PROXY 127.0.0.1:${_settings.httpPort}';
+    try {
+      final request = await client
+          .getUrl(Uri.https('www.cloudflare.com', '/cdn-cgi/trace'))
+          .timeout(const Duration(seconds: 8));
+      final response = await request.close().timeout(const Duration(seconds: 8));
+      if (response.statusCode != HttpStatus.ok) return;
+      final body = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(const Duration(seconds: 8));
+      if (body.length > 16 * 1024) return;
+      final identity = parseCloudflareTrace(body);
+      if (identity == null || _engineSnapshot.profile?.id != target.id) return;
+      _egressIdentities[target.id] = identity;
+      await _saveEgressCache();
+      if (!_closing) _egressRevision.value++;
+    } catch (_) {
+      // Egress identity is cosmetic and must never affect the tunnel.
+    } finally {
+      client.close(force: true);
+      _egressRefreshInFlight = false;
+    }
+  }
+
+  Future<void> _loadEgressCache() async {
+    final preferences = await SharedPreferences.getInstance();
+    final raw = preferences.getString(_egressCacheKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      for (final entry in decoded.entries) {
+        final identity = EgressIdentity.fromJson(entry.value);
+        if (identity != null) _egressIdentities[entry.key.toString()] = identity;
+      }
+      if (!_closing) _egressRevision.value++;
+    } catch (_) {
+      await preferences.remove(_egressCacheKey);
+    }
+  }
+
+  Future<void> _saveEgressCache() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(
+      _egressCacheKey,
+      jsonEncode({for (final entry in _egressIdentities.entries) entry.key: entry.value.toJson()}),
+    );
   }
 
   Future<void> shutdown() => _shutdownFuture ??= _shutdown();
@@ -217,6 +338,7 @@ class TunnelController extends ChangeNotifier {
     _disposed = true;
     _closing = true;
     _detachDependencies();
+    _egressRevision.dispose();
     unawaited(_shutdownFuture ??= _disposeWithoutStopping());
     super.dispose();
   }

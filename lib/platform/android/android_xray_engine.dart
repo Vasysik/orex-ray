@@ -3,12 +3,13 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../../core/apps/app_routing_controller.dart';
+import '../../core/diagnostics/tunnel_diagnostics.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../core/xray/xray_config_builder.dart';
 
-class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink {
+class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, TunnelDiagnosticsProvider {
   AndroidXrayEngine({
     required ConnectionSettingsController settings,
     required AppRoutingController appRouting,
@@ -145,6 +146,43 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink {
     } catch (_) {
       // Runtime metadata is best-effort and must never interrupt the tunnel.
     }
+  }
+
+  @override
+  Future<TunnelDiagnostics> collectDiagnostics() async {
+    Map<String, dynamic>? native;
+    try {
+      native = await _channel.invokeMapMethod<String, dynamic>('diagnostics');
+    } catch (_) {
+      native = null;
+    }
+    final logs = (native?['logs'] as List?)
+            ?.whereType<String>()
+            .map(DiagnosticSanitizer.sanitize)
+            .toList(growable: false) ??
+        const <String>[];
+    return TunnelDiagnostics(
+      platform: 'Android',
+      xrayVersion: '26.6.27 (embedded libv2ray)',
+      mode: _current.mode,
+      targetName: _current.profile?.name ?? _activeTarget?.name ?? '—',
+      xrayState: native?['coreRunning'] == true ? 'running' : _current.status.name,
+      pid: (native?['pid'] as num?)?.toInt(),
+      ports: {'SOCKS': _settings.socksPort, 'HTTP': _settings.httpPort},
+      systemProxyStatus: 'not applicable',
+      lastError: DiagnosticSanitizer.sanitize(
+        (native?['lastError'] as String?) ?? _current.errorMessage ?? '',
+      ).trim().isEmpty
+          ? null
+          : DiagnosticSanitizer.sanitize(
+              (native?['lastError'] as String?) ?? _current.errorMessage ?? '',
+            ),
+      lastExitCode: (native?['lastExitCode'] as num?)?.toInt(),
+      outboundInterface: 'Android VpnService',
+      restartSummary:
+          '${(native?['automaticRestarts'] as num?)?.toInt() ?? 0} automatic · service restart ${_settings.restartServiceOnKill ? 'enabled' : 'disabled'}',
+      logs: logs,
+    );
   }
 
   @override

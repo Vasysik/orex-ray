@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/egress_avatar.dart';
 import '../../shared/widgets/orex_choice_sheet.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../../shared/widgets/status_pill.dart';
@@ -182,63 +183,61 @@ class _ModeSelector extends StatelessWidget {
               ],
             ),
           ),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth < 620) {
-                return Row(
-                  children: [
-                    for (var index = 0; index < modes.length; index++) ...[
-                      Expanded(
-                        child: _ModeChoice(
-                          mode: modes[index],
-                          selected: tunnel.mode == modes[index],
-                          enabled: tunnel.canChangeMode,
-                          onTap: () => tunnel.setMode(modes[index]),
-                        ),
-                      ),
-                      if (index != modes.length - 1) const SizedBox(width: 8),
-                    ],
-                  ],
-                );
-              }
-              return SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<ConnectionMode>(
-                  segments: [
-                    for (final mode in modes)
-                      ButtonSegment<ConnectionMode>(
-                        value: mode,
-                        icon: Icon(
-                          _modeIcon(mode),
-                          color: tunnel.mode == mode ? OrexColors.copper : null,
-                        ),
-                        label: Text(mode.shortTitle),
-                        tooltip: mode.description,
-                      ),
-                  ],
-                  selected: {tunnel.mode},
-                  style: ButtonStyle(
-                    backgroundColor: WidgetStateProperty.resolveWith((states) {
-                      if (states.contains(WidgetState.selected)) {
-                        return OrexColors.copper.withValues(alpha: 0.24);
-                      }
-                      return Theme.of(context)
-                          .colorScheme
-                          .surface
-                          .withValues(alpha: 0.28);
-                    }),
-                    side: const WidgetStatePropertyAll(
-                      BorderSide(color: Colors.transparent),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<ConnectionMode>(
+              segments: [
+                for (final mode in modes)
+                  ButtonSegment<ConnectionMode>(
+                    value: mode,
+                    icon: Icon(
+                      _modeIcon(mode),
+                      color: tunnel.mode == mode ? OrexColors.copper : null,
+                      size: 20,
                     ),
+                    label: Text(mode.shortTitle),
+                    tooltip: mode.description,
                   ),
-                  onSelectionChanged: tunnel.canChangeMode
-                      ? (selection) => tunnel.setMode(selection.first)
-                      : null,
-                  showSelectedIcon: false,
-                  multiSelectionEnabled: false,
+              ],
+              selected: {tunnel.mode},
+              style: ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                minimumSize: const WidgetStatePropertyAll(Size(0, 42)),
+                padding: const WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 ),
-              );
-            },
+                foregroundColor: WidgetStateProperty.resolveWith((states) {
+                  final color = Theme.of(context).colorScheme.onSurface;
+                  return states.contains(WidgetState.disabled)
+                      ? color.withValues(alpha: 0.48)
+                      : color;
+                }),
+                textStyle: WidgetStateProperty.resolveWith((states) {
+                  return Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: states.contains(WidgetState.selected)
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      );
+                }),
+                backgroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return OrexColors.copper.withValues(alpha: 0.24);
+                  }
+                  return Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.28);
+                }),
+                side: const WidgetStatePropertyAll(
+                  BorderSide(color: Colors.transparent),
+                ),
+              ),
+              onSelectionChanged: tunnel.canChangeMode
+                  ? (selection) => tunnel.setMode(selection.first)
+                  : null,
+              showSelectedIcon: false,
+              multiSelectionEnabled: false,
+            ),
           ),
           const SizedBox(height: 9),
           Padding(
@@ -246,53 +245,6 @@ class _ModeSelector extends StatelessWidget {
             child: Text(tunnel.mode.description, style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ModeChoice extends StatelessWidget {
-  const _ModeChoice({
-    required this.mode,
-    required this.selected,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final ConnectionMode mode;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected
-          ? OrexColors.copper.withValues(alpha: 0.24)
-          : Theme.of(context).colorScheme.surface.withValues(alpha: 0.28),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(_modeIcon(mode), color: selected ? OrexColors.copper : null),
-              const SizedBox(height: 6),
-              Text(
-                mode.shortTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -577,7 +529,12 @@ class _QuickInfo extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(vertical: 2),
                           child: Row(
                             children: [
-                              const _CardIcon(icon: Icons.public_rounded),
+                              EgressAvatar(
+                                identity: tunnel.egressIdentityFor(profile.id),
+                                fallbackIcon: profile.isBalancer
+                                    ? Icons.hub_rounded
+                                    : Icons.public_rounded,
+                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(

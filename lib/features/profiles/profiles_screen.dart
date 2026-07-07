@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/egress/egress_identity.dart';
 import '../../core/profiles/profiles_controller.dart';
 import '../../core/profiles/vless_link_parser.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/egress_avatar.dart';
 import '../../shared/widgets/orex_choice_sheet.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
@@ -25,7 +27,7 @@ class ProfilesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: profiles,
+      animation: Listenable.merge([profiles, tunnel.egressChanges]),
       builder: (context, _) {
         final selected = profiles.selectedTarget;
         return ListView(
@@ -51,6 +53,7 @@ class ProfilesScreen extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _ProfileCard(
                     profile: profile,
+                    identity: tunnel.egressIdentityFor(profile.id),
                     selected: selected?.id == profile.id,
                     onSelect: () => tunnel.selectTarget(profile.id),
                     onRefreshPing: () => profiles.refreshLatency(profile.id),
@@ -71,6 +74,7 @@ class ProfilesScreen extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 12),
                     child: _BalancerCard(
                       balancer: balancer,
+                      identity: tunnel.egressIdentityFor(balancer.id),
                       members: [
                         for (final id in balancer.memberIds)
                           ...profiles.profiles.where((item) => item.id == id),
@@ -376,6 +380,7 @@ class _EmptyProfiles extends StatelessWidget {
 class _ProfileCard extends StatelessWidget {
   const _ProfileCard({
     required this.profile,
+    required this.identity,
     required this.selected,
     required this.onSelect,
     required this.onRefreshPing,
@@ -384,6 +389,7 @@ class _ProfileCard extends StatelessWidget {
   });
 
   final TunnelProfile profile;
+  final EgressIdentity? identity;
   final bool selected;
   final VoidCallback onSelect;
   final VoidCallback onRefreshPing;
@@ -399,18 +405,9 @@ class _ProfileCard extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         onTap: onSelect,
-        leading: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            gradient: selected ? OrexColors.copperGradient : null,
-            color: selected ? null : OrexColors.copper.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Icon(
-            selected ? Icons.check_rounded : Icons.public_rounded,
-            color: selected ? OrexColors.cream : OrexColors.copper,
-          ),
+        leading: EgressAvatar(
+          identity: identity,
+          selected: selected,
         ),
         title: Row(
           children: [
@@ -482,6 +479,7 @@ class _PingBadge extends StatelessWidget {
 class _BalancerCard extends StatelessWidget {
   const _BalancerCard({
     required this.balancer,
+    required this.identity,
     required this.members,
     required this.selected,
     required this.onSelect,
@@ -490,6 +488,7 @@ class _BalancerCard extends StatelessWidget {
   });
 
   final BalancerProfile balancer;
+  final EgressIdentity? identity;
   final List<TunnelProfile> members;
   final bool selected;
   final VoidCallback onSelect;
@@ -506,18 +505,10 @@ class _BalancerCard extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         onTap: onSelect,
-        leading: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            gradient: selected ? OrexColors.copperGradient : null,
-            color: selected ? null : OrexColors.copper.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Icon(
-            Icons.hub_rounded,
-            color: selected ? OrexColors.cream : OrexColors.copper,
-          ),
+        leading: EgressAvatar(
+          identity: identity,
+          fallbackIcon: Icons.hub_rounded,
+          selected: selected,
         ),
         title: Row(
           children: [

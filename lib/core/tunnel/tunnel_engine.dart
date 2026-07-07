@@ -1,3 +1,4 @@
+import '../diagnostics/tunnel_diagnostics.dart';
 import 'tunnel_models.dart';
 
 abstract interface class TunnelEngine {
@@ -18,4 +19,22 @@ abstract interface class TunnelEngine {
 /// tunnel is already running (for example Android's foreground notification).
 abstract interface class TunnelRuntimeMetadataSink {
   Future<void> updateTargetMetadata(TunnelTarget target);
+}
+
+
+enum TunnelRecoveryReason {
+  networkChanged,
+  systemResume,
+}
+
+/// Optional recovery hook for engines that can rebuild a live connection
+/// after sleep or a physical network transition.
+abstract interface class TunnelRecoverySink {
+  Future<void> recover(TunnelRecoveryReason reason);
+}
+
+/// Optional diagnostics provider. Reports must already be sanitized by the
+/// engine and must not contain UUIDs, access tokens, private keys or configs.
+abstract interface class TunnelDiagnosticsProvider {
+  Future<TunnelDiagnostics> collectDiagnostics();
 }

@@ -80,6 +80,32 @@ class BackgroundScreen extends StatelessWidget {
               children: [
                 SwitchListTile(
                   secondary: const Icon(
+                    Icons.login_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Запускать вместе с Windows'),
+                  subtitle: const Text(
+                    'Стартовать скрыто в трее после входа в систему.',
+                  ),
+                  value: settings.autoStart,
+                  onChanged: settings.setAutoStart,
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(
+                    Icons.flash_on_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Подключаться при запуске'),
+                  subtitle: const Text(
+                    'Автоматически включать выбранный профиль после старта OrexRay.',
+                  ),
+                  value: settings.autoConnectOnStartup,
+                  onChanged: settings.setAutoConnectOnStartup,
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(
                     Icons.system_update_alt_rounded,
                     color: OrexColors.copper,
                   ),
@@ -114,6 +140,19 @@ class BackgroundScreen extends StatelessWidget {
               title: 'Android service',
               subtitle: 'OrexRay работает как foreground VPN-service, даже когда интерфейс закрыт.',
               children: [
+                SwitchListTile(
+                  secondary: const Icon(
+                    Icons.flash_on_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Подключаться после запуска и перезагрузки'),
+                  subtitle: const Text(
+                    'В приложении — сразу после старта. После reboot Android — восстановить последний VPN, если разрешение VPN уже выдано.',
+                  ),
+                  value: settings.autoConnectOnStartup,
+                  onChanged: settings.setAutoConnectOnStartup,
+                ),
+                const Divider(height: 1),
                 SwitchListTile(
                   secondary: const Icon(
                     Icons.restart_alt_rounded,

@@ -11,6 +11,7 @@ class MoreScreen extends StatelessWidget {
     required this.onOpenGeoData,
     required this.onOpenBackground,
     required this.onOpenAppearance,
+    required this.onOpenDiagnostics,
     required this.onOpenAbout,
     this.showApps = true,
   });
@@ -20,6 +21,7 @@ class MoreScreen extends StatelessWidget {
   final VoidCallback onOpenGeoData;
   final VoidCallback onOpenBackground;
   final VoidCallback onOpenAppearance;
+  final VoidCallback onOpenDiagnostics;
   final VoidCallback onOpenAbout;
   final bool showApps;
 
@@ -72,6 +74,13 @@ class MoreScreen extends StatelessWidget {
           title: 'Интерфейс',
           subtitle: 'Тема и фирменный стиль Orex',
           onTap: onOpenAppearance,
+        ),
+        const SizedBox(height: 12),
+        _MoreTile(
+          icon: Icons.monitor_heart_outlined,
+          title: 'Диагностика',
+          subtitle: 'Xray, watchdog, порты и безопасный отчёт',
+          onTap: onOpenDiagnostics,
         ),
         const SizedBox(height: 12),
         _MoreTile(

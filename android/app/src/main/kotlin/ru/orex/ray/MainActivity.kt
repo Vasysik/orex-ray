@@ -170,6 +170,14 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "status" -> result.success(OrexRayRuntimeStateStore.load(this))
+                    "setAutoConnectOnBoot" -> {
+                        OrexRayStartupStore.setAutoConnectOnBoot(
+                            this,
+                            call.arguments as? Boolean ?: false,
+                        )
+                        result.success(null)
+                    }
+                    "diagnostics" -> result.success(OrexRayDiagnosticsStore.snapshot())
                     "assetDirectory" -> result.success(
                         File(filesDir, "xray").apply { mkdirs() }.absolutePath,
                     )

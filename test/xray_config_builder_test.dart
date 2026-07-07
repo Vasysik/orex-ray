@@ -40,6 +40,18 @@ void main() {
     expect(json['stats'], isA<Map>());
   });
 
+  test('binds Windows TUN outbound to the detected physical interface', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildWindowsTun(
+        target,
+        outboundInterface: 'Wi-Fi',
+      ),
+    ) as Map<String, dynamic>;
+    final inbound = (json['inbounds'] as List).first as Map<String, dynamic>;
+
+    expect(inbound['settings']['autoOutboundsInterface'], 'Wi-Fi');
+  });
+
   test('builds Android external-fd TUN config without Windows route automation', () {
     final json = jsonDecode(
       const XrayConfigBuilder().buildAndroidTun(target),

@@ -65,6 +65,8 @@ class ConnectionSettingsController extends ChangeNotifier {
     required bool restartServiceOnKill,
     required bool closeToTray,
     required bool windowsRunAsAdministrator,
+    required bool autoStart,
+    required bool autoConnectOnStartup,
   })  : _preferences = preferences,
         _supportedModes = Set.unmodifiable(supportedModes),
         _mode = mode,
@@ -87,7 +89,9 @@ class ConnectionSettingsController extends ChangeNotifier {
         _showNotificationPing = showNotificationPing,
         _restartServiceOnKill = restartServiceOnKill,
         _closeToTray = closeToTray,
-        _windowsRunAsAdministrator = windowsRunAsAdministrator;
+        _windowsRunAsAdministrator = windowsRunAsAdministrator,
+        _autoStart = autoStart,
+        _autoConnectOnStartup = autoConnectOnStartup;
 
   static const _modeKey = 'orex_ray_connection_mode_v1';
   static const _socksPortKey = 'orex_ray_socks_port_v1';
@@ -111,6 +115,9 @@ class ConnectionSettingsController extends ChangeNotifier {
   static const _closeToTrayKey = 'orex_ray_close_to_tray_v1';
   static const _windowsRunAsAdministratorKey =
       'orex_ray_windows_run_as_administrator_v1';
+  static const _autoStartKey = 'orex_ray_auto_start_v1';
+  static const _autoConnectOnStartupKey =
+      'orex_ray_auto_connect_on_startup_v1';
 
   static const int defaultSocksPort = 20808;
   static const int defaultHttpPort = 20809;
@@ -140,6 +147,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   bool _restartServiceOnKill;
   bool _closeToTray;
   bool _windowsRunAsAdministrator;
+  bool _autoStart;
+  bool _autoConnectOnStartup;
 
   static Future<ConnectionSettingsController> load({
     String? operatingSystem,
@@ -189,6 +198,9 @@ class ConnectionSettingsController extends ChangeNotifier {
           preferences.getBool(_closeToTrayKey) ?? (platform == 'windows'),
       windowsRunAsAdministrator:
           preferences.getBool(_windowsRunAsAdministratorKey) ?? false,
+      autoStart: preferences.getBool(_autoStartKey) ?? false,
+      autoConnectOnStartup:
+          preferences.getBool(_autoConnectOnStartupKey) ?? false,
     );
   }
 
@@ -214,6 +226,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   bool get restartServiceOnKill => _restartServiceOnKill;
   bool get closeToTray => _closeToTray;
   bool get windowsRunAsAdministrator => _windowsRunAsAdministrator;
+  bool get autoStart => _autoStart;
+  bool get autoConnectOnStartup => _autoConnectOnStartup;
 
   List<String> get dnsServers => switch (_dnsPreset) {
         DnsPreset.system => const [],
@@ -414,6 +428,20 @@ class ConnectionSettingsController extends ChangeNotifier {
     if (_windowsRunAsAdministrator == value) return;
     _windowsRunAsAdministrator = value;
     await _preferences.setBool(_windowsRunAsAdministratorKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setAutoStart(bool value) async {
+    if (_autoStart == value) return;
+    _autoStart = value;
+    await _preferences.setBool(_autoStartKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setAutoConnectOnStartup(bool value) async {
+    if (_autoConnectOnStartup == value) return;
+    _autoConnectOnStartup = value;
+    await _preferences.setBool(_autoConnectOnStartupKey, value);
     notifyListeners();
   }
 

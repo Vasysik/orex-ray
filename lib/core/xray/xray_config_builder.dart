@@ -24,6 +24,7 @@ class XrayConfigBuilder {
     List<String> geoBlockRules = const [],
     String logLevel = 'error',
     int? apiPort,
+    String? outboundInterface,
   }) {
     return _encode(
       target,
@@ -37,7 +38,10 @@ class XrayConfigBuilder {
             'gateway': ['10.77.0.1/24', 'fd77:6f72:6578::1/64'],
             if (dnsServers.isNotEmpty) 'dns': dnsServers,
             'autoSystemRoutingTable': ['0.0.0.0/0', '::/0'],
-            'autoOutboundsInterface': 'auto',
+            'autoOutboundsInterface':
+                outboundInterface?.trim().isNotEmpty == true
+                    ? outboundInterface!.trim()
+                    : 'auto',
           },
           'sniffing': _sniffing(sniffingEnabled),
         },
