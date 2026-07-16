@@ -466,7 +466,3 @@ Gradle через `android/key.properties` или `OREX_ANDROID_*`. Для priva
 - Android Quick Settings tile переживает закрытие UI и не застревает после stop;
 - Windows получил tray lifecycle, один экземпляр приложения и привязку Xray к
   жизненному циклу OrexRay.
-
-Следующий шаг перед раздачей сборки товарищам — зелёные `flutter analyze` и
-`flutter test`, затем smoke-проверка подписанного release APK на реальном
-устройстве.
