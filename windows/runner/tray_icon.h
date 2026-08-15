@@ -10,6 +10,7 @@ enum class TrayStatus {
   kConnecting,
   kDisconnecting,
   kConnected,
+  kTimeout,
   kError,
 };
 

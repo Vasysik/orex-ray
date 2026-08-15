@@ -595,16 +595,17 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private fun isNotificationSpeedVisible(): Boolean {
         if (!showNotificationSpeed) return false
         val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+            !manager.areNotificationsEnabled()
+        ) {
+            return false
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = manager.getNotificationChannel(NOTIFICATION_CHANNEL_ID)
             return channel != null &&
                 channel.importance != NotificationManager.IMPORTANCE_NONE
         }
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            manager.areNotificationsEnabled()
-        } else {
-            true
-        }
+        return true
     }
 
     private fun queryTrafficDelta(controller: CoreController): TrafficDelta {

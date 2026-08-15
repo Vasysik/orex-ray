@@ -119,10 +119,8 @@ class _Header extends StatelessWidget {
 
     if (!showStatus) return brand;
     final profile = snapshot.profile;
-    final routeLatency =
-        profile == null ? null : tunnel.routeLatencyFor(profile.id);
     final timedOut = snapshot.isConnected &&
-        (routeLatency?.status ?? profile?.pingStatus) == PingStatus.timeout;
+        tunnel.effectivePingStatusFor(profile) == PingStatus.timeout;
     final label = timedOut
         ? 'Таймаут'
         : switch (snapshot.status) {
@@ -410,7 +408,7 @@ class _MobileStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ping = snapshot.profile?.latencyMs;
+    final ping = tunnel.effectiveLatencyFor(snapshot.profile);
     return GlassPanel(
       borderRadius: 24,
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
@@ -536,6 +534,7 @@ class _QuickInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final profile = snapshot.profile;
+    final ping = tunnel.effectiveLatencyFor(profile);
     return Column(
       children: [
         GlassPanel(
@@ -610,9 +609,7 @@ class _QuickInfo extends StatelessWidget {
                     const SizedBox(height: 12),
                     _InfoRow(
                       label: 'Задержка',
-                      value: profile.latencyMs == null
-                          ? '—'
-                          : '${profile.latencyMs} мс',
+                      value: ping == null ? '—' : '$ping мс',
                     ),
                   ],
                 ),
@@ -655,7 +652,7 @@ class _QuickInfo extends StatelessWidget {
             icon: target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
             title: target.name,
             subtitle: '${target.endpoint} · '
-                '${target.latencyMs == null ? 'ping —' : '${target.latencyMs} мс'}',
+                '${tunnel.effectiveLatencyFor(target) == null ? 'ping —' : '${tunnel.effectiveLatencyFor(target)} мс'}',
             selected: selectedId == target.id,
           ),
       ],
@@ -694,7 +691,7 @@ class _TrafficCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ping = snapshot.profile?.latencyMs;
+    final ping = tunnel.effectiveLatencyFor(snapshot.profile);
     return GlassPanel(
       borderRadius: 24,
       padding: const EdgeInsets.all(20),

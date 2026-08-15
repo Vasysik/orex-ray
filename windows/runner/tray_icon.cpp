@@ -49,21 +49,22 @@ Color ArgbColor(unsigned char red, unsigned char green, unsigned char blue,
 Color StatusColor(TrayStatus status) {
   switch (status) {
     case TrayStatus::kConnected:
-      return ArgbColor(57, 180, 112);
+      return ArgbColor(143, 179, 106);
     case TrayStatus::kConnecting:
-      return ArgbColor(232, 154, 66);
+      return ArgbColor(212, 121, 57);
     case TrayStatus::kDisconnecting:
-      return ArgbColor(210, 112, 58);
+      return ArgbColor(133, 65, 50);
+    case TrayStatus::kTimeout:
     case TrayStatus::kError:
-      return ArgbColor(210, 78, 95);
+      return ArgbColor(207, 102, 121);
     case TrayStatus::kDisconnected:
     default:
-      return ArgbColor(126, 126, 126);
+      return ArgbColor(179, 154, 130);
   }
 }
 
 Color CreamColor() {
-  return ArgbColor(255, 239, 218);
+  return ArgbColor(252, 250, 250);
 }
 
 void CopyTooltip(wchar_t* destination, size_t destination_size,
@@ -368,6 +369,8 @@ std::wstring TrayIcon::StatusText() const {
       return WideFromUtf8(u8"Подключение…");
     case TrayStatus::kDisconnecting:
       return WideFromUtf8(u8"Отключение…");
+    case TrayStatus::kTimeout:
+      return WideFromUtf8(u8"Таймаут");
     case TrayStatus::kError:
       return WideFromUtf8(u8"Ошибка");
     case TrayStatus::kDisconnected:

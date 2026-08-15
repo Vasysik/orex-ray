@@ -78,8 +78,9 @@ class LatencyProbe {
 /// Measures an already active Xray route through its local HTTP proxy.
 ///
 /// Unlike [LatencyProbe], this is an end-to-end check: it includes a cascade,
-/// balancer decision, and the currently selected outbound. It is intentionally
-/// used only after a manual refresh, never as a background probe.
+/// balancer decision, and the currently selected outbound. Callers use it
+/// only for explicit lifecycle events or a manual refresh; it is never a
+/// periodic background probe.
 class TunnelRouteLatencyProbe {
   TunnelRouteLatencyProbe({
     this.timeout = const Duration(seconds: 6),

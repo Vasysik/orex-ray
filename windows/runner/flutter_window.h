@@ -27,7 +27,7 @@ class FlutterWindow : public Win32Window {
   void SaveWindowPlacement();
   void ShowInitialWindow();
   void ShowAndActivate();
-  void RequestGracefulExit();
+  void RequestGracefulExit(UINT fallback_timeout_ms = 0);
   void RequestTrayDisconnect();
   void HandleTrayCommand(UINT command);
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/profiles/profile_repository.dart';
 import 'package:orex_ray/core/profiles/vless_link_parser.dart';
+import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -25,7 +26,8 @@ void main() {
     expect(profiles.single.name, 'Valid');
   });
 
-  test('saves profiles and selected target without changing credentials', () async {
+  test('saves profiles and selected target without changing credentials',
+      () async {
     SharedPreferences.setMockInitialValues({});
     final profile = const VlessLinkParser().parse(
       'vless://22222222-2222-4222-8222-222222222222@secure.example:8443'
@@ -46,4 +48,22 @@ void main() {
     expect(reloaded.readSelectedId(), profile.id);
   });
 
+  test('migrates VLESS JSON written before outbound protocol support', () {
+    final profile = TunnelProfile.fromJson({
+      'id': 'legacy-vless',
+      'name': 'Legacy VLESS',
+      'address': 'legacy.example',
+      'port': 443,
+      'userId': '11111111-1111-4111-8111-111111111111',
+      'encryption': 'none',
+      'security': 'tls',
+      'transport': 'raw',
+    });
+
+    expect(profile.outboundProtocol, OutboundProtocol.vless);
+    expect(profile.password, isEmpty);
+    expect(profile.vmessSecurity, 'auto');
+    expect(profile.toJson().containsKey('outboundProtocol'), isFalse);
+    expect(profile.toJson().containsKey('password'), isFalse);
+  });
 }

@@ -40,7 +40,10 @@ class DiagnosticSanitizer {
   static final _uuid = RegExp(
     r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b',
   );
-  static final _vless = RegExp(r'''vless://[^\s"']+''');
+  static final _proxyLink = RegExp(
+    r'''\b(vless|vmess|trojan|ss|socks5?|https?)://[^\s"']+''',
+    caseSensitive: false,
+  );
   static final _secretJson = RegExp(
     r'''("?(?:id|password|privateKey|shortId|token|authorization)"?\s*[:=]\s*)["']?[^,}\]\s"']+''',
     caseSensitive: false,
@@ -51,7 +54,10 @@ class DiagnosticSanitizer {
   );
 
   static String sanitize(String input) {
-    var value = input.replaceAll(_vless, 'vless://<REDACTED>');
+    var value = input.replaceAllMapped(
+      _proxyLink,
+      (match) => '${match.group(1)}://<REDACTED>',
+    );
     value = value.replaceAll(_uuid, '<UUID>');
     value = value.replaceAllMapped(
       _secretJson,

@@ -27,6 +27,78 @@ void main() {
     expect(profiles.profiles.single.pingStatus, PingStatus.unknown);
   });
 
+  test('creates each supported Xray outbound profile manually', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    const uuid = '11111111-1111-4111-8111-111111111111';
+    final manualProfiles = [
+      const TunnelProfile(
+        id: 'manual-vless',
+        name: 'VLESS',
+        address: 'vless.example',
+        port: 443,
+        userId: uuid,
+      ),
+      const TunnelProfile(
+        id: 'manual-vmess',
+        name: 'VMess',
+        address: 'vmess.example',
+        port: 443,
+        userId: uuid,
+        outboundProtocol: OutboundProtocol.vmess,
+      ),
+      const TunnelProfile(
+        id: 'manual-trojan',
+        name: 'Trojan',
+        address: 'trojan.example',
+        port: 443,
+        userId: '',
+        outboundProtocol: OutboundProtocol.trojan,
+        password: 'secret',
+        security: 'tls',
+      ),
+      const TunnelProfile(
+        id: 'manual-ss',
+        name: 'Shadowsocks',
+        address: 'ss.example',
+        port: 8388,
+        userId: '',
+        outboundProtocol: OutboundProtocol.shadowsocks,
+        encryption: 'aes-256-gcm',
+        password: 'secret',
+      ),
+      const TunnelProfile(
+        id: 'manual-socks',
+        name: 'SOCKS5',
+        address: 'socks.example',
+        port: 1080,
+        userId: 'alice',
+        outboundProtocol: OutboundProtocol.socks,
+        password: 'secret',
+      ),
+      const TunnelProfile(
+        id: 'manual-http',
+        name: 'HTTP',
+        address: 'http.example',
+        port: 3128,
+        userId: 'alice',
+        outboundProtocol: OutboundProtocol.http,
+        password: 'secret',
+      ),
+    ];
+
+    for (final profile in manualProfiles) {
+      await profiles.createProfile(profile);
+    }
+
+    expect(
+      profiles.profiles.map((profile) => profile.outboundProtocol).toSet(),
+      OutboundProtocol.values.toSet(),
+    );
+  });
+
   test('in-flight latency result is ignored after controller disposal',
       () async {
     SharedPreferences.setMockInitialValues({});

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:orex_ray/core/profiles/proxy_link_parser.dart';
 import 'package:orex_ray/core/profiles/vless_link_parser.dart';
 import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:orex_ray/core/xray/xray_config_builder.dart';
@@ -53,7 +54,8 @@ void main() {
     expect(inbound['settings']['autoOutboundsInterface'], 'Wi-Fi');
   });
 
-  test('builds Android external-fd TUN config without Windows route automation', () {
+  test('builds Android external-fd TUN config without Windows route automation',
+      () {
     final json = jsonDecode(
       const XrayConfigBuilder().buildAndroidTun(target),
     ) as Map<String, dynamic>;
@@ -97,7 +99,6 @@ void main() {
     expect(json['log']['loglevel'], 'info');
     expect(rules, hasLength(1));
   });
-
 
   test('keeps local SOCKS and HTTP proxy available next to VPN TUN', () {
     final json = jsonDecode(
@@ -293,4 +294,105 @@ void main() {
     expect(system['statsInboundDownlink'], isTrue);
   });
 
+  test('builds working Xray outbounds for imported proxy protocols', () {
+    const parser = ProxyLinkParser();
+    final cases =
+        <({String link, String protocol, Map<String, Object?> settings})>[
+      (
+        link: 'socks5://alice:secret@socks.example:1080',
+        protocol: 'socks',
+        settings: {
+          'address': 'socks.example',
+          'port': 1080,
+          'user': 'alice',
+          'pass': 'secret',
+        },
+      ),
+      (
+        link: 'http://alice:secret@http.example:3128',
+        protocol: 'http',
+        settings: {
+          'address': 'http.example',
+          'port': 3128,
+          'user': 'alice',
+          'pass': 'secret',
+        },
+      ),
+      (
+        link: 'ss://YWVzLTI1Ni1nY206c2VjcmV0@ss.example:8388',
+        protocol: 'shadowsocks',
+        settings: {
+          'address': 'ss.example',
+          'port': 8388,
+          'method': 'aes-256-gcm',
+          'password': 'secret',
+        },
+      ),
+      (
+        link:
+            'trojan://secret@trojan.example:443?security=tls&sni=trojan.example',
+        protocol: 'trojan',
+        settings: {
+          'address': 'trojan.example',
+          'port': 443,
+          'password': 'secret',
+        },
+      ),
+    ];
+
+    for (final testCase in cases) {
+      final json = jsonDecode(
+        const XrayConfigBuilder().buildLocalProxy(
+          TunnelTarget.single(parser.parse(testCase.link)),
+        ),
+      ) as Map<String, dynamic>;
+      final outbound =
+          (json['outbounds'] as List).first as Map<String, dynamic>;
+
+      expect(outbound['protocol'], testCase.protocol);
+      expect(outbound['settings'], testCase.settings);
+    }
+  });
+
+  test('builds VMess and HTTPS proxy with their required stream settings', () {
+    const parser = ProxyLinkParser();
+    final vmessPayload = base64.encode(
+      utf8.encode(jsonEncode(<String, Object?>{
+        'add': 'vmess.example',
+        'port': '443',
+        'id': '11111111-1111-4111-8111-111111111111',
+        'aid': '0',
+        'scy': 'chacha20-poly1305',
+        'net': 'ws',
+        'type': 'none',
+        'host': 'cdn.example',
+        'path': '/ws',
+        'tls': 'tls',
+        'sni': 'cdn.example',
+      })),
+    );
+    final profiles = [
+      parser.parse('vmess://$vmessPayload'),
+      parser.parse('https://proxy.example:443?sni=proxy.example'),
+    ];
+
+    final vmess = _outbound(profiles[0]);
+    final https = _outbound(profiles[1]);
+
+    expect(vmess['protocol'], 'vmess');
+    expect(vmess['settings']['security'], 'chacha20-poly1305');
+    expect(vmess['streamSettings']['network'], 'websocket');
+    expect(vmess['streamSettings']['tlsSettings']['serverName'], 'cdn.example');
+    expect(https['protocol'], 'http');
+    expect(https['streamSettings']['security'], 'tls');
+    expect(
+        https['streamSettings']['tlsSettings']['serverName'], 'proxy.example');
+  });
+}
+
+Map<String, dynamic> _outbound(TunnelProfile profile) {
+  final json = jsonDecode(
+    const XrayConfigBuilder().buildLocalProxy(TunnelTarget.single(profile)),
+  ) as Map<String, dynamic>;
+  return (json['outbounds'] as List).first as Map<String, dynamic>;
 }

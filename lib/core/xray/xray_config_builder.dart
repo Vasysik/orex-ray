@@ -321,16 +321,39 @@ class XrayConfigBuilder {
     final settings = <String, Object?>{
       'address': profile.address,
       'port': profile.port,
-      'id': profile.userId,
-      'encryption': profile.encryption,
     };
-    if (profile.flow.isNotEmpty) settings['flow'] = profile.flow;
+    switch (profile.outboundProtocol) {
+      case OutboundProtocol.vless:
+        settings
+          ..['id'] = profile.userId
+          ..['encryption'] = profile.encryption;
+        if (profile.flow.isNotEmpty) settings['flow'] = profile.flow;
+      case OutboundProtocol.vmess:
+        settings
+          ..['id'] = profile.userId
+          ..['security'] = profile.vmessSecurity;
+      case OutboundProtocol.trojan:
+        settings['password'] = profile.password;
+      case OutboundProtocol.shadowsocks:
+        settings
+          ..['method'] = profile.encryption
+          ..['password'] = profile.password;
+      case OutboundProtocol.socks || OutboundProtocol.http:
+        if (profile.userId.isNotEmpty) settings['user'] = profile.userId;
+        if (profile.password.isNotEmpty) settings['pass'] = profile.password;
+    }
 
+    final needsStreamSettings =
+        profile.outboundProtocol == OutboundProtocol.vless ||
+            profile.outboundProtocol == OutboundProtocol.vmess ||
+            profile.outboundProtocol == OutboundProtocol.trojan ||
+            profile.security != 'none' ||
+            profile.transport != 'raw';
     return {
       'tag': tag,
-      'protocol': 'vless',
+      'protocol': profile.outboundProtocol.storageValue,
       'settings': settings,
-      'streamSettings': _streamSettings(profile),
+      if (needsStreamSettings) 'streamSettings': _streamSettings(profile),
     };
   }
 

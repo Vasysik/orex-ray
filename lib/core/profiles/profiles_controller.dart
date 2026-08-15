@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../tunnel/tunnel_models.dart';
 import 'latency_probe.dart';
 import 'profile_repository.dart';
-import 'vless_link_parser.dart';
+import 'proxy_link_parser.dart';
 
 class ProfilesController extends ChangeNotifier {
   ProfilesController._({
@@ -21,7 +21,7 @@ class ProfilesController extends ChangeNotifier {
         _latencyProbe = latencyProbe;
 
   final ProfileRepository _repository;
-  final VlessLinkParser _parser = const VlessLinkParser();
+  final ProxyLinkParser _parser = const ProxyLinkParser();
   final LatencyProbe _latencyProbe;
   final List<TunnelProfile> _profiles;
   final List<BalancerProfile> _balancers;
@@ -110,7 +110,8 @@ class ProfilesController extends ChangeNotifier {
     return null;
   }
 
-  Future<TunnelProfile> importVlessLink(String link) async {
+  /// Imports every URI format represented by [OutboundProtocol].
+  Future<TunnelProfile> importLink(String link) async {
     final previousSelection = _selectedId;
     var profile = _parser.parse(link);
     final legacyIndex = _profiles.indexWhere(
@@ -140,6 +141,10 @@ class ProfilesController extends ChangeNotifier {
     _notifyListeners();
     return profile;
   }
+
+  /// Legacy public API retained for callers built when VLESS was the only
+  /// supported outbound. It now accepts the same supported link set as the UI.
+  Future<TunnelProfile> importVlessLink(String link) => importLink(link);
 
   Future<TunnelProfile> createProfile(TunnelProfile profile) async {
     _validateProfileInput(profile);
@@ -289,13 +294,22 @@ class ProfilesController extends ChangeNotifier {
     _notifyListeners();
   }
 
-  Future<void> refreshLatency(String id) async {
-    if (_disposed) return;
+  /// Refreshes one direct server reachability value.
+  ///
+  /// [shouldApply] lets a caller discard a result if the network context
+  /// changed while the socket was being opened.  This is important when a
+  /// VPN is being torn down or brought up: a socket that started as a direct
+  /// probe must never be persisted after it has been captured by the TUN.
+  Future<void> refreshLatency(
+    String id, {
+    bool Function()? shouldApply,
+  }) async {
+    if (_disposed || (shouldApply != null && !shouldApply())) return;
     final index = _profiles.indexWhere((profile) => profile.id == id);
     if (index < 0) return;
     final profile = _profiles[index];
     final result = await _latencyProbe.measure(profile);
-    if (_disposed) return;
+    if (_disposed || (shouldApply != null && !shouldApply())) return;
     final currentIndex = _profiles.indexWhere((item) => item.id == id);
     if (currentIndex < 0 ||
         (_profiles[currentIndex].latencyMs == result.latencyMs &&
@@ -312,15 +326,21 @@ class ProfilesController extends ChangeNotifier {
     _notifyListeners();
   }
 
-  Future<void> refreshAllLatencies() async {
-    if (_disposed || _refreshingLatency || _profiles.isEmpty) return;
+  Future<void> refreshAllLatencies({bool Function()? shouldApply}) async {
+    if (_disposed ||
+        _refreshingLatency ||
+        _profiles.isEmpty ||
+        (shouldApply != null && !shouldApply())) {
+      return;
+    }
     _refreshingLatency = true;
     _notifyListeners();
     var changed = false;
     try {
       for (final profile in List<TunnelProfile>.from(_profiles)) {
+        if (shouldApply != null && !shouldApply()) return;
         final result = await _latencyProbe.measure(profile);
-        if (_disposed) return;
+        if (_disposed || (shouldApply != null && !shouldApply())) return;
         final index = _profiles.indexWhere((item) => item.id == profile.id);
         if (index >= 0 &&
             (_profiles[index].latencyMs != result.latencyMs ||
@@ -398,9 +418,12 @@ class ProfilesController extends ChangeNotifier {
   bool _sameConnectionProfile(TunnelProfile left, TunnelProfile right) {
     final leftAlpn = [...left.alpn]..sort();
     final rightAlpn = [...right.alpn]..sort();
-    return left.address.toLowerCase() == right.address.toLowerCase() &&
+    return left.outboundProtocol == right.outboundProtocol &&
+        left.address.toLowerCase() == right.address.toLowerCase() &&
         left.port == right.port &&
         left.userId == right.userId &&
+        left.password == right.password &&
+        left.vmessSecurity == right.vmessSecurity &&
         left.encryption == right.encryption &&
         left.flow == right.flow &&
         left.security == right.security &&
@@ -429,7 +452,9 @@ class ProfilesController extends ChangeNotifier {
     check(profile.address, 1024, 'Адрес сервера');
     check(profile.sourceLink, 64 * 1024, 'Исходная ссылка');
     for (final field in <(String, String)>[
-      ('VLESS ID', profile.userId),
+      ('Идентификатор', profile.userId),
+      ('Пароль', profile.password),
+      ('VMess security', profile.vmessSecurity),
       ('Encryption', profile.encryption),
       ('Flow', profile.flow),
       ('Security', profile.security),
@@ -445,6 +470,56 @@ class ProfilesController extends ChangeNotifier {
       ('gRPC mode', profile.grpcMode),
     ]) {
       check(field.$2, 4096, field.$1);
+    }
+    if (profile.name.trim().isEmpty || profile.address.trim().isEmpty) {
+      throw const FormatException('Укажите имя и адрес профиля');
+    }
+    if (profile.port < 1 || profile.port > 65535) {
+      throw const FormatException('Некорректный порт профиля');
+    }
+    switch (profile.outboundProtocol) {
+      case OutboundProtocol.vless || OutboundProtocol.vmess:
+        if (profile.userId.trim().isEmpty) {
+          throw const FormatException('Для профиля нужен UUID');
+        }
+      case OutboundProtocol.trojan:
+        if (profile.password.isEmpty) {
+          throw const FormatException('Для Trojan нужен пароль');
+        }
+      case OutboundProtocol.shadowsocks:
+        if (profile.password.isEmpty || profile.encryption.trim().isEmpty) {
+          throw const FormatException('Для Shadowsocks нужны метод и пароль');
+        }
+      case OutboundProtocol.socks || OutboundProtocol.http:
+        if (profile.userId.isEmpty != profile.password.isEmpty) {
+          throw const FormatException(
+            'Для авторизации нужны имя пользователя и пароль',
+          );
+        }
+    }
+    if (!{'none', 'tls', 'reality'}.contains(profile.security)) {
+      throw const FormatException('Неподдерживаемый transport security');
+    }
+    if (!{
+      'raw',
+      'websocket',
+      'grpc',
+      'xhttp',
+      'httpupgrade',
+    }.contains(profile.transport)) {
+      throw const FormatException('Неподдерживаемый транспорт профиля');
+    }
+    if (profile.security == 'reality' &&
+        profile.realityPassword.trim().isEmpty) {
+      throw const FormatException('Для REALITY нужен public key');
+    }
+    if (profile.outboundProtocol == OutboundProtocol.vmess &&
+        !{
+          'auto',
+          'aes-128-gcm',
+          'chacha20-poly1305',
+        }.contains(profile.vmessSecurity)) {
+      throw const FormatException('Неподдерживаемый VMess security');
     }
     if (profile.alpn.length > 16 ||
         profile.alpn.any((value) => value.length > 4096)) {

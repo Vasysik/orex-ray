@@ -100,6 +100,48 @@ enum PingStatus {
       };
 }
 
+/// The outbound protocol used by a saved connection profile.
+///
+/// Old saved entries did not carry this field, so an absent value is always
+/// treated as VLESS. This keeps existing profiles readable without migration.
+enum OutboundProtocol {
+  vless,
+  vmess,
+  trojan,
+  shadowsocks,
+  socks,
+  http;
+
+  String get storageValue => switch (this) {
+        OutboundProtocol.vless => 'vless',
+        OutboundProtocol.vmess => 'vmess',
+        OutboundProtocol.trojan => 'trojan',
+        OutboundProtocol.shadowsocks => 'shadowsocks',
+        OutboundProtocol.socks => 'socks',
+        OutboundProtocol.http => 'http',
+      };
+
+  String get title => switch (this) {
+        OutboundProtocol.vless => 'VLESS',
+        OutboundProtocol.vmess => 'VMess',
+        OutboundProtocol.trojan => 'Trojan',
+        OutboundProtocol.shadowsocks => 'Shadowsocks',
+        OutboundProtocol.socks => 'SOCKS5',
+        OutboundProtocol.http => 'HTTP proxy',
+      };
+
+  static OutboundProtocol? fromStorageValue(String? value) =>
+      switch (value?.trim().toLowerCase()) {
+        'vless' => OutboundProtocol.vless,
+        'vmess' => OutboundProtocol.vmess,
+        'trojan' => OutboundProtocol.trojan,
+        'shadowsocks' || 'ss' => OutboundProtocol.shadowsocks,
+        'socks' || 'socks5' => OutboundProtocol.socks,
+        'http' || 'https' => OutboundProtocol.http,
+        _ => null,
+      };
+}
+
 class TunnelProfile {
   const TunnelProfile({
     required this.id,
@@ -107,6 +149,9 @@ class TunnelProfile {
     required this.address,
     required this.port,
     required this.userId,
+    this.outboundProtocol = OutboundProtocol.vless,
+    this.password = '',
+    this.vmessSecurity = 'auto',
     this.encryption = 'none',
     this.flow = '',
     this.security = 'none',
@@ -132,7 +177,16 @@ class TunnelProfile {
   final String name;
   final String address;
   final int port;
+
+  /// VLESS/VMess UUID or SOCKS/HTTP username.
   final String userId;
+
+  /// Trojan/Shadowsocks password or SOCKS/HTTP password.
+  final String password;
+  final OutboundProtocol outboundProtocol;
+
+  /// VMess payload cipher (`auto` by default), independent from TLS/REALITY.
+  final String vmessSecurity;
   final String encryption;
   final String flow;
   final String security;
@@ -155,12 +209,19 @@ class TunnelProfile {
   String get endpoint => '$address:$port';
 
   String get protocol {
+    if (outboundProtocol == OutboundProtocol.shadowsocks) {
+      return 'Shadowsocks · ${encryption.toUpperCase()}';
+    }
+    if (outboundProtocol == OutboundProtocol.socks) return 'SOCKS5';
+    if (outboundProtocol == OutboundProtocol.http) {
+      return security == 'tls' ? 'HTTPS proxy' : 'HTTP proxy';
+    }
     final securityLabel = switch (security) {
       'reality' => 'REALITY',
       'tls' => 'TLS',
       _ => 'NONE',
     };
-    return 'VLESS · $securityLabel';
+    return '${outboundProtocol.title} · $securityLabel';
   }
 
   String get transportLabel => switch (transport) {
@@ -178,6 +239,9 @@ class TunnelProfile {
     String? address,
     int? port,
     String? userId,
+    String? password,
+    OutboundProtocol? outboundProtocol,
+    String? vmessSecurity,
     String? encryption,
     String? flow,
     String? security,
@@ -211,6 +275,9 @@ class TunnelProfile {
       address: address ?? this.address,
       port: port ?? this.port,
       userId: userId ?? this.userId,
+      password: password ?? this.password,
+      outboundProtocol: outboundProtocol ?? this.outboundProtocol,
+      vmessSecurity: vmessSecurity ?? this.vmessSecurity,
       encryption: encryption ?? this.encryption,
       flow: flow ?? this.flow,
       security: security ?? this.security,
@@ -238,6 +305,12 @@ class TunnelProfile {
         'address': address,
         'port': port,
         'userId': userId,
+        if (outboundProtocol != OutboundProtocol.vless)
+          'outboundProtocol': outboundProtocol.storageValue,
+        if (password.isNotEmpty) 'password': password,
+        if (outboundProtocol == OutboundProtocol.vmess &&
+            vmessSecurity != 'auto')
+          'vmessSecurity': vmessSecurity,
         'encryption': encryption,
         'flow': flow,
         'security': security,
@@ -277,8 +350,23 @@ class TunnelProfile {
     final id = stringValue('id').trim();
     final address = stringValue('address').trim();
     final userId = stringValue('userId').trim();
+    final storedOutboundProtocol = stringValue('outboundProtocol').trim();
+    final outboundProtocol = storedOutboundProtocol.isEmpty
+        ? OutboundProtocol.vless
+        : OutboundProtocol.fromStorageValue(storedOutboundProtocol);
+    if (outboundProtocol == null) {
+      throw const FormatException('Неподдерживаемый протокол профиля');
+    }
+    final password = stringValue('password');
     final port = intValue('port');
-    if (id.isEmpty || address.isEmpty || userId.isEmpty) {
+    final needsUserId = outboundProtocol == OutboundProtocol.vless ||
+        outboundProtocol == OutboundProtocol.vmess;
+    final needsPassword = outboundProtocol == OutboundProtocol.trojan ||
+        outboundProtocol == OutboundProtocol.shadowsocks;
+    if (id.isEmpty ||
+        address.isEmpty ||
+        (needsUserId && userId.isEmpty) ||
+        (needsPassword && password.isEmpty)) {
       throw const FormatException('Профиль содержит пустые обязательные поля');
     }
     if (port < 1 || port > 65535) {
@@ -309,6 +397,9 @@ class TunnelProfile {
       address: address,
       port: port,
       userId: userId,
+      password: password,
+      outboundProtocol: outboundProtocol,
+      vmessSecurity: stringValue('vmessSecurity', 'auto'),
       encryption: stringValue('encryption', 'none'),
       flow: stringValue('flow'),
       security: stringValue('security', 'none'),

@@ -171,12 +171,15 @@ class WindowsLifecycleController {
   Future<void> _syncTrayStatus() async {
     final snapshot = _tunnel.snapshot;
     final targetName = snapshot.profile?.name.trim();
-    final stateKey = '${snapshot.status.name}|${targetName ?? ''}';
+    final timedOut = snapshot.isConnected &&
+        _tunnel.effectivePingStatusFor(snapshot.profile) == PingStatus.timeout;
+    final trayStatus = timedOut ? 'timeout' : snapshot.status.name;
+    final stateKey = '$trayStatus|${targetName ?? ''}';
     if (_lastTrayState == stateKey) return;
     _lastTrayState = stateKey;
 
     await _channel.invokeMethod<void>('updateTray', {
-      'status': snapshot.status.name,
+      'status': trayStatus,
       'targetName': targetName,
       'canDisconnect': snapshot.status == TunnelStatus.connected ||
           snapshot.status == TunnelStatus.connecting ||

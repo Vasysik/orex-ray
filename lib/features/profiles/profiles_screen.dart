@@ -104,13 +104,14 @@ class ProfilesScreen extends StatelessWidget {
           value: _ProfileCreateAction.importLink,
           icon: Icons.add_link_rounded,
           title: 'Импорт',
-          subtitle: 'Добавить VLESS-ссылку',
+          subtitle: 'VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP',
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.newProfile,
           icon: Icons.add_circle_outline_rounded,
           title: 'Новый профиль',
-          subtitle: 'Настроить VLESS вручную',
+          subtitle:
+              'Настроить VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP',
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.balancer,
@@ -137,7 +138,7 @@ class ProfilesScreen extends StatelessWidget {
   Future<void> _showImportDialog(BuildContext context) async {
     final profile = await showDialog<TunnelProfile>(
       context: context,
-      builder: (context) => _ImportVlessDialog(profiles: profiles),
+      builder: (context) => _ImportLinkDialog(profiles: profiles),
     );
     if (profile == null || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -157,7 +158,8 @@ class ProfilesScreen extends StatelessWidget {
       context: context,
       builder: (context) => _EditProfileDialog(
         profile: seed,
-        title: 'Новый VLESS-профиль',
+        title: 'Новый профиль',
+        allowProtocolSelection: true,
       ),
     );
     if (created == null) return;
@@ -363,7 +365,7 @@ class _EmptyProfiles extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
-            'Импортируйте VLESS-ссылку или создайте профиль вручную.',
+            'Импортируйте ссылку VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -371,7 +373,7 @@ class _EmptyProfiles extends StatelessWidget {
           FilledButton.icon(
             onPressed: onImport,
             icon: const Icon(Icons.add_link_rounded),
-            label: const Text('Импортировать VLESS'),
+            label: const Text('Импортировать профиль'),
           ),
         ],
       ),
@@ -554,16 +556,16 @@ class _BalancerCard extends StatelessWidget {
   }
 }
 
-class _ImportVlessDialog extends StatefulWidget {
-  const _ImportVlessDialog({required this.profiles});
+class _ImportLinkDialog extends StatefulWidget {
+  const _ImportLinkDialog({required this.profiles});
 
   final ProfilesController profiles;
 
   @override
-  State<_ImportVlessDialog> createState() => _ImportVlessDialogState();
+  State<_ImportLinkDialog> createState() => _ImportLinkDialogState();
 }
 
-class _ImportVlessDialogState extends State<_ImportVlessDialog> {
+class _ImportLinkDialogState extends State<_ImportLinkDialog> {
   final TextEditingController _controller = TextEditingController();
   String? _error;
   bool _importing = false;
@@ -596,7 +598,7 @@ class _ImportVlessDialogState extends State<_ImportVlessDialog> {
       _error = null;
     });
     try {
-      final profile = await widget.profiles.importVlessLink(_controller.text);
+      final profile = await widget.profiles.importLink(_controller.text);
       if (mounted) Navigator.of(context).pop(profile);
     } on VlessLinkFormatException catch (error) {
       if (mounted) {
@@ -618,7 +620,7 @@ class _ImportVlessDialogState extends State<_ImportVlessDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Импорт VLESS'),
+      title: const Text('Импорт профиля'),
       content: SizedBox(
         width: 560,
         child: Column(
@@ -635,7 +637,7 @@ class _ImportVlessDialogState extends State<_ImportVlessDialog> {
               autocorrect: false,
               enableSuggestions: false,
               decoration: InputDecoration(
-                hintText: 'vless://uuid@server:443?...',
+                hintText: 'vless://…, vmess://…, ss://…, socks5://…',
                 errorText: _error,
               ),
             ),
@@ -674,10 +676,12 @@ class _EditProfileDialog extends StatefulWidget {
   const _EditProfileDialog({
     required this.profile,
     this.title = 'Редактировать профиль',
+    this.allowProtocolSelection = false,
   });
 
   final TunnelProfile profile;
   final String title;
+  final bool allowProtocolSelection;
 
   @override
   State<_EditProfileDialog> createState() => _EditProfileDialogState();
@@ -692,6 +696,12 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       TextEditingController(text: '${widget.profile.port}');
   late final TextEditingController _uuid =
       TextEditingController(text: widget.profile.userId);
+  late final TextEditingController _protocolPassword =
+      TextEditingController(text: widget.profile.password);
+  late final TextEditingController _encryption =
+      TextEditingController(text: widget.profile.encryption);
+  late final TextEditingController _vmessSecurity =
+      TextEditingController(text: widget.profile.vmessSecurity);
   late final TextEditingController _serverName =
       TextEditingController(text: widget.profile.serverName);
   late final TextEditingController _fingerprint =
@@ -710,8 +720,68 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       TextEditingController(text: widget.profile.flow);
   late String _security = widget.profile.security;
   late String _transport = widget.profile.transport;
+  late OutboundProtocol _protocol = widget.profile.outboundProtocol;
   bool _allowInsecure = false;
   String? _error;
+
+  bool get _usesStreamSettings => switch (_protocol) {
+        OutboundProtocol.vless ||
+        OutboundProtocol.vmess ||
+        OutboundProtocol.trojan ||
+        OutboundProtocol.http =>
+          true,
+        OutboundProtocol.shadowsocks || OutboundProtocol.socks => false,
+      };
+
+  bool get _needsUserId =>
+      _protocol == OutboundProtocol.vless ||
+      _protocol == OutboundProtocol.vmess;
+  bool get _canUseOptionalCredentials =>
+      _protocol == OutboundProtocol.socks || _protocol == OutboundProtocol.http;
+  bool get _needsPassword =>
+      _protocol == OutboundProtocol.trojan ||
+      _protocol == OutboundProtocol.shadowsocks ||
+      _canUseOptionalCredentials;
+
+  int get _defaultPort => switch (_protocol) {
+        OutboundProtocol.vless ||
+        OutboundProtocol.vmess ||
+        OutboundProtocol.trojan =>
+          443,
+        OutboundProtocol.shadowsocks => 8388,
+        OutboundProtocol.socks => 1080,
+        OutboundProtocol.http => 80,
+      };
+
+  String get _defaultSecurity => switch (_protocol) {
+        OutboundProtocol.trojan => 'tls',
+        _ => 'none',
+      };
+
+  void _changeProtocol(OutboundProtocol value) {
+    if (value == _protocol) return;
+    setState(() {
+      _protocol = value;
+      _uuid.clear();
+      _protocolPassword.clear();
+      _flow.clear();
+      _serverName.clear();
+      _fingerprint.text = 'chrome';
+      _password.clear();
+      _shortId.clear();
+      _path.clear();
+      _host.clear();
+      _serviceName.clear();
+      _vmessSecurity.text = 'auto';
+      _encryption.text =
+          value == OutboundProtocol.shadowsocks ? 'aes-256-gcm' : 'none';
+      _security = _defaultSecurity;
+      _transport = 'raw';
+      _allowInsecure = false;
+      _error = null;
+      _port.text = '$_defaultPort';
+    });
+  }
 
   @override
   void initState() {
@@ -726,6 +796,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       _address,
       _port,
       _uuid,
+      _protocolPassword,
+      _encryption,
+      _vmessSecurity,
       _serverName,
       _fingerprint,
       _password,
@@ -742,10 +815,46 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
   void _submit() {
     final port = int.tryParse(_port.text.trim());
-    if (_name.text.trim().isEmpty ||
-        _address.text.trim().isEmpty ||
-        _uuid.text.trim().isEmpty) {
-      setState(() => _error = 'Имя, адрес и UUID обязательны');
+    if (_name.text.trim().isEmpty || _address.text.trim().isEmpty) {
+      setState(() => _error = 'Имя и адрес обязательны');
+      return;
+    }
+    if (_needsUserId && _uuid.text.trim().isEmpty) {
+      setState(() => _error = 'Для ${_protocol.title} нужен UUID');
+      return;
+    }
+    if ((_protocol == OutboundProtocol.trojan ||
+            _protocol == OutboundProtocol.shadowsocks) &&
+        _protocolPassword.text.isEmpty) {
+      setState(() => _error = 'Для ${_protocol.title} нужен пароль');
+      return;
+    }
+    if (_canUseOptionalCredentials &&
+        (_uuid.text.trim().isEmpty != _protocolPassword.text.isEmpty)) {
+      setState(() => _error = 'Укажите и имя пользователя, и пароль');
+      return;
+    }
+    if (_protocol == OutboundProtocol.shadowsocks &&
+        _encryption.text.trim().isEmpty) {
+      setState(() => _error = 'Для Shadowsocks нужен метод шифрования');
+      return;
+    }
+    if (_protocol == OutboundProtocol.vmess &&
+        !{
+          'auto',
+          'aes-128-gcm',
+          'chacha20-poly1305',
+        }.contains(_vmessSecurity.text.trim().toLowerCase())) {
+      setState(
+        () =>
+            _error = 'VMess security: auto, aes-128-gcm или chacha20-poly1305',
+      );
+      return;
+    }
+    if (_usesStreamSettings &&
+        _security == 'reality' &&
+        _password.text.trim().isEmpty) {
+      setState(() => _error = 'Для REALITY нужен public key');
       return;
     }
     if (port == null || port < 1 || port > 65535) {
@@ -759,6 +868,12 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
         address: _address.text.trim(),
         port: port,
         userId: _uuid.text.trim(),
+        outboundProtocol: _protocol,
+        password: _protocolPassword.text,
+        encryption: _encryption.text.trim(),
+        vmessSecurity: _vmessSecurity.text.trim().isEmpty
+            ? 'auto'
+            : _vmessSecurity.text.trim().toLowerCase(),
         flow: _flow.text.trim(),
         security: _security,
         transport: _transport,
@@ -792,70 +907,115 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                 const SizedBox(height: 10),
               ],
               _field(_name, 'Имя'),
+              if (widget.allowProtocolSelection)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: DropdownButtonFormField<OutboundProtocol>(
+                    key: ValueKey(_protocol),
+                    initialValue: _protocol,
+                    decoration: const InputDecoration(labelText: 'Протокол'),
+                    items: [
+                      for (final protocol in OutboundProtocol.values)
+                        DropdownMenuItem(
+                          value: protocol,
+                          child: Text(protocol.title),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) _changeProtocol(value);
+                    },
+                  ),
+                ),
               Row(children: [
                 Expanded(flex: 3, child: _field(_address, 'Адрес')),
                 const SizedBox(width: 10),
                 Expanded(child: _field(_port, 'Порт', number: true)),
               ]),
-              _field(_uuid, 'UUID'),
-              _field(_flow, 'Flow (например xtls-rprx-vision)'),
-              Row(children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _security,
-                    decoration: const InputDecoration(labelText: 'Security'),
-                    items: const [
-                      DropdownMenuItem(value: 'none', child: Text('None')),
-                      DropdownMenuItem(value: 'tls', child: Text('TLS')),
-                      DropdownMenuItem(
-                          value: 'reality', child: Text('REALITY')),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _security = value ?? 'none'),
+              if (_needsUserId || _canUseOptionalCredentials)
+                _field(
+                  _uuid,
+                  _needsUserId ? 'UUID' : 'Имя пользователя (необязательно)',
+                ),
+              if (_needsPassword)
+                _field(
+                  _protocolPassword,
+                  _canUseOptionalCredentials
+                      ? 'Пароль (необязательно)'
+                      : 'Пароль',
+                ),
+              if (_protocol == OutboundProtocol.shadowsocks)
+                _field(
+                  _encryption,
+                  'Метод шифрования (например aes-256-gcm)',
+                ),
+              if (_protocol == OutboundProtocol.vmess)
+                _field(
+                  _vmessSecurity,
+                  'VMess security (auto / aes-128-gcm / chacha20-poly1305)',
+                ),
+              if (_usesStreamSettings) ...[
+                if (_protocol == OutboundProtocol.vless)
+                  _field(_flow, 'Flow (например xtls-rprx-vision)'),
+                Row(children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _security,
+                      decoration: const InputDecoration(labelText: 'Security'),
+                      items: const [
+                        DropdownMenuItem(value: 'none', child: Text('None')),
+                        DropdownMenuItem(value: 'tls', child: Text('TLS')),
+                        DropdownMenuItem(
+                            value: 'reality', child: Text('REALITY')),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _security = value ?? 'none'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _transport,
-                    decoration: const InputDecoration(labelText: 'Transport'),
-                    items: const [
-                      DropdownMenuItem(value: 'raw', child: Text('RAW / TCP')),
-                      DropdownMenuItem(
-                          value: 'websocket', child: Text('WebSocket')),
-                      DropdownMenuItem(value: 'grpc', child: Text('gRPC')),
-                      DropdownMenuItem(value: 'xhttp', child: Text('XHTTP')),
-                      DropdownMenuItem(
-                          value: 'httpupgrade', child: Text('HTTPUpgrade')),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _transport = value ?? 'raw'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _transport,
+                      decoration: const InputDecoration(labelText: 'Transport'),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'raw', child: Text('RAW / TCP')),
+                        DropdownMenuItem(
+                            value: 'websocket', child: Text('WebSocket')),
+                        DropdownMenuItem(value: 'grpc', child: Text('gRPC')),
+                        DropdownMenuItem(value: 'xhttp', child: Text('XHTTP')),
+                        DropdownMenuItem(
+                            value: 'httpupgrade', child: Text('HTTPUpgrade')),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _transport = value ?? 'raw'),
+                    ),
                   ),
-                ),
-              ]),
-              if (_security == 'tls' || _security == 'reality') ...[
-                _field(_serverName, 'Server Name / SNI'),
-                _field(_fingerprint, 'Fingerprint'),
+                ]),
+                if (_security == 'tls' || _security == 'reality') ...[
+                  _field(_serverName, 'Server Name / SNI'),
+                  _field(_fingerprint, 'Fingerprint'),
+                ],
+                if (_security == 'reality') ...[
+                  _field(_password, 'REALITY public key / password'),
+                  _field(_shortId, 'Short ID'),
+                ],
+                if (_security == 'tls')
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Allow insecure'),
+                    value: _allowInsecure,
+                    onChanged: (value) =>
+                        setState(() => _allowInsecure = value),
+                  ),
+                if (_transport == 'websocket' ||
+                    _transport == 'xhttp' ||
+                    _transport == 'httpupgrade') ...[
+                  _field(_path, 'Path'),
+                  _field(_host, 'Host'),
+                ],
+                if (_transport == 'grpc')
+                  _field(_serviceName, 'gRPC service name'),
               ],
-              if (_security == 'reality') ...[
-                _field(_password, 'REALITY public key / password'),
-                _field(_shortId, 'Short ID'),
-              ],
-              if (_security == 'tls')
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Allow insecure'),
-                  value: _allowInsecure,
-                  onChanged: (value) => setState(() => _allowInsecure = value),
-                ),
-              if (_transport == 'websocket' ||
-                  _transport == 'xhttp' ||
-                  _transport == 'httpupgrade') ...[
-                _field(_path, 'Path'),
-                _field(_host, 'Host'),
-              ],
-              if (_transport == 'grpc')
-                _field(_serviceName, 'gRPC service name'),
             ],
           ),
         ),

@@ -31,6 +31,7 @@ constexpr UINT kCompleteExitMessage = WM_APP + 78;
 constexpr UINT kNetworkChangedMessage = WM_APP + 79;
 constexpr UINT_PTR kExitFallbackTimerId = 7704;
 constexpr UINT kExitFallbackTimeoutMs = 15000;
+constexpr UINT kUpdateExitFallbackTimeoutMs = 4000;
 constexpr wchar_t kWindowPlacementRegistryPath[] = L"Software\\OrexRay";
 constexpr wchar_t kWindowPlacementRegistryValue[] = L"WindowPlacementV1";
 constexpr DWORD kWindowPlacementVersion = 1;
@@ -427,6 +428,7 @@ TrayStatus ParseTrayStatus(const std::string& value) {
   if (value == "connected") return TrayStatus::kConnected;
   if (value == "connecting") return TrayStatus::kConnecting;
   if (value == "disconnecting") return TrayStatus::kDisconnecting;
+  if (value == "timeout") return TrayStatus::kTimeout;
   if (value == "error") return TrayStatus::kError;
   return TrayStatus::kDisconnected;
 }
@@ -700,9 +702,25 @@ LRESULT FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     return 0;
   }
 
+  // Inno Setup uses Windows Restart Manager while updating files that belong
+  // to the running app. It asks with WM_QUERYENDSESSION and then delivers
+  // WM_ENDSESSION with ENDSESSION_CLOSEAPP. Do not route that close through
+  // the ordinary close-to-tray path: hiding here leaves the process alive and
+  // makes the installer wait for a locked executable.
+  if (message == WM_QUERYENDSESSION) {
+    return TRUE;
+  }
+
+  if (message == WM_ENDSESSION && wparam != FALSE &&
+      (lparam & ENDSESSION_CLOSEAPP) != 0) {
+    SaveWindowPlacement();
+    RequestGracefulExit(kUpdateExitFallbackTimeoutMs);
+    return 0;
+  }
+
   if (message == WM_CLOSE) {
     SaveWindowPlacement();
-    if (close_to_tray_ && !exit_requested_) {
+    if (close_to_tray_ && !exit_requested_ && !exit_request_pending_) {
       ShowWindow(hwnd, SW_HIDE);
       return 0;
     }
@@ -906,7 +924,7 @@ void FlutterWindow::ShowAndActivate() {
   SetForegroundWindow(window);
 }
 
-void FlutterWindow::RequestGracefulExit() {
+void FlutterWindow::RequestGracefulExit(UINT fallback_timeout_ms) {
   if (exit_requested_ || exit_request_pending_) return;
   exit_request_pending_ = true;
 
@@ -917,7 +935,10 @@ void FlutterWindow::RequestGracefulExit() {
     return;
   }
 
-  SetTimer(GetHandle(), kExitFallbackTimerId, kExitFallbackTimeoutMs, nullptr);
+  SetTimer(GetHandle(), kExitFallbackTimerId,
+           fallback_timeout_ms == 0 ? kExitFallbackTimeoutMs
+                                    : fallback_timeout_ms,
+           nullptr);
   lifecycle_channel_->InvokeMethod("requestExit", nullptr);
 }
 

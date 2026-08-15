@@ -21,10 +21,12 @@ class TunnelController extends ChangeNotifier {
     required ConnectionSettingsController settings,
     ExitLocationRefreshPolicy? egressRefreshPolicy,
     TunnelRouteLatencyProbe? routeLatencyProbe,
+    Duration routeProbeStartupDelay = const Duration(milliseconds: 350),
   })  : _engine = engine,
         _profiles = profiles,
         _settings = settings,
         _routeLatencyProbe = routeLatencyProbe ?? TunnelRouteLatencyProbe(),
+        _routeProbeStartupDelay = routeProbeStartupDelay,
         _engineSnapshot = engine.current {
     _egressRefreshCoordinator = ExitLocationRefreshCoordinator(
       policy: egressRefreshPolicy ??
@@ -37,7 +39,29 @@ class TunnelController extends ChangeNotifier {
     );
     _engineSubscription = _engine.snapshots.listen((value) {
       if (_closing) return;
-      final becameConnected = value.isConnected && !_engineSnapshot.isConnected;
+      // `start()` also synchronizes from `engine.current`.  Some engines emit
+      // their queued "connecting" event after that synchronous state has
+      // already advanced to connected; accepting it would invalidate a valid
+      // route probe and schedule a second one.
+      if (_engineSnapshot.isConnected &&
+          value.status == TunnelStatus.connecting &&
+          value.mode == _engineSnapshot.mode &&
+          value.profile?.id == _engineSnapshot.profile?.id) {
+        return;
+      }
+      final previous = _engineSnapshot;
+      final becameConnected = value.isConnected && !previous.isConnected;
+      if (_latencyContextChanged(previous, value)) {
+        _latencyContextRevision++;
+      }
+      if (previous.isConnected &&
+          previous.mode == ConnectionMode.vpnTun &&
+          !value.isConnected) {
+        _pendingVpnDirectLatencyTargetId = previous.profile?.id;
+      }
+      if (value.isConnected) {
+        _pendingVpnDirectLatencyTargetId = null;
+      }
       _engineSnapshot = value;
       _clearRouteLatencyIfStale();
       if (!value.isConnected && !value.isBusy) {
@@ -49,14 +73,18 @@ class TunnelController extends ChangeNotifier {
         _egressRefreshCoordinator.stopPeriodic();
       }
       if (becameConnected) {
-        final trigger = _hasConnectedBefore
-            ? ExitLocationRefreshTrigger.reconnected
-            : ExitLocationRefreshTrigger.connected;
-        _hasConnectedBefore = true;
-        unawaited(_requestEgressRefresh(trigger));
+        _handleBecameConnected(value);
+      }
+      final disconnectedVpnTargetId = value.status == TunnelStatus.disconnected
+          ? _pendingVpnDirectLatencyTargetId
+          : null;
+      if (disconnectedVpnTargetId != null) {
+        _schedulePendingVpnDirectLatency(disconnectedVpnTargetId);
       }
       notifyListeners();
     });
+    _lastSelectedTargetId = _profiles.selectedTarget?.id;
+    _lastConfiguredMode = _settings.mode;
     _profiles.addListener(_onProfilesChanged);
     _settings.addListener(_onSettingsChanged);
     unawaited(_loadEgressCache());
@@ -71,6 +99,7 @@ class TunnelController extends ChangeNotifier {
   final ProfilesController _profiles;
   final ConnectionSettingsController _settings;
   final TunnelRouteLatencyProbe _routeLatencyProbe;
+  final Duration _routeProbeStartupDelay;
   late final StreamSubscription<TunnelSnapshot> _engineSubscription;
   TunnelSnapshot _engineSnapshot;
   Future<void>? _shutdownFuture;
@@ -80,6 +109,12 @@ class TunnelController extends ChangeNotifier {
   bool _closing = false;
   bool _disposed = false;
   bool _hasConnectedBefore = false;
+  int _latencyContextRevision = 0;
+  String? _lastSelectedTargetId;
+  ConnectionMode? _lastConfiguredMode;
+  String? _pendingVpnDirectLatencyTargetId;
+  Future<void>? _automaticRouteLatencyFuture;
+  int? _automaticRouteLatencyContextRevision;
   String? _lastRuntimeMetadataKey;
   static const _egressCacheKey = 'orex_ray_egress_identity_v1';
   static const _egressRetryDelays = <Duration>[
@@ -133,6 +168,35 @@ class TunnelController extends ChangeNotifier {
           ? _activeRouteLatency
           : null;
 
+  /// The latency that belongs in the existing home ping field.
+  ///
+  /// While the VPN is active this is the end-to-end route measurement.  A
+  /// direct TCP connection to the profile address would be captured by the
+  /// TUN and can measure the local/recursive path instead of the server.
+  /// Outside an active VPN the saved direct reachability value remains the
+  /// source of truth.
+  int? effectiveLatencyFor(TunnelTarget? target) {
+    if (target == null) return null;
+    if (_isActiveVpnTarget(target.id)) {
+      return routeLatencyFor(target.id)?.latencyMs;
+    }
+    final routeLatency = routeLatencyFor(target.id);
+    return routeLatency == null ? target.latencyMs : routeLatency.latencyMs;
+  }
+
+  /// Matches [effectiveLatencyFor] for state consumers such as the existing
+  /// global status pill and the Windows tray icon. In an active VPN a saved
+  /// direct result is deliberately not a fallback: it could have been
+  /// measured recursively through the TUN.
+  PingStatus effectivePingStatusFor(TunnelTarget? target) {
+    if (target == null) return PingStatus.unknown;
+    if (_isActiveVpnTarget(target.id)) {
+      return routeLatencyFor(target.id)?.status ?? PingStatus.unknown;
+    }
+    final routeLatency = routeLatencyFor(target.id);
+    return routeLatency?.status ?? target.pingStatus;
+  }
+
   Listenable get egressChanges => _egressRevision;
 
   List<TunnelTarget> get targets => _profiles.targets;
@@ -140,6 +204,32 @@ class TunnelController extends ChangeNotifier {
   bool get refreshingLatency => _profiles.refreshingLatency;
 
   bool get canChangeTarget => !_engineSnapshot.isBusy;
+
+  /// Performs the one event-driven check requested when the application is
+  /// opened. It deliberately checks only the selected target, never every
+  /// saved profile.
+  Future<void> refreshLatencyOnAppOpen() async {
+    if (_closing) return;
+    final current = _engineSnapshot;
+    final contextRevision = _latencyContextRevision;
+    if (current.isConnected && current.mode == ConnectionMode.vpnTun) {
+      await _refreshRouteLatencyForLifecycle(
+        expectedTargetId: current.profile?.id,
+        waitForProxy: true,
+      );
+      return;
+    }
+    if (!current.isBusy) {
+      final target = _profiles.selectedTarget;
+      if (target != null) {
+        await _refreshDirectTargetLatency(
+          target.id,
+          expectedContextRevision: contextRevision,
+          requireSelectedTarget: true,
+        );
+      }
+    }
+  }
 
   Future<void> selectTarget(String id) async {
     if (!canChangeTarget) return;
@@ -173,26 +263,40 @@ class TunnelController extends ChangeNotifier {
   Future<void> refreshSelectedLatency() async {
     final target = _profiles.selectedTarget;
     if (target == null) return;
-    for (final profile in target.profiles) {
-      await _profiles.refreshLatency(profile.id);
+    if (_isActiveVpnTarget(target.id)) {
+      await _refreshActiveRouteLatency(expectedTargetId: target.id);
+      return;
     }
-    await _refreshActiveRouteLatency();
-    unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.manualPing));
+    await _refreshDirectTargetLatency(target.id);
   }
 
   Future<void> refreshProfileLatency(String profileId) async {
-    await _profiles.refreshLatency(profileId);
     final active = _engineSnapshot.profile;
-    if (active?.profiles.any((profile) => profile.id == profileId) ?? false) {
-      await _refreshActiveRouteLatency();
-      unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.manualPing));
+    if (_engineSnapshot.mode == ConnectionMode.vpnTun &&
+        _engineSnapshot.isConnected &&
+        (active?.profiles.any((profile) => profile.id == profileId) ?? false)) {
+      await _refreshActiveRouteLatency(expectedTargetId: active?.id);
+      return;
     }
+    final contextRevision = _latencyContextRevision;
+    await _profiles.refreshLatency(
+      profileId,
+      shouldApply: () => _canApplyDirectLatency(contextRevision),
+    );
   }
 
   Future<void> refreshAllLatencies() async {
-    await _profiles.refreshAllLatencies();
-    await _refreshActiveRouteLatency();
-    unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.manualPing));
+    final active = _engineSnapshot.profile;
+    if (_engineSnapshot.isConnected &&
+        _engineSnapshot.mode == ConnectionMode.vpnTun &&
+        active != null) {
+      await _refreshActiveRouteLatency(expectedTargetId: active.id);
+      return;
+    }
+    final contextRevision = _latencyContextRevision;
+    await _profiles.refreshAllLatencies(
+      shouldApply: () => _canApplyDirectLatency(contextRevision),
+    );
   }
 
   Future<void> setMode(ConnectionMode mode) async {
@@ -232,8 +336,15 @@ class TunnelController extends ChangeNotifier {
     if (_closing) return;
     final current = snapshot;
     if (current.status == TunnelStatus.disconnected) return;
+    if (current.isConnected && current.mode == ConnectionMode.vpnTun) {
+      _pendingVpnDirectLatencyTargetId = current.profile?.id;
+    }
     await _engine.stop();
     _syncFromEngine();
+    if (_engineSnapshot.status == TunnelStatus.disconnected) {
+      final targetId = _pendingVpnDirectLatencyTargetId;
+      if (targetId != null) _schedulePendingVpnDirectLatency(targetId);
+    }
   }
 
   Future<void> recover(TunnelRecoveryReason reason) async {
@@ -342,27 +453,183 @@ class TunnelController extends ChangeNotifier {
     );
   }
 
-  Future<void> _refreshActiveRouteLatency() async {
+  /// Measures the already-active VPN route through Xray's loopback HTTP
+  /// inbound. The loopback hop is only the entry into Xray; completion waits
+  /// for the remote HTTP response, so the returned value includes the chosen
+  /// outbound/cascade rather than a local socket handshake.
+  Future<void> _refreshActiveRouteLatency({
+    String? expectedTargetId,
+    int? expectedContextRevision,
+    bool waitForProxy = false,
+  }) async {
     final target = _engineSnapshot.profile;
-    if (_closing ||
-        !_engineSnapshot.isConnected ||
-        target == null ||
-        (_engineSnapshot.mode == ConnectionMode.vpnTun &&
-            !_settings.localProxyInVpn)) {
+    final targetId = expectedTargetId ?? target?.id;
+    final contextRevision = expectedContextRevision ?? _latencyContextRevision;
+    if (target == null ||
+        targetId == null ||
+        !_canApplyRouteLatency(targetId, contextRevision)) {
+      return;
+    }
+
+    // Android reports the connection immediately after Xray starts. Give the
+    // loopback inbound a short, one-time settle window instead of recording a
+    // startup race as a route timeout.
+    if (waitForProxy) {
+      await Future<void>.delayed(_routeProbeStartupDelay);
+      if (!_canApplyRouteLatency(targetId, contextRevision)) return;
+    }
+
+    // With the optional parallel proxy disabled there is intentionally no
+    // local Xray entry point. Do not fall back to Socket.connect here: in VPN
+    // mode that socket is captured by the TUN and can return a recursive
+    // 1–4 ms pseudo-ping. The existing UI will correctly show `—`.
+    if (!_settings.localProxyInVpn) {
+      _publishRouteLatency(
+        targetId,
+        const LatencyProbeResult.unavailable(),
+        expectedContextRevision: contextRevision,
+      );
       return;
     }
 
     final result = await _routeLatencyProbe.measure(
       httpPort: _settings.httpPort,
     );
-    if (_closing ||
-        !_engineSnapshot.isConnected ||
-        _engineSnapshot.profile?.id != target.id) {
-      return;
+    _publishRouteLatency(
+      targetId,
+      result,
+      expectedContextRevision: contextRevision,
+    );
+  }
+
+  Future<void> _refreshRouteLatencyForLifecycle({
+    String? expectedTargetId,
+    required bool waitForProxy,
+  }) {
+    final contextRevision = _latencyContextRevision;
+    final inFlight = _automaticRouteLatencyFuture;
+    if (_automaticRouteLatencyContextRevision == contextRevision &&
+        inFlight != null) {
+      return inFlight;
     }
-    _activeRouteLatencyTargetId = target.id;
+    final future = _refreshActiveRouteLatency(
+      expectedTargetId: expectedTargetId,
+      expectedContextRevision: contextRevision,
+      waitForProxy: waitForProxy,
+    );
+    _automaticRouteLatencyContextRevision = contextRevision;
+    _automaticRouteLatencyFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_automaticRouteLatencyFuture, future)) {
+          _automaticRouteLatencyFuture = null;
+        }
+      },
+      onError: (_, __) {
+        if (identical(_automaticRouteLatencyFuture, future)) {
+          _automaticRouteLatencyFuture = null;
+        }
+      },
+    );
+    return future;
+  }
+
+  void _publishRouteLatency(
+    String targetId,
+    LatencyProbeResult result, {
+    required int expectedContextRevision,
+  }) {
+    if (!_canApplyRouteLatency(targetId, expectedContextRevision)) return;
+    _activeRouteLatencyTargetId = targetId;
     _activeRouteLatency = result;
     notifyListeners();
+  }
+
+  Future<void> _refreshDirectTargetLatency(
+    String targetId, {
+    int? expectedContextRevision,
+    bool requireSelectedTarget = false,
+  }) async {
+    final contextRevision = expectedContextRevision ?? _latencyContextRevision;
+    final target = _profiles.targetById(targetId);
+    if (target == null ||
+        !_canApplyDirectLatency(
+          contextRevision,
+          targetId: requireSelectedTarget ? targetId : null,
+        )) {
+      return;
+    }
+    for (final profile in target.profiles) {
+      await _profiles.refreshLatency(
+        profile.id,
+        shouldApply: () => _canApplyDirectLatency(
+          contextRevision,
+          targetId: requireSelectedTarget ? targetId : null,
+        ),
+      );
+    }
+  }
+
+  void _schedulePendingVpnDirectLatency(String targetId) {
+    if (_pendingVpnDirectLatencyTargetId != targetId ||
+        _engineSnapshot.status != TunnelStatus.disconnected) {
+      return;
+    }
+    _pendingVpnDirectLatencyTargetId = null;
+    unawaited(
+      _refreshDirectTargetLatency(
+        targetId,
+        expectedContextRevision: _latencyContextRevision,
+        requireSelectedTarget: true,
+      ),
+    );
+  }
+
+  bool _isActiveVpnTarget(String targetId) =>
+      _engineSnapshot.isConnected &&
+      _engineSnapshot.mode == ConnectionMode.vpnTun &&
+      _engineSnapshot.profile?.id == targetId;
+
+  bool _canApplyRouteLatency(String targetId, int contextRevision) =>
+      !_closing &&
+      _latencyContextRevision == contextRevision &&
+      _engineSnapshot.isConnected &&
+      _engineSnapshot.mode == ConnectionMode.vpnTun &&
+      _engineSnapshot.profile?.id == targetId;
+
+  bool _canApplyDirectLatency(
+    int contextRevision, {
+    String? targetId,
+  }) =>
+      !_closing &&
+      _latencyContextRevision == contextRevision &&
+      !_engineSnapshot.isBusy &&
+      !(_engineSnapshot.isConnected &&
+          _engineSnapshot.mode == ConnectionMode.vpnTun) &&
+      (targetId == null || _profiles.selectedTarget?.id == targetId);
+
+  bool _latencyContextChanged(
+    TunnelSnapshot previous,
+    TunnelSnapshot next,
+  ) =>
+      previous.status != next.status ||
+      previous.mode != next.mode ||
+      previous.profile?.id != next.profile?.id;
+
+  void _handleBecameConnected(TunnelSnapshot value) {
+    final trigger = _hasConnectedBefore
+        ? ExitLocationRefreshTrigger.reconnected
+        : ExitLocationRefreshTrigger.connected;
+    _hasConnectedBefore = true;
+    unawaited(_requestEgressRefresh(trigger));
+    if (value.mode == ConnectionMode.vpnTun) {
+      unawaited(
+        _refreshRouteLatencyForLifecycle(
+          expectedTargetId: value.profile?.id,
+          waitForProxy: true,
+        ),
+      );
+    }
   }
 
   Future<void> _waitForEgressProxy({int attempts = 8}) async {
@@ -506,8 +773,32 @@ class TunnelController extends ChangeNotifier {
   }
 
   void _syncFromEngine() {
-    _engineSnapshot = _engine.current;
+    final next = _engine.current;
+    final previous = _engineSnapshot;
+    final becameConnected = next.isConnected && !previous.isConnected;
+    if (_latencyContextChanged(previous, next)) {
+      _latencyContextRevision++;
+    }
+    if (previous.isConnected &&
+        previous.mode == ConnectionMode.vpnTun &&
+        !next.isConnected) {
+      _pendingVpnDirectLatencyTargetId = previous.profile?.id;
+    }
+    if (next.isConnected) _pendingVpnDirectLatencyTargetId = null;
+    _engineSnapshot = next;
     _clearRouteLatencyIfStale();
+    if (becameConnected && next.mode == ConnectionMode.vpnTun) {
+      unawaited(
+        _refreshRouteLatencyForLifecycle(
+          expectedTargetId: next.profile?.id,
+          waitForProxy: true,
+        ),
+      );
+    }
+    if (_engineSnapshot.status == TunnelStatus.disconnected) {
+      final targetId = _pendingVpnDirectLatencyTargetId;
+      if (targetId != null) _schedulePendingVpnDirectLatency(targetId);
+    }
     if (!_closing) notifyListeners();
   }
 
@@ -529,6 +820,11 @@ class TunnelController extends ChangeNotifier {
 
   void _onProfilesChanged() {
     if (_closing) return;
+    final selectedTargetId = _profiles.selectedTarget?.id;
+    if (_lastSelectedTargetId != selectedTargetId) {
+      _lastSelectedTargetId = selectedTargetId;
+      _latencyContextRevision++;
+    }
     final active = _engineSnapshot.profile;
     if ((_engineSnapshot.isConnected || _engineSnapshot.isBusy) &&
         active != null &&
@@ -555,6 +851,11 @@ class TunnelController extends ChangeNotifier {
 
   void _onSettingsChanged() {
     if (_closing) return;
+    final configuredMode = _settings.mode;
+    if (_lastConfiguredMode != configuredMode) {
+      _lastConfiguredMode = configuredMode;
+      _latencyContextRevision++;
+    }
     if (_engineSnapshot.isConnected && _engine is TunnelRuntimeSettingsSink) {
       unawaited(
         (_engine as TunnelRuntimeSettingsSink).updateRuntimeSettings(

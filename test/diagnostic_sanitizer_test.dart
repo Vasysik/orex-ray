@@ -13,4 +13,23 @@ void main() {
     expect(sanitized, contains('vless://<REDACTED>'));
     expect(sanitized, isNot(contains('secret')));
   });
+
+  test('redacts credentials in every supported imported link scheme', () {
+    const links = [
+      'vmess://eyJpZCI6InNlY3JldCJ9',
+      'trojan://secret@trojan.example:443',
+      'ss://YWVzLTI1Ni1nY206c2VjcmV0@ss.example:8388',
+      'socks5://alice:secret@socks.example:1080',
+      'https://alice:secret@proxy.example:443',
+    ];
+
+    final sanitized = DiagnosticSanitizer.sanitize(links.join(' '));
+
+    expect(sanitized, isNot(contains('secret')));
+    expect(sanitized, contains('vmess://<REDACTED>'));
+    expect(sanitized, contains('trojan://<REDACTED>'));
+    expect(sanitized, contains('ss://<REDACTED>'));
+    expect(sanitized, contains('socks5://<REDACTED>'));
+    expect(sanitized, contains('https://<REDACTED>'));
+  });
 }

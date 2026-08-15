@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:orex_ray/core/profiles/latency_probe.dart';
 import 'package:orex_ray/core/profiles/profiles_controller.dart';
 import 'package:orex_ray/core/settings/connection_settings_controller.dart';
 import 'package:orex_ray/core/tunnel/mock_tunnel_engine.dart';
@@ -272,6 +275,252 @@ void main() {
     expect(controller.snapshot.profile?.id, second.id);
     expect(controller.snapshot.mode, ConnectionMode.vpnTun);
   });
+
+  test('VPN ping uses the active route and never a direct profile socket',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(777),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final profile = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Route',
+    );
+    final routeProbe = _FixedRouteLatencyProbe(
+      const LatencyProbeResult.success(123),
+    );
+    final controller = TunnelController(
+      engine: _RecordingTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: routeProbe,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.setMode(ConnectionMode.vpnTun);
+    await controller.connect();
+    await controller.refreshSelectedLatency();
+
+    expect(directProbe.calls, 0);
+    expect(routeProbe.calls, 1);
+    expect(controller.effectiveLatencyFor(controller.snapshot.profile), 123);
+    expect(controller.routeLatencyFor(profile.id)?.status, PingStatus.success);
+  });
+
+  test(
+      'VPN without the parallel local proxy reports no route ping, not TUN TCP',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(2),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    await settings.setLocalProxyInVpn(false);
+    final profile = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#No-proxy',
+    );
+    await profiles.updateProfile(
+      profile.copyWith(
+        latencyMs: 2,
+        pingStatus: PingStatus.success,
+      ),
+    );
+    final routeProbe = _FixedRouteLatencyProbe(
+      const LatencyProbeResult.success(123),
+    );
+    final controller = TunnelController(
+      engine: _RecordingTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: routeProbe,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.setMode(ConnectionMode.vpnTun);
+    await controller.connect();
+    await controller.refreshSelectedLatency();
+
+    expect(directProbe.calls, 0);
+    expect(routeProbe.calls, 0);
+    expect(controller.effectiveLatencyFor(controller.snapshot.profile), isNull);
+    expect(
+      controller.effectivePingStatusFor(controller.snapshot.profile),
+      PingStatus.unavailable,
+    );
+    expect(
+      controller.routeLatencyFor(profile.id)?.status,
+      PingStatus.unavailable,
+    );
+  });
+
+  test('VPN disconnect performs one direct check after the TUN is down',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(87),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final profile = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#After-stop',
+    );
+    final controller = TunnelController(
+      engine: _RecordingTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.setMode(ConnectionMode.vpnTun);
+    await controller.connect();
+    await controller.disconnect();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(directProbe.calls, 1);
+    expect(profiles.targetById(profile.id)?.latencyMs, 87);
+  });
+
+  test('a direct check is discarded if VPN reconnects before it completes',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _ControlledLatencyProbe();
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    await settings.setLocalProxyInVpn(false);
+    final profile = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Race',
+    );
+    final controller = TunnelController(
+      engine: _RecordingTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.setMode(ConnectionMode.vpnTun);
+    await controller.connect();
+    await controller.disconnect();
+    await directProbe.started.future;
+    await controller.connect();
+    directProbe.complete(const LatencyProbeResult.success(2));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(directProbe.calls, 1);
+    expect(profiles.targetById(profile.id)?.latencyMs, isNull);
+    expect(
+      profiles.targetById(profile.id)?.pingStatus,
+      PingStatus.unknown,
+    );
+  });
+
+  test('opening the app checks only the selected direct target', () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(61),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final profile = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Launch',
+    );
+    await profiles.createProfile(
+      profile.copyWith(
+        id: 'unselected',
+        name: 'Unselected',
+        address: 'second.example.com',
+      ),
+    );
+    final controller = TunnelController(
+      engine: _RecordingTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.refreshLatencyOnAppOpen();
+
+    expect(directProbe.calls, 1);
+    expect(profiles.targetById(profile.id)?.latencyMs, 61);
+    expect(profiles.targetById('unselected')?.latencyMs, isNull);
+  });
+
+  test('VPN connection automatically checks the effective route', () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(2),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    await settings.setLocalProxyInVpn(false);
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Auto-route',
+    );
+    final controller = TunnelController(
+      engine: _EventTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.setMode(ConnectionMode.vpnTun);
+    await controller.connect();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(directProbe.calls, 0);
+    expect(
+      controller.effectivePingStatusFor(controller.snapshot.profile),
+      PingStatus.unavailable,
+    );
+  });
 }
 
 class _RecordingTunnelEngine implements TunnelEngine {
@@ -344,5 +593,115 @@ class _RuntimeSettingsEngine extends _RecordingTunnelEngine
       speed: showNotificationSpeed,
       ping: showNotificationPing,
     ));
+  }
+}
+
+class _CountingLatencyProbe extends LatencyProbe {
+  _CountingLatencyProbe(this.result);
+
+  final LatencyProbeResult result;
+  int calls = 0;
+
+  @override
+  Future<LatencyProbeResult> measure(TunnelProfile profile) async {
+    calls++;
+    return result;
+  }
+}
+
+class _ControlledLatencyProbe extends LatencyProbe {
+  final Completer<void> started = Completer<void>();
+  final Completer<LatencyProbeResult> _result = Completer<LatencyProbeResult>();
+  int calls = 0;
+
+  @override
+  Future<LatencyProbeResult> measure(TunnelProfile profile) {
+    calls++;
+    if (!started.isCompleted) started.complete();
+    return _result.future;
+  }
+
+  void complete(LatencyProbeResult value) => _result.complete(value);
+}
+
+class _FixedRouteLatencyProbe extends TunnelRouteLatencyProbe {
+  _FixedRouteLatencyProbe(this.result);
+
+  final LatencyProbeResult result;
+  int calls = 0;
+
+  @override
+  Future<LatencyProbeResult> measure({required int httpPort}) async {
+    calls++;
+    return result;
+  }
+}
+
+class _EventTunnelEngine implements TunnelEngine {
+  _EventTunnelEngine()
+      : _current = const TunnelSnapshot(
+          status: TunnelStatus.disconnected,
+          stats: TrafficStats(),
+        );
+
+  final StreamController<TunnelSnapshot> _events =
+      StreamController<TunnelSnapshot>.broadcast();
+  TunnelSnapshot _current;
+
+  @override
+  TunnelSnapshot get current => _current;
+
+  @override
+  Stream<TunnelSnapshot> get snapshots => _events.stream;
+
+  @override
+  Set<ConnectionMode> get supportedModes => const {
+        ConnectionMode.vpnTun,
+        ConnectionMode.localProxy,
+        ConnectionMode.systemProxy,
+      };
+
+  @override
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    _emit(
+      TunnelSnapshot(
+        status: TunnelStatus.connecting,
+        mode: mode,
+        profile: profile,
+        stats: const TrafficStats(),
+      ),
+    );
+    _emit(
+      TunnelSnapshot(
+        status: TunnelStatus.connected,
+        mode: mode,
+        profile: profile,
+        stats: const TrafficStats(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> stop() async {
+    _emit(
+      _current.copyWith(
+        status: TunnelStatus.disconnecting,
+        stats: const TrafficStats(),
+      ),
+    );
+    _emit(
+      _current.copyWith(
+        status: TunnelStatus.disconnected,
+        stats: const TrafficStats(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> dispose() => _events.close();
+
+  void _emit(TunnelSnapshot value) {
+    _current = value;
+    _events.add(value);
   }
 }

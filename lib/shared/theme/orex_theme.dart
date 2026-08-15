@@ -6,30 +6,36 @@ class OrexColors {
 
   static const walnut = Color(0xFF8B5A2B);
   static const walnutDeep = Color(0xFF5E3A1A);
-  static const copper = Color(0xFFC8763C);
-  static const copperBright = Color(0xFFD98C4A);
+  static const copper = Color(0xFFD47939);
+  static const copperBright = Color(0xFFEE8D3F);
+  static const copperDeep = Color(0xFF854132);
   static const ochre = Color(0xFFD9A05B);
   static const ochreLight = Color(0xFFE7C18B);
-  static const cream = Color(0xFFFBF5EC);
+  static const cream = Color(0xFFFCFAFA);
 
   static const lightBg = Color(0xFFF6ECDD);
   static const lightSurface = Color(0xFFFBF3E7);
+  static const lightBubbleIn = Color(0xFFFFFFFF);
+  static const lightBubbleOut = Color(0xFFE9B97F);
   static const lightText = Color(0xFF3A2417);
   static const lightTextSoft = Color(0xFF8A6E55);
 
   static const darkBg = Color(0xFF1C140E);
   static const darkBgRaised = Color(0xFF241912);
   static const darkSurface = Color(0xFF2A1D14);
+  static const darkBubbleIn = Color(0xFF33241A);
+  static const darkBubbleOut = Color(0xFF7A4A24);
   static const darkText = Color(0xFFF3E6D5);
   static const darkTextSoft = Color(0xFFB39A82);
 
+  static const unread = copper;
   static const online = Color(0xFF8FB36A);
   static const danger = Color(0xFFCF6679);
 
   static const copperGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [copperBright, walnutDeep],
+    colors: [copperBright, copperDeep],
   );
 
   static const ambientDark = RadialGradient(
@@ -100,6 +106,7 @@ class OrexTheme {
         behavior: SnackBarBehavior.floating,
         backgroundColor: OrexColors.walnutDeep,
         contentTextStyle: const TextStyle(color: OrexColors.cream),
+        actionTextColor: OrexColors.ochreLight,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );

@@ -72,6 +72,10 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     _syncPlatformStartupSettings();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncStatsUiActivity(WidgetsBinding.instance.lifecycleState);
+      // One event-driven reachability check for the currently selected target.
+      // A VPN that is already running uses its effective Xray route instead of
+      // opening a direct socket through the TUN.
+      unawaited(_tunnel.refreshLatencyOnAppOpen());
       if (widget.connectionSettings.autoConnectOnStartup &&
           _tunnel.selectedProfile != null) {
         unawaited(Future<void>.delayed(
