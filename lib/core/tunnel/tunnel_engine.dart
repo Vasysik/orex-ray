@@ -21,6 +21,21 @@ abstract interface class TunnelRuntimeMetadataSink {
   Future<void> updateTargetMetadata(TunnelTarget target);
 }
 
+/// Optional bridge for a running engine whose statistics are only needed while
+/// the application UI has an active consumer.
+abstract interface class TunnelStatsConsumerSink {
+  Future<void> setStatsUiActive(bool active);
+}
+
+/// Optional bridge for settings that affect a running native foreground
+/// service. These values must be applied without requiring a reconnect.
+abstract interface class TunnelRuntimeSettingsSink {
+  Future<void> updateRuntimeSettings({
+    required int statsIntervalSeconds,
+    required bool showNotificationSpeed,
+    required bool showNotificationPing,
+  });
+}
 
 enum TunnelRecoveryReason {
   networkChanged,

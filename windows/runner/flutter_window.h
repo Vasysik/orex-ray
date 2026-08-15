@@ -23,6 +23,9 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void RestoreWindowPlacement();
+  void SaveWindowPlacement();
+  void ShowInitialWindow();
   void ShowAndActivate();
   void RequestGracefulExit();
   void RequestTrayDisconnect();
@@ -40,6 +43,7 @@ class FlutterWindow : public Win32Window {
   bool exit_requested_ = false;
   bool exit_request_pending_ = false;
   bool start_hidden_ = false;
+  bool restore_maximized_ = false;
   HANDLE network_change_handle_ = nullptr;
 };
 

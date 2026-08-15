@@ -111,9 +111,8 @@ class _AppShellState extends State<AppShell> {
                 final desktopPageIndices = Platform.isWindows
                     ? const [0, 1, 2, 4, 5, 6, 7, 8, 9]
                     : const [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-                final requestedPageIndex = _index == _moreIndex
-                    ? _networkIndex
-                    : _index;
+                final requestedPageIndex =
+                    _index == _moreIndex ? _networkIndex : _index;
                 final normalizedPageIndex =
                     desktopPageIndices.contains(requestedPageIndex)
                         ? requestedPageIndex
@@ -201,56 +200,64 @@ class _AppShellState extends State<AppShell> {
               }
 
               final mobileSelected = _index <= 2 ? _index : 3;
-              return Column(
-                children: [
-                  Expanded(child: IndexedStack(index: _index, children: pages)),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                    child: GlassPanel(
-                      borderRadius: 22,
-                      child: NavigationBar(
-                        selectedIndex: mobileSelected,
-                        onDestinationSelected: (value) {
-                          _selectPage(value == 3 ? _moreIndex : value);
-                        },
-                        destinations: const [
-                          NavigationDestination(
-                            icon: Icon(Icons.power_settings_new_rounded),
-                            selectedIcon: Icon(
-                              Icons.power_settings_new_rounded,
-                              color: OrexColors.copper,
+              return PopScope(
+                canPop: _index == 0,
+                onPopInvokedWithResult: (didPop, _) {
+                  if (didPop || _index == 0) return;
+                  _selectPage(0);
+                },
+                child: Column(
+                  children: [
+                    Expanded(
+                        child: IndexedStack(index: _index, children: pages)),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                      child: GlassPanel(
+                        borderRadius: 22,
+                        child: NavigationBar(
+                          selectedIndex: mobileSelected,
+                          onDestinationSelected: (value) {
+                            _selectPage(value == 3 ? _moreIndex : value);
+                          },
+                          destinations: const [
+                            NavigationDestination(
+                              icon: Icon(Icons.power_settings_new_rounded),
+                              selectedIcon: Icon(
+                                Icons.power_settings_new_rounded,
+                                color: OrexColors.copper,
+                              ),
+                              label: 'Главная',
                             ),
-                            label: 'Главная',
-                          ),
-                          NavigationDestination(
-                            icon: Icon(Icons.storage_rounded),
-                            selectedIcon: Icon(
-                              Icons.storage_rounded,
-                              color: OrexColors.copper,
+                            NavigationDestination(
+                              icon: Icon(Icons.storage_rounded),
+                              selectedIcon: Icon(
+                                Icons.storage_rounded,
+                                color: OrexColors.copper,
+                              ),
+                              label: 'Профили',
                             ),
-                            label: 'Профили',
-                          ),
-                          NavigationDestination(
-                            icon: Icon(Icons.route_rounded),
-                            selectedIcon: Icon(
-                              Icons.route_rounded,
-                              color: OrexColors.copper,
+                            NavigationDestination(
+                              icon: Icon(Icons.route_rounded),
+                              selectedIcon: Icon(
+                                Icons.route_rounded,
+                                color: OrexColors.copper,
+                              ),
+                              label: 'Подключение',
                             ),
-                            label: 'Подключение',
-                          ),
-                          NavigationDestination(
-                            icon: Icon(Icons.more_horiz_rounded),
-                            selectedIcon: Icon(
-                              Icons.more_horiz_rounded,
-                              color: OrexColors.copper,
+                            NavigationDestination(
+                              icon: Icon(Icons.more_horiz_rounded),
+                              selectedIcon: Icon(
+                                Icons.more_horiz_rounded,
+                                color: OrexColors.copper,
+                              ),
+                              label: 'Ещё',
                             ),
-                            label: 'Ещё',
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               );
             },
           ),

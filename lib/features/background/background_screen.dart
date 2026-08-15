@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../core/settings/connection_settings_controller.dart';
+import '../../platform/android/android_startup_controller.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/settings_section.dart';
 
@@ -20,7 +21,8 @@ class BackgroundScreen extends StatelessWidget {
         children: [
           const SettingsPageHeader(
             title: 'Фоновая работа',
-            subtitle: 'Частота статистики, уведомление и восстановление сервиса',
+            subtitle:
+                'Частота статистики, уведомление и восстановление сервиса',
             icon: Icons.battery_saver_rounded,
           ),
           const SizedBox(height: 22),
@@ -29,7 +31,8 @@ class BackgroundScreen extends StatelessWidget {
             subtitle: 'Редкое обновление меньше будит процессор.',
             children: [
               ListTile(
-                leading: const Icon(Icons.speed_rounded, color: OrexColors.copper),
+                leading:
+                    const Icon(Icons.speed_rounded, color: OrexColors.copper),
                 title: const Text('Интервал обновления'),
                 subtitle: Text('Каждые ${settings.statsIntervalSeconds} с'),
                 trailing: DropdownButton<int>(
@@ -54,7 +57,8 @@ class BackgroundScreen extends StatelessWidget {
                     color: OrexColors.copper,
                   ),
                   title: const Text('Скорость в уведомлении'),
-                  subtitle: const Text('Показывать текущие ↓/↑ без звука и вибрации'),
+                  subtitle:
+                      const Text('Показывать текущие ↓/↑ без звука и вибрации'),
                   value: settings.showNotificationSpeed,
                   onChanged: settings.setShowNotificationSpeed,
                 ),
@@ -65,9 +69,24 @@ class BackgroundScreen extends StatelessWidget {
                     color: OrexColors.copper,
                   ),
                   title: const Text('Ping в уведомлении'),
-                  subtitle: const Text('Показывать последнюю измеренную задержку профиля'),
+                  subtitle: const Text(
+                      'Показывать последнюю измеренную задержку профиля'),
                   value: settings.showNotificationPing,
                   onChanged: settings.setShowNotificationPing,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(
+                    Icons.tune_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Уведомление о работе VPN'),
+                  subtitle: const Text(
+                    'Включить или отключить канал через системные настройки Android. '
+                    'Во время VPN минимальный foreground-статус обязателен.',
+                  ),
+                  trailing: const Icon(Icons.open_in_new_rounded),
+                  onTap: () => _openAndroidNotificationSettings(context),
                 ),
               ],
             ],
@@ -138,14 +157,16 @@ class BackgroundScreen extends StatelessWidget {
             const SizedBox(height: 16),
             SettingsSection(
               title: 'Android service',
-              subtitle: 'OrexRay работает как foreground VPN-service, даже когда интерфейс закрыт.',
+              subtitle:
+                  'OrexRay работает как foreground VPN-service, даже когда интерфейс закрыт.',
               children: [
                 SwitchListTile(
                   secondary: const Icon(
                     Icons.flash_on_rounded,
                     color: OrexColors.copper,
                   ),
-                  title: const Text('Подключаться после запуска и перезагрузки'),
+                  title:
+                      const Text('Подключаться после запуска и перезагрузки'),
                   subtitle: const Text(
                     'В приложении — сразу после старта. После reboot Android — восстановить последний VPN, если разрешение VPN уже выдано.',
                   ),
@@ -159,7 +180,8 @@ class BackgroundScreen extends StatelessWidget {
                     color: OrexColors.copper,
                   ),
                   title: const Text('Восстанавливать после убийства процесса'),
-                  subtitle: const Text('Android повторно поднимет последнее активное подключение, когда это разрешено системой'),
+                  subtitle: const Text(
+                      'Android повторно поднимет последнее активное подключение, когда это разрешено системой'),
                   value: settings.restartServiceOnKill,
                   onChanged: settings.setRestartServiceOnKill,
                 ),
@@ -167,13 +189,25 @@ class BackgroundScreen extends StatelessWidget {
                 const ListTile(
                   leading: Icon(Icons.eco_outlined, color: OrexColors.copper),
                   title: Text('Энергосбережение'),
-                  subtitle: Text('В фоне Flutter-интерфейс не обновляется; работает только VPN-service и выбранный таймер статистики.'),
+                  subtitle: Text(
+                      'В фоне stats-loop полностью останавливается, если скорость в уведомлении выключена; VPN и watchdog продолжают работать.'),
                 ),
               ],
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+Future<void> _openAndroidNotificationSettings(BuildContext context) async {
+  try {
+    await AndroidStartupController.openNotificationSettings();
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Не удалось открыть настройки уведомлений')),
     );
   }
 }

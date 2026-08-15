@@ -28,7 +28,11 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Header(snapshot: snapshot, showStatus: wide),
+                  _Header(
+                    tunnel: tunnel,
+                    snapshot: snapshot,
+                    showStatus: wide,
+                  ),
                   const SizedBox(height: 20),
                   if (snapshot.errorMessage != null) ...[
                     _ErrorCard(message: snapshot.errorMessage!),
@@ -82,8 +86,13 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.snapshot, required this.showStatus});
+  const _Header({
+    required this.tunnel,
+    required this.snapshot,
+    required this.showStatus,
+  });
 
+  final TunnelController tunnel;
   final TunnelSnapshot snapshot;
   final bool showStatus;
 
@@ -109,18 +118,29 @@ class _Header extends StatelessWidget {
     );
 
     if (!showStatus) return brand;
-    final label = switch (snapshot.status) {
-      TunnelStatus.connected => 'Защищено',
-      TunnelStatus.connecting => 'Подключение',
-      TunnelStatus.disconnecting => 'Отключение',
-      TunnelStatus.error => 'Ошибка',
-      TunnelStatus.disconnected => 'Не подключено',
-    };
+    final profile = snapshot.profile;
+    final routeLatency =
+        profile == null ? null : tunnel.routeLatencyFor(profile.id);
+    final timedOut = snapshot.isConnected &&
+        (routeLatency?.status ?? profile?.pingStatus) == PingStatus.timeout;
+    final label = timedOut
+        ? 'Таймаут'
+        : switch (snapshot.status) {
+            TunnelStatus.connected => 'Защищено',
+            TunnelStatus.connecting => 'Подключение',
+            TunnelStatus.disconnecting => 'Отключение',
+            TunnelStatus.error => 'Ошибка',
+            TunnelStatus.disconnected => 'Не подключено',
+          };
     return Row(
       children: [
         Expanded(child: brand),
         const SizedBox(width: 16),
-        StatusPill(label: label, active: snapshot.isConnected),
+        StatusPill(
+          label: label,
+          active: snapshot.isConnected && !timedOut,
+          color: timedOut ? OrexColors.danger : null,
+        ),
       ],
     );
   }
@@ -170,7 +190,8 @@ class _ModeSelector extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
             child: Row(
               children: [
-                const Icon(Icons.route_rounded, size: 19, color: OrexColors.copper),
+                const Icon(Icons.route_rounded,
+                    size: 19, color: OrexColors.copper),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -179,7 +200,8 @@ class _ModeSelector extends StatelessWidget {
                   ),
                 ),
                 if (!tunnel.canChangeMode)
-                  Text('Сначала отключитесь', style: Theme.of(context).textTheme.bodySmall),
+                  Text('Сначала отключитесь',
+                      style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),
@@ -242,7 +264,8 @@ class _ModeSelector extends StatelessWidget {
           const SizedBox(height: 9),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Text(tunnel.mode.description, style: Theme.of(context).textTheme.bodySmall),
+            child: Text(tunnel.mode.description,
+                style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
       ),
@@ -365,7 +388,9 @@ class _ConnectButton extends StatelessWidget {
                       ),
                     )
                   : Icon(
-                      active ? Icons.power_settings_new_rounded : Icons.power_rounded,
+                      active
+                          ? Icons.power_settings_new_rounded
+                          : Icons.power_rounded,
                       color: OrexColors.cream,
                       size: 68,
                     ),
@@ -416,7 +441,9 @@ class _MobileStatusCard extends StatelessWidget {
                   label: 'Ping',
                   value: ping == null ? '—' : '$ping мс',
                   busy: tunnel.refreshingLatency,
-                  onTap: snapshot.profile == null ? null : tunnel.refreshSelectedLatency,
+                  onTap: snapshot.profile == null
+                      ? null
+                      : tunnel.refreshSelectedLatency,
                 ),
               ),
             ],
@@ -427,7 +454,8 @@ class _MobileStatusCard extends StatelessWidget {
               const Icon(Icons.data_usage_rounded, color: OrexColors.copper),
               const SizedBox(width: 10),
               Expanded(
-                child: Text('Трафик', style: Theme.of(context).textTheme.bodySmall),
+                child: Text('Трафик',
+                    style: Theme.of(context).textTheme.bodySmall),
               ),
               Flexible(
                 child: Text(
@@ -522,9 +550,10 @@ class _QuickInfo extends StatelessWidget {
                       color: Colors.transparent,
                       child: InkWell(
                         borderRadius: BorderRadius.circular(16),
-                        onTap: tunnel.canChangeTarget && tunnel.targets.length > 1
-                            ? () => _showTargetPicker(context)
-                            : null,
+                        onTap:
+                            tunnel.canChangeTarget && tunnel.targets.length > 1
+                                ? () => _showTargetPicker(context)
+                                : null,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 2),
                           child: Row(
@@ -547,18 +576,22 @@ class _QuickInfo extends StatelessWidget {
                                             profile.name,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context).textTheme.titleMedium,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium,
                                           ),
                                         ),
                                         if (tunnel.targets.length > 1)
-                                          const Icon(Icons.keyboard_arrow_down_rounded),
+                                          const Icon(Icons
+                                              .keyboard_arrow_down_rounded),
                                       ],
                                     ),
                                     Text(
                                       profile.endpoint,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.bodySmall,
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
                                     ),
                                   ],
                                 ),
@@ -577,7 +610,9 @@ class _QuickInfo extends StatelessWidget {
                     const SizedBox(height: 12),
                     _InfoRow(
                       label: 'Задержка',
-                      value: profile.latencyMs == null ? '—' : '${profile.latencyMs} мс',
+                      value: profile.latencyMs == null
+                          ? '—'
+                          : '${profile.latencyMs} мс',
                     ),
                   ],
                 ),
@@ -638,7 +673,8 @@ class _NoProfileCard extends StatelessWidget {
       children: [
         const SquirrelMascot(size: 70, compact: true),
         const SizedBox(height: 14),
-        Text('Нет активного профиля', style: Theme.of(context).textTheme.titleMedium),
+        Text('Нет активного профиля',
+            style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 5),
         Text(
           'Откройте вкладку «Профили» и импортируйте или создайте VLESS-профиль',
@@ -695,7 +731,9 @@ class _TrafficCard extends StatelessWidget {
               label: 'Ping',
               value: ping == null ? '—' : '$ping мс',
               busy: tunnel.refreshingLatency,
-              onTap: snapshot.profile == null ? null : tunnel.refreshSelectedLatency,
+              onTap: snapshot.profile == null
+                  ? null
+                  : tunnel.refreshSelectedLatency,
             ),
           ),
         ],

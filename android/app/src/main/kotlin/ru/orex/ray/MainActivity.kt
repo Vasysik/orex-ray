@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.VpnService
 import android.os.Build
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
@@ -45,6 +46,7 @@ class MainActivity : FlutterActivity() {
         val statsIntervalSeconds: Int,
         val showNotificationSpeed: Boolean,
         val showNotificationPing: Boolean,
+        val statsUiActive: Boolean,
         val restartServiceOnKill: Boolean,
         val appRoutingMode: String,
         val appPackages: List<String>,
@@ -117,6 +119,8 @@ class MainActivity : FlutterActivity() {
                                 call.argument<Boolean>("showNotificationSpeed") ?: true,
                             showNotificationPing =
                                 call.argument<Boolean>("showNotificationPing") ?: true,
+                            statsUiActive =
+                                call.argument<Boolean>("statsUiActive") ?: false,
                             restartServiceOnKill =
                                 call.argument<Boolean>("restartServiceOnKill") ?: true,
                             appRoutingMode =
@@ -169,6 +173,41 @@ class MainActivity : FlutterActivity() {
                             }
                     }
 
+                    "updateRuntimeSettings" -> {
+                        runCatching {
+                            updateRuntimeSettings(
+                                statsIntervalSeconds = call.argument<Int>("statsIntervalSeconds")
+                                    ?: 2,
+                                showNotificationSpeed =
+                                    call.argument<Boolean>("showNotificationSpeed") ?: true,
+                                showNotificationPing =
+                                    call.argument<Boolean>("showNotificationPing") ?: true,
+                            )
+                        }
+                            .onSuccess { result.success(null) }
+                            .onFailure { error ->
+                                result.error(
+                                    "runtime_settings_update_failed",
+                                    error.message ?: error.javaClass.simpleName,
+                                    null,
+                                )
+                            }
+                    }
+
+                    "setStatsUiActive" -> {
+                        runCatching {
+                            setStatsUiActive(call.arguments as? Boolean ?: false)
+                        }
+                            .onSuccess { result.success(null) }
+                            .onFailure { error ->
+                                result.error(
+                                    "stats_consumer_update_failed",
+                                    error.message ?: error.javaClass.simpleName,
+                                    null,
+                                )
+                            }
+                    }
+
                     "status" -> result.success(OrexRayRuntimeStateStore.load(this))
                     "setAutoConnectOnBoot" -> {
                         OrexRayStartupStore.setAutoConnectOnBoot(
@@ -176,6 +215,17 @@ class MainActivity : FlutterActivity() {
                             call.arguments as? Boolean ?: false,
                         )
                         result.success(null)
+                    }
+                    "openNotificationSettings" -> {
+                        runCatching { openNotificationSettings() }
+                            .onSuccess { result.success(null) }
+                            .onFailure { error ->
+                                result.error(
+                                    "notification_settings_failed",
+                                    error.message ?: error.javaClass.simpleName,
+                                    null,
+                                )
+                            }
                     }
                     "diagnostics" -> result.success(OrexRayDiagnosticsStore.snapshot())
                     "assetDirectory" -> result.success(
@@ -467,6 +517,10 @@ class MainActivity : FlutterActivity() {
                 request.showNotificationPing,
             )
             .putExtra(
+                OrexRayVpnService.EXTRA_STATS_UI_ACTIVE,
+                request.statsUiActive,
+            )
+            .putExtra(
                 OrexRayVpnService.EXTRA_RESTART_SERVICE,
                 request.restartServiceOnKill,
             )
@@ -496,6 +550,50 @@ class MainActivity : FlutterActivity() {
             )
             .putExtra(OrexRayVpnService.EXTRA_LATENCY_MS, latencyMs ?: -1)
         startService(intent)
+    }
+
+    private fun updateRuntimeSettings(
+        statsIntervalSeconds: Int,
+        showNotificationSpeed: Boolean,
+        showNotificationPing: Boolean,
+    ) {
+        val intent = Intent(this, OrexRayVpnService::class.java)
+            .setAction(OrexRayVpnService.ACTION_UPDATE_RUNTIME_SETTINGS)
+            .putExtra(
+                OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
+                statsIntervalSeconds,
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
+                showNotificationSpeed,
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
+                showNotificationPing,
+            )
+        startService(intent)
+    }
+
+    private fun setStatsUiActive(active: Boolean) {
+        val intent = Intent(this, OrexRayVpnService::class.java)
+            .setAction(OrexRayVpnService.ACTION_SET_STATS_UI_ACTIVE)
+            .putExtra(OrexRayVpnService.EXTRA_STATS_UI_ACTIVE, active)
+        startService(intent)
+    }
+
+    private fun openNotificationSettings() {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                .putExtra(
+                    Settings.EXTRA_CHANNEL_ID,
+                    OrexRayVpnService.NOTIFICATION_CHANNEL_ID,
+                )
+        } else {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        }
+        startActivity(intent)
     }
 
     private fun stopCoreService() {

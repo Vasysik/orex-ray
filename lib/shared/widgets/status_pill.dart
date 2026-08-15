@@ -7,20 +7,23 @@ class StatusPill extends StatelessWidget {
     super.key,
     required this.label,
     required this.active,
+    this.color,
   });
 
   final String label;
   final bool active;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? OrexColors.online : OrexColors.copper;
+    final resolvedColor =
+        color ?? (active ? OrexColors.online : OrexColors.copper);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: resolvedColor.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
+        border: Border.all(color: resolvedColor.withValues(alpha: 0.35)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -28,13 +31,16 @@ class StatusPill extends StatelessWidget {
           Container(
             width: 7,
             height: 7,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: resolvedColor,
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: 8),
           Text(
             label,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: color,
+                  color: resolvedColor,
                   fontWeight: FontWeight.w700,
                 ),
           ),

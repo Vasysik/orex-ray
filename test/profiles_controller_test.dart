@@ -8,12 +8,10 @@ import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  const link =
-      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+  const link = 'vless://11111111-1111-4111-8111-111111111111@example.com:443'
       '?encryption=none&security=none&type=tcp#Test';
 
-  test('import does not trigger automatic latency refresh',
-      () async {
+  test('import does not trigger automatic latency refresh', () async {
     SharedPreferences.setMockInitialValues({});
     final probe = _CountingLatencyProbe();
     final profiles = await ProfilesController.load(
@@ -26,12 +24,13 @@ void main() {
 
     expect(probe.calls, 0);
     expect(profiles.profiles.single.latencyMs, isNull);
+    expect(profiles.profiles.single.pingStatus, PingStatus.unknown);
   });
 
   test('in-flight latency result is ignored after controller disposal',
       () async {
     SharedPreferences.setMockInitialValues({});
-    final completer = Completer<int?>();
+    final completer = Completer<LatencyProbeResult>();
     final probe = _ControlledLatencyProbe(completer);
     final profiles = await ProfilesController.load(
       latencyProbe: probe,
@@ -42,7 +41,7 @@ void main() {
     final refresh = profiles.refreshLatency(profile.id);
     await Future<void>.delayed(Duration.zero);
     profiles.dispose();
-    completer.complete(52);
+    completer.complete(const LatencyProbeResult.success(52));
 
     await expectLater(refresh, completes);
   });
@@ -60,6 +59,25 @@ void main() {
 
     await Future<void>.delayed(const Duration(milliseconds: 850));
     expect(probe.calls, 0);
+  });
+
+  test('timeout ping status persists across profile reload', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load(
+      latencyProbe: _FixedLatencyProbe(const LatencyProbeResult.timeout()),
+    );
+    final profile = await profiles.importVlessLink(link);
+
+    await profiles.refreshLatency(profile.id);
+
+    expect(profiles.profiles.single.latencyMs, isNull);
+    expect(profiles.profiles.single.pingStatus, PingStatus.timeout);
+    profiles.dispose();
+
+    final restored = await ProfilesController.load();
+    addTearDown(restored.dispose);
+    expect(restored.profiles.single.latencyMs, isNull);
+    expect(restored.profiles.single.pingStatus, PingStatus.timeout);
   });
 
   test('reimport preserves a legacy ID for the same connection', () async {
@@ -130,7 +148,8 @@ void main() {
     await profiles.delete(fallback.id);
 
     expect(
-      profiles.balancers.singleWhere((item) => item.id == balancer.id)
+      profiles.balancers
+          .singleWhere((item) => item.id == balancer.id)
           .fallbackTarget,
       isNull,
     );
@@ -185,17 +204,26 @@ class _CountingLatencyProbe extends LatencyProbe {
   int calls = 0;
 
   @override
-  Future<int?> measure(TunnelProfile profile) async {
+  Future<LatencyProbeResult> measure(TunnelProfile profile) async {
     calls += 1;
-    return 42;
+    return const LatencyProbeResult.success(42);
   }
 }
 
 class _ControlledLatencyProbe extends LatencyProbe {
   _ControlledLatencyProbe(this.completer);
 
-  final Completer<int?> completer;
+  final Completer<LatencyProbeResult> completer;
 
   @override
-  Future<int?> measure(TunnelProfile profile) => completer.future;
+  Future<LatencyProbeResult> measure(TunnelProfile profile) => completer.future;
+}
+
+class _FixedLatencyProbe extends LatencyProbe {
+  const _FixedLatencyProbe(this.result);
+
+  final LatencyProbeResult result;
+
+  @override
+  Future<LatencyProbeResult> measure(TunnelProfile profile) async => result;
 }

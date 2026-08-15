@@ -8,4 +8,8 @@ class AndroidStartupController {
   static Future<void> setAutoConnectOnBoot(bool enabled) async {
     await _channel.invokeMethod<void>('setAutoConnectOnBoot', enabled);
   }
+
+  static Future<void> openNotificationSettings() async {
+    await _channel.invokeMethod<void>('openNotificationSettings');
+  }
 }

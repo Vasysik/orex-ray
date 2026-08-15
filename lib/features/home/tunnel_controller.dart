@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/diagnostics/tunnel_diagnostics.dart';
 import '../../core/egress/egress_identity.dart';
+import '../../core/egress/exit_location_refresh_coordinator.dart';
+import '../../core/profiles/latency_probe.dart';
 import '../../core/profiles/profiles_controller.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
@@ -17,37 +19,58 @@ class TunnelController extends ChangeNotifier {
     required TunnelEngine engine,
     required ProfilesController profiles,
     required ConnectionSettingsController settings,
+    ExitLocationRefreshPolicy? egressRefreshPolicy,
+    TunnelRouteLatencyProbe? routeLatencyProbe,
   })  : _engine = engine,
         _profiles = profiles,
         _settings = settings,
+        _routeLatencyProbe = routeLatencyProbe ?? TunnelRouteLatencyProbe(),
         _engineSnapshot = engine.current {
+    _egressRefreshCoordinator = ExitLocationRefreshCoordinator(
+      policy: egressRefreshPolicy ??
+          ExitLocationRefreshPolicy.forOperatingSystem(
+              Platform.operatingSystem),
+      activeTargetId: () =>
+          _engineSnapshot.isConnected ? _engineSnapshot.profile?.id : null,
+      canRefresh: _canRefreshEgressTarget,
+      refresh: _refreshEgressIdentity,
+    );
     _engineSubscription = _engine.snapshots.listen((value) {
       if (_closing) return;
       final becameConnected = value.isConnected && !_engineSnapshot.isConnected;
       _engineSnapshot = value;
+      _clearRouteLatencyIfStale();
       if (!value.isConnected && !value.isBusy) {
         _lastRuntimeMetadataKey = null;
       }
       if (value.isConnected) {
-        _startEgressRefreshLoop();
+        _egressRefreshCoordinator.startPeriodic();
       } else {
-        _stopEgressRefreshLoop();
+        _egressRefreshCoordinator.stopPeriodic();
       }
-      if (becameConnected) unawaited(refreshEgressIdentity(force: true));
+      if (becameConnected) {
+        final trigger = _hasConnectedBefore
+            ? ExitLocationRefreshTrigger.reconnected
+            : ExitLocationRefreshTrigger.connected;
+        _hasConnectedBefore = true;
+        unawaited(_requestEgressRefresh(trigger));
+      }
       notifyListeners();
     });
-    _profiles.addListener(_onDependencyChanged);
-    _settings.addListener(_onDependencyChanged);
+    _profiles.addListener(_onProfilesChanged);
+    _settings.addListener(_onSettingsChanged);
     unawaited(_loadEgressCache());
     if (_engineSnapshot.isConnected) {
-      _startEgressRefreshLoop();
-      unawaited(refreshEgressIdentity(force: true));
+      _hasConnectedBefore = true;
+      _egressRefreshCoordinator.startPeriodic();
+      unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.connected));
     }
   }
 
   final TunnelEngine _engine;
   final ProfilesController _profiles;
   final ConnectionSettingsController _settings;
+  final TunnelRouteLatencyProbe _routeLatencyProbe;
   late final StreamSubscription<TunnelSnapshot> _engineSubscription;
   TunnelSnapshot _engineSnapshot;
   Future<void>? _shutdownFuture;
@@ -56,9 +79,9 @@ class TunnelController extends ChangeNotifier {
   bool _dependenciesDetached = false;
   bool _closing = false;
   bool _disposed = false;
+  bool _hasConnectedBefore = false;
   String? _lastRuntimeMetadataKey;
   static const _egressCacheKey = 'orex_ray_egress_identity_v1';
-  static const _egressRefreshInterval = Duration(minutes: 5);
   static const _egressRetryDelays = <Duration>[
     Duration.zero,
     Duration(seconds: 1),
@@ -67,8 +90,9 @@ class TunnelController extends ChangeNotifier {
   ];
   final Map<String, EgressIdentity> _egressIdentities = {};
   final ValueNotifier<int> _egressRevision = ValueNotifier<int>(0);
-  bool _egressRefreshInFlight = false;
-  Timer? _egressRefreshTimer;
+  late final ExitLocationRefreshCoordinator _egressRefreshCoordinator;
+  LatencyProbeResult? _activeRouteLatency;
+  String? _activeRouteLatencyTargetId;
 
   Set<ConnectionMode> get supportedModes => {
         for (final mode in _settings.supportedModes)
@@ -101,6 +125,14 @@ class TunnelController extends ChangeNotifier {
   EgressIdentity? egressIdentityFor(String targetId) =>
       _egressIdentities[targetId];
 
+  /// The most recent manual end-to-end measurement for the active Xray route.
+  /// It includes the selected cascade/balancer and is not persisted as a
+  /// profile's direct TCP reachability result.
+  LatencyProbeResult? routeLatencyFor(String targetId) =>
+      _activeRouteLatencyTargetId == targetId && _engineSnapshot.isConnected
+          ? _activeRouteLatency
+          : null;
+
   Listenable get egressChanges => _egressRevision;
 
   List<TunnelTarget> get targets => _profiles.targets;
@@ -116,8 +148,7 @@ class TunnelController extends ChangeNotifier {
 
     final activeId = _engineSnapshot.profile?.id;
     final selectedId = _profiles.selectedTarget?.id;
-    if (selectedId == id &&
-        (!_engineSnapshot.isConnected || activeId == id)) {
+    if (selectedId == id && (!_engineSnapshot.isConnected || activeId == id)) {
       return;
     }
 
@@ -145,6 +176,23 @@ class TunnelController extends ChangeNotifier {
     for (final profile in target.profiles) {
       await _profiles.refreshLatency(profile.id);
     }
+    await _refreshActiveRouteLatency();
+    unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.manualPing));
+  }
+
+  Future<void> refreshProfileLatency(String profileId) async {
+    await _profiles.refreshLatency(profileId);
+    final active = _engineSnapshot.profile;
+    if (active?.profiles.any((profile) => profile.id == profileId) ?? false) {
+      await _refreshActiveRouteLatency();
+      unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.manualPing));
+    }
+  }
+
+  Future<void> refreshAllLatencies() async {
+    await _profiles.refreshAllLatencies();
+    await _refreshActiveRouteLatency();
+    unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.manualPing));
   }
 
   Future<void> setMode(ConnectionMode mode) async {
@@ -194,7 +242,9 @@ class TunnelController extends ChangeNotifier {
       await recovery.recover(reason);
       _syncFromEngine();
       if (_engineSnapshot.isConnected) {
-        unawaited(refreshEgressIdentity(force: true));
+        unawaited(
+          _requestEgressRefresh(ExitLocationRefreshTrigger.networkRecovered),
+        );
       }
     }
   }
@@ -238,61 +288,81 @@ class TunnelController extends ChangeNotifier {
     );
   }
 
-  Future<void> refreshEgressIdentity({bool force = false}) async {
-    if (_egressRefreshInFlight || !_engineSnapshot.isConnected) return;
+  /// Requests a manual exit-location refresh for the currently active target.
+  /// The coordinator owns de-duplication and platform policy.
+  Future<void> refreshEgressIdentity() =>
+      _requestEgressRefresh(ExitLocationRefreshTrigger.diagnostics);
+
+  Future<void> _requestEgressRefresh(ExitLocationRefreshTrigger trigger) {
+    final targetId = _engineSnapshot.profile?.id;
+    if (targetId == null) return Future<void>.value();
+    return _egressRefreshCoordinator.request(targetId, trigger: trigger);
+  }
+
+  Future<void> _refreshEgressIdentity(
+    String targetId,
+    ExitLocationRefreshTrigger trigger,
+  ) async {
     final target = _engineSnapshot.profile;
-    if (target == null) return;
-    final cached = _egressIdentities[target.id];
-    if (!force &&
-        cached != null &&
-        DateTime.now().difference(cached.checkedAt) <
-            _egressRefreshInterval) {
-      return;
-    }
-    if (_engineSnapshot.mode == ConnectionMode.vpnTun &&
-        !_settings.localProxyInVpn) {
-      return;
-    }
-
-    _egressRefreshInFlight = true;
+    if (target == null || target.id != targetId) return;
     Object? lastError;
-    try {
-      _logDiagnostic(
-        'Egress identity refresh started: mode=${_engineSnapshot.mode.storageValue}.',
-      );
-      for (var attempt = 0; attempt < _egressRetryDelays.length; attempt++) {
-        if (!_isEgressTargetActive(target.id)) return;
-        final delay = _egressRetryDelays[attempt];
-        if (delay > Duration.zero) await Future<void>.delayed(delay);
-        if (!_isEgressTargetActive(target.id)) return;
+    _logDiagnostic(
+      'Egress identity refresh started: trigger=${trigger.name}, '
+      'mode=${_engineSnapshot.mode.storageValue}.',
+    );
+    for (var attempt = 0; attempt < _egressRetryDelays.length; attempt++) {
+      if (!_canRefreshEgressTarget(target.id, trigger)) return;
+      final delay = _egressRetryDelays[attempt];
+      if (delay > Duration.zero) await Future<void>.delayed(delay);
+      if (!_canRefreshEgressTarget(target.id, trigger)) return;
 
-        try {
-          await _waitForEgressProxy();
-          final identity = await _probeEgressIdentity();
-          if (!_isEgressTargetActive(target.id)) return;
-          _egressIdentities[target.id] = identity;
-          await _saveEgressCache();
-          _logDiagnostic(
-            'Egress identity updated: country=${identity.countryCode}, '
-            'WARP=${identity.warp ? 'on' : 'off'}.',
-          );
-          if (!_closing) _egressRevision.value++;
-          return;
-        } catch (error) {
-          lastError = error;
-          _logDiagnostic(
-            'Egress identity attempt ${attempt + 1}/${_egressRetryDelays.length} '
-            'failed: $error',
-          );
-        }
+      try {
+        await _waitForEgressProxy();
+        final identity = await _probeEgressIdentity();
+        if (!_canRefreshEgressTarget(target.id, trigger)) return;
+        _egressIdentities[target.id] = identity;
+        await _saveEgressCache();
+        _logDiagnostic(
+          'Egress identity updated: country=${identity.countryCode}, '
+          'WARP=${identity.warp ? 'on' : 'off'}.',
+        );
+        if (!_closing) _egressRevision.value++;
+        return;
+      } catch (error) {
+        lastError = error;
+        _logDiagnostic(
+          'Egress identity attempt ${attempt + 1}/${_egressRetryDelays.length} '
+          'failed: $error',
+        );
       }
-      _logDiagnostic(
-        'Egress identity refresh failed after ${_egressRetryDelays.length} '
-        'attempts: ${lastError ?? 'unknown error'}. A periodic retry is scheduled.',
-      );
-    } finally {
-      _egressRefreshInFlight = false;
     }
+    _logDiagnostic(
+      'Egress identity refresh failed after ${_egressRetryDelays.length} '
+      'attempts: ${lastError ?? 'unknown error'}.',
+    );
+  }
+
+  Future<void> _refreshActiveRouteLatency() async {
+    final target = _engineSnapshot.profile;
+    if (_closing ||
+        !_engineSnapshot.isConnected ||
+        target == null ||
+        (_engineSnapshot.mode == ConnectionMode.vpnTun &&
+            !_settings.localProxyInVpn)) {
+      return;
+    }
+
+    final result = await _routeLatencyProbe.measure(
+      httpPort: _settings.httpPort,
+    );
+    if (_closing ||
+        !_engineSnapshot.isConnected ||
+        _engineSnapshot.profile?.id != target.id) {
+      return;
+    }
+    _activeRouteLatencyTargetId = target.id;
+    _activeRouteLatency = result;
+    notifyListeners();
   }
 
   Future<void> _waitForEgressProxy({int attempts = 8}) async {
@@ -330,7 +400,8 @@ class TunnelController extends ChangeNotifier {
       final request = await client
           .getUrl(Uri.https('www.cloudflare.com', '/cdn-cgi/trace'))
           .timeout(const Duration(seconds: 8));
-      final response = await request.close().timeout(const Duration(seconds: 8));
+      final response =
+          await request.close().timeout(const Duration(seconds: 8));
       if (response.statusCode != HttpStatus.ok) {
         throw HttpException(
           'Cloudflare trace returned HTTP ${response.statusCode}',
@@ -355,23 +426,15 @@ class TunnelController extends ChangeNotifier {
     }
   }
 
-  bool _isEgressTargetActive(String targetId) {
+  bool _canRefreshEgressTarget(
+    String targetId,
+    ExitLocationRefreshTrigger trigger,
+  ) {
     return !_closing &&
         _engineSnapshot.isConnected &&
-        _engineSnapshot.profile?.id == targetId;
-  }
-
-  void _startEgressRefreshLoop() {
-    if (!Platform.isWindows || _egressRefreshTimer != null) return;
-    _egressRefreshTimer = Timer.periodic(
-      _egressRefreshInterval,
-      (_) => unawaited(refreshEgressIdentity(force: true)),
-    );
-  }
-
-  void _stopEgressRefreshLoop() {
-    _egressRefreshTimer?.cancel();
-    _egressRefreshTimer = null;
+        _engineSnapshot.profile?.id == targetId &&
+        !(_engineSnapshot.mode == ConnectionMode.vpnTun &&
+            !_settings.localProxyInVpn);
   }
 
   void _logDiagnostic(String message) {
@@ -389,7 +452,9 @@ class TunnelController extends ChangeNotifier {
       if (decoded is! Map) return;
       for (final entry in decoded.entries) {
         final identity = EgressIdentity.fromJson(entry.value);
-        if (identity != null) _egressIdentities[entry.key.toString()] = identity;
+        if (identity != null) {
+          _egressIdentities[entry.key.toString()] = identity;
+        }
       }
       if (!_closing) _egressRevision.value++;
     } catch (_) {
@@ -401,7 +466,10 @@ class TunnelController extends ChangeNotifier {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(
       _egressCacheKey,
-      jsonEncode({for (final entry in _egressIdentities.entries) entry.key: entry.value.toJson()}),
+      jsonEncode({
+        for (final entry in _egressIdentities.entries)
+          entry.key: entry.value.toJson()
+      }),
     );
   }
 
@@ -409,7 +477,7 @@ class TunnelController extends ChangeNotifier {
 
   Future<void> _shutdown() async {
     _closing = true;
-    _stopEgressRefreshLoop();
+    _egressRefreshCoordinator.dispose();
     _detachDependencies();
     await _cancelEngineSubscription();
     try {
@@ -421,7 +489,7 @@ class TunnelController extends ChangeNotifier {
 
   Future<void> _disposeWithoutStopping() async {
     _closing = true;
-    _stopEgressRefreshLoop();
+    _egressRefreshCoordinator.dispose();
     _detachDependencies();
     await _cancelEngineSubscription();
     await _disposeEngine();
@@ -432,19 +500,34 @@ class TunnelController extends ChangeNotifier {
 
   Future<void> _disposeEngine() => _disposeFuture ??= _engine.dispose();
 
+  Future<void> setStatsUiActive(bool active) async {
+    if (_closing || _engine is! TunnelStatsConsumerSink) return;
+    await (_engine as TunnelStatsConsumerSink).setStatsUiActive(active);
+  }
+
   void _syncFromEngine() {
     _engineSnapshot = _engine.current;
+    _clearRouteLatencyIfStale();
     if (!_closing) notifyListeners();
+  }
+
+  void _clearRouteLatencyIfStale() {
+    if (_engineSnapshot.isConnected &&
+        _engineSnapshot.profile?.id == _activeRouteLatencyTargetId) {
+      return;
+    }
+    _activeRouteLatency = null;
+    _activeRouteLatencyTargetId = null;
   }
 
   void _detachDependencies() {
     if (_dependenciesDetached) return;
     _dependenciesDetached = true;
-    _profiles.removeListener(_onDependencyChanged);
-    _settings.removeListener(_onDependencyChanged);
+    _profiles.removeListener(_onProfilesChanged);
+    _settings.removeListener(_onSettingsChanged);
   }
 
-  void _onDependencyChanged() {
+  void _onProfilesChanged() {
     if (_closing) return;
     final active = _engineSnapshot.profile;
     if ((_engineSnapshot.isConnected || _engineSnapshot.isBusy) &&
@@ -456,14 +539,33 @@ class TunnelController extends ChangeNotifier {
         if (metadataKey != _lastRuntimeMetadataKey) {
           _lastRuntimeMetadataKey = metadataKey;
           unawaited(
-            (_engine as TunnelRuntimeMetadataSink).updateTargetMetadata(refreshed),
+            (_engine as TunnelRuntimeMetadataSink)
+                .updateTargetMetadata(refreshed),
           );
+          if (_engineSnapshot.isConnected) {
+            unawaited(
+              _requestEgressRefresh(ExitLocationRefreshTrigger.profileChanged),
+            );
+          }
         }
       }
     }
     notifyListeners();
   }
 
+  void _onSettingsChanged() {
+    if (_closing) return;
+    if (_engineSnapshot.isConnected && _engine is TunnelRuntimeSettingsSink) {
+      unawaited(
+        (_engine as TunnelRuntimeSettingsSink).updateRuntimeSettings(
+          statsIntervalSeconds: _settings.statsIntervalSeconds,
+          showNotificationSpeed: _settings.showNotificationSpeed,
+          showNotificationPing: _settings.showNotificationPing,
+        ),
+      );
+    }
+    notifyListeners();
+  }
 
   String _runtimeMetadataKey(TunnelTarget target) =>
       '${target.id}\u0000${target.name}\u0000${target.latencyMs ?? -1}';
@@ -473,7 +575,7 @@ class TunnelController extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     _closing = true;
-    _stopEgressRefreshLoop();
+    _egressRefreshCoordinator.dispose();
     _detachDependencies();
     _egressRevision.dispose();
     unawaited(_shutdownFuture ??= _disposeWithoutStopping());

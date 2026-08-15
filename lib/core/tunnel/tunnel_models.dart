@@ -22,7 +22,8 @@ enum ConnectionMode {
       };
 
   String get description => switch (this) {
-        ConnectionMode.vpnTun => 'Весь трафик устройства через защищённый туннель',
+        ConnectionMode.vpnTun =>
+          'Весь трафик устройства через защищённый туннель',
         ConnectionMode.systemProxy =>
           'Приложения Windows, использующие системный прокси',
         ConnectionMode.localProxy =>
@@ -63,15 +64,39 @@ enum BalancerStrategy {
       };
 
   String get description => switch (this) {
-        BalancerStrategy.random => 'Каждое новое соединение получает случайный доступный сервер',
+        BalancerStrategy.random =>
+          'Каждое новое соединение получает случайный доступный сервер',
         BalancerStrategy.roundRobin => 'Серверы используются по кругу',
-        BalancerStrategy.leastPing => 'Xray выбирает сервер с минимальной измеренной задержкой',
+        BalancerStrategy.leastPing =>
+          'Xray выбирает сервер с минимальной измеренной задержкой',
       };
 
   static BalancerStrategy fromStorageValue(String? value) => switch (value) {
         'roundRobin' => BalancerStrategy.roundRobin,
         'leastPing' => BalancerStrategy.leastPing,
         _ => BalancerStrategy.random,
+      };
+}
+
+/// Result of the most recent manual reachability check for a profile.
+///
+/// `unknown` is the initial state. A successful TCP handshake has a latency
+/// value, while `timeout` and `unavailable` deliberately do not: treating both
+/// failures as a missing number used to make their UI indistinguishable.
+enum PingStatus {
+  unknown,
+  success,
+  timeout,
+  unavailable;
+
+  String get storageValue => name;
+
+  static PingStatus? fromStorageValue(String? value) => switch (value) {
+        'unknown' => PingStatus.unknown,
+        'success' => PingStatus.success,
+        'timeout' => PingStatus.timeout,
+        'unavailable' => PingStatus.unavailable,
+        _ => null,
       };
 }
 
@@ -99,7 +124,9 @@ class TunnelProfile {
     this.allowInsecure = false,
     this.sourceLink = '',
     this.latencyMs,
-  });
+    PingStatus? pingStatus,
+  }) : pingStatus = pingStatus ??
+            (latencyMs == null ? PingStatus.unknown : PingStatus.success);
 
   final String id;
   final String name;
@@ -123,6 +150,7 @@ class TunnelProfile {
   final bool allowInsecure;
   final String sourceLink;
   final int? latencyMs;
+  final PingStatus pingStatus;
 
   String get endpoint => '$address:$port';
 
@@ -167,8 +195,16 @@ class TunnelProfile {
     bool? allowInsecure,
     String? sourceLink,
     int? latencyMs,
+    PingStatus? pingStatus,
     bool clearLatency = false,
   }) {
+    final nextLatency = clearLatency ? null : (latencyMs ?? this.latencyMs);
+    final nextPingStatus = pingStatus ??
+        (clearLatency
+            ? PingStatus.unknown
+            : latencyMs != null
+                ? PingStatus.success
+                : this.pingStatus);
     return TunnelProfile(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -191,7 +227,8 @@ class TunnelProfile {
       alpn: alpn ?? this.alpn,
       allowInsecure: allowInsecure ?? this.allowInsecure,
       sourceLink: sourceLink ?? this.sourceLink,
-      latencyMs: clearLatency ? null : (latencyMs ?? this.latencyMs),
+      latencyMs: nextLatency,
+      pingStatus: nextPingStatus,
     );
   }
 
@@ -218,6 +255,7 @@ class TunnelProfile {
         'allowInsecure': allowInsecure,
         'sourceLink': sourceLink,
         'latencyMs': latencyMs,
+        'pingStatus': pingStatus.storageValue,
       };
 
   factory TunnelProfile.fromJson(Map<String, Object?> json) {
@@ -252,6 +290,16 @@ class TunnelProfile {
         ? rawAlpn.whereType<String>().toList(growable: false)
         : const <String>[];
     final latency = json['latencyMs'];
+    final parsedLatency =
+        latency is num && latency >= 0 ? latency.toInt() : null;
+    final storedPingStatus = PingStatus.fromStorageValue(
+      json['pingStatus'] as String?,
+    );
+    final pingStatus = storedPingStatus == PingStatus.success &&
+            parsedLatency == null
+        ? PingStatus.unknown
+        : storedPingStatus ??
+            (parsedLatency == null ? PingStatus.unknown : PingStatus.success);
 
     return TunnelProfile(
       id: id,
@@ -277,7 +325,8 @@ class TunnelProfile {
       alpn: alpn,
       allowInsecure: boolValue('allowInsecure'),
       sourceLink: stringValue('sourceLink'),
-      latencyMs: latency is num ? latency.toInt() : null,
+      latencyMs: pingStatus == PingStatus.success ? parsedLatency : null,
+      pingStatus: pingStatus,
     );
   }
 }
@@ -356,7 +405,10 @@ class BalancerProfile {
     final name = (json['name'] as String? ?? '').trim();
     final rawMembers = json['memberIds'];
     final members = rawMembers is List
-        ? rawMembers.whereType<String>().where((value) => value.isNotEmpty).toList(growable: false)
+        ? rawMembers
+            .whereType<String>()
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false)
         : const <String>[];
     final interval = (json['probeIntervalSeconds'] as num?)?.toInt() ?? 30;
     if (id.isEmpty || name.isEmpty || members.length < 2) {
@@ -398,7 +450,8 @@ class TunnelTarget {
     BalancerProfile balancer,
     List<TunnelProfile> profiles, {
     TunnelProfile? fallbackProfile,
-  }) => TunnelTarget._(
+  }) =>
+      TunnelTarget._(
         id: balancer.id,
         name: balancer.name,
         profiles: List.unmodifiable(profiles),
@@ -414,14 +467,34 @@ class TunnelTarget {
 
   bool get isBalancer => balancer != null;
   TunnelProfile get primaryProfile => profiles.first;
-  String get endpoint => isBalancer ? '${profiles.length} серверов' : primaryProfile.endpoint;
-  String get protocol => isBalancer ? 'Балансировщик · ${balancer!.strategy.title}' : primaryProfile.protocol;
-  String get transportLabel => isBalancer ? balancer!.strategy.title : primaryProfile.transportLabel;
+  String get endpoint =>
+      isBalancer ? '${profiles.length} серверов' : primaryProfile.endpoint;
+  String get protocol => isBalancer
+      ? 'Балансировщик · ${balancer!.strategy.title}'
+      : primaryProfile.protocol;
+  String get transportLabel =>
+      isBalancer ? balancer!.strategy.title : primaryProfile.transportLabel;
   int? get latencyMs {
-    final values = profiles.map((item) => item.latencyMs).whereType<int>().toList();
+    final values = profiles
+        .where((item) => item.pingStatus == PingStatus.success)
+        .map((item) => item.latencyMs)
+        .whereType<int>()
+        .toList();
     if (values.isEmpty) return null;
     values.sort();
     return values.first;
+  }
+
+  PingStatus get pingStatus {
+    if (!isBalancer) return primaryProfile.pingStatus;
+    if (latencyMs != null) return PingStatus.success;
+    if (profiles.any((item) => item.pingStatus == PingStatus.timeout)) {
+      return PingStatus.timeout;
+    }
+    if (profiles.any((item) => item.pingStatus == PingStatus.unavailable)) {
+      return PingStatus.unavailable;
+    }
+    return PingStatus.unknown;
   }
 }
 

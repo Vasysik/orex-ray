@@ -9,7 +9,13 @@ import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../core/xray/xray_config_builder.dart';
 
-class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, TunnelDiagnosticsProvider {
+class AndroidXrayEngine
+    implements
+        TunnelEngine,
+        TunnelRuntimeMetadataSink,
+        TunnelRuntimeSettingsSink,
+        TunnelStatsConsumerSink,
+        TunnelDiagnosticsProvider {
   AndroidXrayEngine({
     required ConnectionSettingsController settings,
     required AppRoutingController appRouting,
@@ -18,9 +24,9 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, Tunn
         _appRouting = appRouting,
         _configBuilder = configBuilder ?? const XrayConfigBuilder() {
     _eventSubscription = _events.receiveBroadcastStream().listen(
-      _onNativeEvent,
-      onError: _onNativeStreamError,
-    );
+          _onNativeEvent,
+          onError: _onNativeStreamError,
+        );
     unawaited(_syncNativeStatus());
   }
 
@@ -35,6 +41,7 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, Tunn
 
   TunnelTarget? _activeTarget;
   ConnectionMode _activeMode = ConnectionMode.vpnTun;
+  bool _statsUiActive = true;
   TunnelSnapshot _current = const TunnelSnapshot(
     status: TunnelStatus.disconnected,
     stats: TrafficStats(),
@@ -124,6 +131,7 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, Tunn
         'statsIntervalSeconds': _settings.statsIntervalSeconds,
         'showNotificationSpeed': _settings.showNotificationSpeed,
         'showNotificationPing': _settings.showNotificationPing,
+        'statsUiActive': _statsUiActive,
         'restartServiceOnKill': _settings.restartServiceOnKill,
         'appRoutingMode': _appRouting.mode.storageValue,
         'appPackages': _appRouting.selectedPackages.toList(growable: false),
@@ -139,12 +147,49 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, Tunn
   Future<void> updateTargetMetadata(TunnelTarget target) async {
     _activeTarget = target;
     try {
-      await _channel.invokeMethod<void>('updateTargetMetadata', <String, Object?>{
+      await _channel
+          .invokeMethod<void>('updateTargetMetadata', <String, Object?>{
         'targetName': target.name,
         'latencyMs': target.latencyMs,
       });
     } catch (_) {
       // Runtime metadata is best-effort and must never interrupt the tunnel.
+    }
+  }
+
+  @override
+  Future<void> updateRuntimeSettings({
+    required int statsIntervalSeconds,
+    required bool showNotificationSpeed,
+    required bool showNotificationPing,
+  }) async {
+    if (!_current.isConnected) return;
+    try {
+      await _channel
+          .invokeMethod<void>('updateRuntimeSettings', <String, Object?>{
+        'statsIntervalSeconds': statsIntervalSeconds,
+        'showNotificationSpeed': showNotificationSpeed,
+        'showNotificationPing': showNotificationPing,
+      });
+    } catch (_) {
+      // Settings synchronization is best-effort and must not interrupt a
+      // running VPN when the Android service is being restarted.
+    }
+  }
+
+  @override
+  Future<void> setStatsUiActive(bool active) async {
+    _statsUiActive = active;
+    if (!_current.isConnected) return;
+    await _pushStatsUiActive();
+  }
+
+  Future<void> _pushStatsUiActive() async {
+    try {
+      await _channel.invokeMethod<void>('setStatsUiActive', _statsUiActive);
+    } catch (_) {
+      // The app may be closing while Android has already released the native
+      // activity. The service will fall back to the notification consumer.
     }
   }
 
@@ -166,7 +211,8 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, Tunn
       xrayVersion: '26.6.27 (embedded libv2ray)',
       mode: _current.mode,
       targetName: _current.profile?.name ?? _activeTarget?.name ?? '—',
-      xrayState: native?['coreRunning'] == true ? 'running' : _current.status.name,
+      xrayState:
+          native?['coreRunning'] == true ? 'running' : _current.status.name,
       pid: (native?['pid'] as num?)?.toInt(),
       ports: {'SOCKS': _settings.socksPort, 'HTTP': _settings.httpPort},
       systemProxyStatus: 'not applicable',
@@ -224,6 +270,7 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, Tunn
   }
 
   void _applyEvent(Map<String, dynamic> event) {
+    final wasConnected = _current.isConnected;
     final status = switch (event['status']) {
       'connecting' => TunnelStatus.connecting,
       'connected' => TunnelStatus.connected,
@@ -258,6 +305,9 @@ class AndroidXrayEngine implements TunnelEngine, TunnelRuntimeMetadataSink, Tunn
         errorMessage: event['errorMessage'] as String?,
       ),
     );
+    if (status == TunnelStatus.connected && !wasConnected) {
+      unawaited(_pushStatsUiActive());
+    }
   }
 
   void _onNativeStreamError(Object error) =>

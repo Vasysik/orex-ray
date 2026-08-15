@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -44,6 +45,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
   Future<void> _refresh() async {
     if (_loading) return;
+    // A diagnostics refresh is an explicit user request, so it is also a
+    // valid event-driven opportunity to refresh the active exit location.
+    unawaited(widget.tunnel.refreshEgressIdentity());
     setState(() {
       _loading = true;
       _error = null;
@@ -61,7 +65,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   }
 
   String _report(TunnelDiagnostics value) {
-    final ports = value.ports.entries.map((e) => '${e.key} ${e.value}').join(' · ');
+    final ports =
+        value.ports.entries.map((e) => '${e.key} ${e.value}').join(' · ');
     final lines = <String>[
       'OrexRay diagnostics',
       'OrexRay: ${widget.appVersion.version}+${widget.appVersion.buildNumber}',
@@ -216,7 +221,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           subtitle: 'Уровень Xray и служебные события OrexRay.',
           children: [
             ListTile(
-              leading: const Icon(Icons.terminal_rounded, color: OrexColors.copper),
+              leading:
+                  const Icon(Icons.terminal_rounded, color: OrexColors.copper),
               title: const Text('Уровень логов'),
               subtitle: Text(_logLevelTitle(widget.settings.logLevel)),
               trailing: DropdownButton<String>(
@@ -256,12 +262,13 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                           ? 'Подготавливаем восстановление…'
                           : 'Загрузка · ${(_repairProgress! * 100).round()}%'
                       : 'Восстанавливает xray.exe, wintun.dll и встроенные '
-                        'GeoData из pinned-архива с проверкой SHA-256.',
+                          'GeoData из pinned-архива с проверкой SHA-256.',
                 ),
                 trailing: OutlinedButton.icon(
-                  onPressed: _repairingCore || !widget.tunnel.canReinstallXrayCore
-                      ? null
-                      : _reinstallXrayCore,
+                  onPressed:
+                      _repairingCore || !widget.tunnel.canReinstallXrayCore
+                          ? null
+                          : _reinstallXrayCore,
                   icon: _repairingCore
                       ? const SizedBox.square(
                           dimension: 16,
@@ -348,7 +355,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 ),
                 const SizedBox(height: 10),
                 SelectableText(
-                  value.logs.isEmpty ? 'Журнал пока пуст.' : value.logs.join('\n'),
+                  value.logs.isEmpty
+                      ? 'Журнал пока пуст.'
+                      : value.logs.join('\n'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontFamily: 'monospace',
                         height: 1.35,

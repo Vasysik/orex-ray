@@ -37,7 +37,7 @@ class ProfilesScreen extends StatelessWidget {
               refreshingLatency: profiles.refreshingLatency,
               canRefreshLatency: profiles.profiles.isNotEmpty,
               onOpenProfileMenu: () => _showProfileMenu(context),
-              onRefreshLatency: profiles.refreshAllLatencies,
+              onRefreshLatency: tunnel.refreshAllLatencies,
             ),
             const SizedBox(height: 20),
             if (profiles.profiles.isEmpty)
@@ -56,7 +56,8 @@ class ProfilesScreen extends StatelessWidget {
                     identity: tunnel.egressIdentityFor(profile.id),
                     selected: selected?.id == profile.id,
                     onSelect: () => tunnel.selectTarget(profile.id),
-                    onRefreshPing: () => profiles.refreshLatency(profile.id),
+                    onRefreshPing: () =>
+                        tunnel.refreshProfileLatency(profile.id),
                     onEdit: () => _showEditProfileDialog(context, profile),
                     onDelete: () =>
                         _deleteTarget(context, profile.id, profile.name),
@@ -283,9 +284,8 @@ class _ProfilesHeader extends StatelessWidget {
           ),
         ),
         OutlinedButton.icon(
-          onPressed: refreshingLatency || !canRefreshLatency
-              ? null
-              : onRefreshLatency,
+          onPressed:
+              refreshingLatency || !canRefreshLatency ? null : onRefreshLatency,
           icon: refreshingLatency
               ? const SizedBox.square(
                   dimension: 16,
@@ -332,11 +332,12 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(title.toUpperCase(), style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: OrexColors.copper,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.1,
-        )),
+        Text(title.toUpperCase(),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: OrexColors.copper,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.1,
+                )),
         const SizedBox(width: 8),
         Text('$count', style: Theme.of(context).textTheme.bodySmall),
       ],
@@ -358,7 +359,8 @@ class _EmptyProfiles extends StatelessWidget {
         children: [
           const SquirrelMascot(size: 104),
           const SizedBox(height: 22),
-          Text('Белочка ждёт сервер', style: Theme.of(context).textTheme.titleLarge),
+          Text('Белочка ждёт сервер',
+              style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
             'Импортируйте VLESS-ссылку или создайте профиль вручную.',
@@ -411,8 +413,13 @@ class _ProfileCard extends StatelessWidget {
         ),
         title: Row(
           children: [
-            Expanded(child: Text(profile.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-            _PingBadge(latencyMs: profile.latencyMs, onTap: onRefreshPing),
+            Expanded(
+                child: Text(profile.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+            _PingBadge(
+              latencyMs: profile.latencyMs,
+              onTap: onRefreshPing,
+            ),
           ],
         ),
         subtitle: Padding(
@@ -443,7 +450,10 @@ class _ProfileCard extends StatelessWidget {
 }
 
 class _PingBadge extends StatelessWidget {
-  const _PingBadge({required this.latencyMs, required this.onTap});
+  const _PingBadge({
+    required this.latencyMs,
+    required this.onTap,
+  });
 
   final int? latencyMs;
   final VoidCallback onTap;
@@ -469,7 +479,8 @@ class _PingBadge extends StatelessWidget {
         ),
         child: Text(
           latency == null ? 'ping —' : '$latency ms',
-          style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
     );
@@ -497,7 +508,7 @@ class _BalancerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final latencies = members.map((item) => item.latencyMs).whereType<int>().toList()..sort();
+    final target = TunnelTarget.balancer(balancer, members);
     return GlassPanel(
       borderRadius: 22,
       tint: selected ? OrexColors.copper : null,
@@ -512,9 +523,11 @@ class _BalancerCard extends StatelessWidget {
         ),
         title: Row(
           children: [
-            Expanded(child: Text(balancer.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+            Expanded(
+                child: Text(balancer.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis)),
             _PingBadge(
-              latencyMs: latencies.isEmpty ? null : latencies.first,
+              latencyMs: target.latencyMs,
               onTap: onEdit,
             ),
           ],
@@ -671,18 +684,30 @@ class _EditProfileDialog extends StatefulWidget {
 }
 
 class _EditProfileDialogState extends State<_EditProfileDialog> {
-  late final TextEditingController _name = TextEditingController(text: widget.profile.name);
-  late final TextEditingController _address = TextEditingController(text: widget.profile.address);
-  late final TextEditingController _port = TextEditingController(text: '${widget.profile.port}');
-  late final TextEditingController _uuid = TextEditingController(text: widget.profile.userId);
-  late final TextEditingController _serverName = TextEditingController(text: widget.profile.serverName);
-  late final TextEditingController _fingerprint = TextEditingController(text: widget.profile.fingerprint);
-  late final TextEditingController _password = TextEditingController(text: widget.profile.realityPassword);
-  late final TextEditingController _shortId = TextEditingController(text: widget.profile.shortId);
-  late final TextEditingController _path = TextEditingController(text: widget.profile.path);
-  late final TextEditingController _host = TextEditingController(text: widget.profile.host);
-  late final TextEditingController _serviceName = TextEditingController(text: widget.profile.serviceName);
-  late final TextEditingController _flow = TextEditingController(text: widget.profile.flow);
+  late final TextEditingController _name =
+      TextEditingController(text: widget.profile.name);
+  late final TextEditingController _address =
+      TextEditingController(text: widget.profile.address);
+  late final TextEditingController _port =
+      TextEditingController(text: '${widget.profile.port}');
+  late final TextEditingController _uuid =
+      TextEditingController(text: widget.profile.userId);
+  late final TextEditingController _serverName =
+      TextEditingController(text: widget.profile.serverName);
+  late final TextEditingController _fingerprint =
+      TextEditingController(text: widget.profile.fingerprint);
+  late final TextEditingController _password =
+      TextEditingController(text: widget.profile.realityPassword);
+  late final TextEditingController _shortId =
+      TextEditingController(text: widget.profile.shortId);
+  late final TextEditingController _path =
+      TextEditingController(text: widget.profile.path);
+  late final TextEditingController _host =
+      TextEditingController(text: widget.profile.host);
+  late final TextEditingController _serviceName =
+      TextEditingController(text: widget.profile.serviceName);
+  late final TextEditingController _flow =
+      TextEditingController(text: widget.profile.flow);
   late String _security = widget.profile.security;
   late String _transport = widget.profile.transport;
   bool _allowInsecure = false;
@@ -697,8 +722,18 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   @override
   void dispose() {
     for (final controller in [
-      _name, _address, _port, _uuid, _serverName, _fingerprint,
-      _password, _shortId, _path, _host, _serviceName, _flow,
+      _name,
+      _address,
+      _port,
+      _uuid,
+      _serverName,
+      _fingerprint,
+      _password,
+      _shortId,
+      _path,
+      _host,
+      _serviceName,
+      _flow,
     ]) {
       controller.dispose();
     }
@@ -707,7 +742,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
   void _submit() {
     final port = int.tryParse(_port.text.trim());
-    if (_name.text.trim().isEmpty || _address.text.trim().isEmpty || _uuid.text.trim().isEmpty) {
+    if (_name.text.trim().isEmpty ||
+        _address.text.trim().isEmpty ||
+        _uuid.text.trim().isEmpty) {
       setState(() => _error = 'Имя, адрес и UUID обязательны');
       return;
     }
@@ -726,7 +763,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
         security: _security,
         transport: _transport,
         serverName: _serverName.text.trim(),
-        fingerprint: _fingerprint.text.trim().isEmpty ? 'chrome' : _fingerprint.text.trim(),
+        fingerprint: _fingerprint.text.trim().isEmpty
+            ? 'chrome'
+            : _fingerprint.text.trim(),
         realityPassword: _password.text.trim(),
         shortId: _shortId.text.trim(),
         path: _path.text.trim(),
@@ -768,9 +807,11 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                     items: const [
                       DropdownMenuItem(value: 'none', child: Text('None')),
                       DropdownMenuItem(value: 'tls', child: Text('TLS')),
-                      DropdownMenuItem(value: 'reality', child: Text('REALITY')),
+                      DropdownMenuItem(
+                          value: 'reality', child: Text('REALITY')),
                     ],
-                    onChanged: (value) => setState(() => _security = value ?? 'none'),
+                    onChanged: (value) =>
+                        setState(() => _security = value ?? 'none'),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -780,12 +821,15 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                     decoration: const InputDecoration(labelText: 'Transport'),
                     items: const [
                       DropdownMenuItem(value: 'raw', child: Text('RAW / TCP')),
-                      DropdownMenuItem(value: 'websocket', child: Text('WebSocket')),
+                      DropdownMenuItem(
+                          value: 'websocket', child: Text('WebSocket')),
                       DropdownMenuItem(value: 'grpc', child: Text('gRPC')),
                       DropdownMenuItem(value: 'xhttp', child: Text('XHTTP')),
-                      DropdownMenuItem(value: 'httpupgrade', child: Text('HTTPUpgrade')),
+                      DropdownMenuItem(
+                          value: 'httpupgrade', child: Text('HTTPUpgrade')),
                     ],
-                    onChanged: (value) => setState(() => _transport = value ?? 'raw'),
+                    onChanged: (value) =>
+                        setState(() => _transport = value ?? 'raw'),
                   ),
                 ),
               ]),
@@ -804,23 +848,29 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                   value: _allowInsecure,
                   onChanged: (value) => setState(() => _allowInsecure = value),
                 ),
-              if (_transport == 'websocket' || _transport == 'xhttp' || _transport == 'httpupgrade') ...[
+              if (_transport == 'websocket' ||
+                  _transport == 'xhttp' ||
+                  _transport == 'httpupgrade') ...[
                 _field(_path, 'Path'),
                 _field(_host, 'Host'),
               ],
-              if (_transport == 'grpc') _field(_serviceName, 'gRPC service name'),
+              if (_transport == 'grpc')
+                _field(_serviceName, 'gRPC service name'),
             ],
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Отмена')),
         FilledButton(onPressed: _submit, child: const Text('Сохранить')),
       ],
     );
   }
 
-  Widget _field(TextEditingController controller, String label, {bool number = false}) {
+  Widget _field(TextEditingController controller, String label,
+      {bool number = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
@@ -861,7 +911,8 @@ class _BalancerDialog extends StatefulWidget {
 }
 
 class _BalancerDialogState extends State<_BalancerDialog> {
-  late final TextEditingController _name = TextEditingController(text: widget.existing?.name ?? '');
+  late final TextEditingController _name =
+      TextEditingController(text: widget.existing?.name ?? '');
   late final TextEditingController _probeUrl = TextEditingController(
     text: widget.existing?.probeUrl ?? 'https://www.gstatic.com/generate_204',
   );
@@ -882,8 +933,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
     final knownProfileFallback = fallback != null &&
         fallback.startsWith(BalancerProfile.fallbackProfilePrefix) &&
         widget.profiles.any(
-          (profile) =>
-              BalancerProfile.fallbackProfile(profile.id) == fallback,
+          (profile) => BalancerProfile.fallbackProfile(profile.id) == fallback,
         );
     if (fallback == BalancerProfile.fallbackDirect ||
         fallback == BalancerProfile.fallbackBlock ||
@@ -926,7 +976,9 @@ class _BalancerDialogState extends State<_BalancerDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.existing == null ? 'Новый балансировщик' : 'Редактировать балансировщик'),
+      title: Text(widget.existing == null
+          ? 'Новый балансировщик'
+          : 'Редактировать балансировщик'),
       content: SizedBox(
         width: 620,
         child: SingleChildScrollView(
@@ -938,7 +990,9 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                 Text(_error!, style: const TextStyle(color: OrexColors.danger)),
                 const SizedBox(height: 10),
               ],
-              TextField(controller: _name, decoration: const InputDecoration(labelText: 'Имя')),
+              TextField(
+                  controller: _name,
+                  decoration: const InputDecoration(labelText: 'Имя')),
               const SizedBox(height: 12),
               DropdownButtonFormField<BalancerStrategy>(
                 initialValue: _strategy,
@@ -990,12 +1044,16 @@ class _BalancerDialogState extends State<_BalancerDialog> {
               if (_strategy == BalancerStrategy.leastPing ||
                   _fallbackValue != 'none') ...[
                 const SizedBox(height: 12),
-                TextField(controller: _probeUrl, decoration: const InputDecoration(labelText: 'URL проверки')),
+                TextField(
+                    controller: _probeUrl,
+                    decoration:
+                        const InputDecoration(labelText: 'URL проверки')),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _interval,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Интервал проверки, секунд'),
+                  decoration: const InputDecoration(
+                      labelText: 'Интервал проверки, секунд'),
                 ),
               ],
               const SizedBox(height: 16),
@@ -1015,14 +1073,19 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                     });
                   },
                   title: Text(profile.name),
-                  subtitle: Text('${profile.endpoint} · ${profile.latencyMs == null ? 'ping —' : '${profile.latencyMs} ms'}'),
+                  subtitle: Text(
+                    '${profile.endpoint} · '
+                    '${profile.latencyMs == null ? 'ping —' : '${profile.latencyMs} мс'}',
+                  ),
                 ),
             ],
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Отмена')),
         FilledButton(onPressed: _submit, child: const Text('Сохранить')),
       ],
     );

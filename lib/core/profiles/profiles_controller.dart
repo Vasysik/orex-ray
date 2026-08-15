@@ -126,7 +126,10 @@ class ProfilesController extends ChangeNotifier {
     final existingIndex = _profiles.indexWhere((item) => item.id == profile.id);
     if (existingIndex >= 0) {
       final old = _profiles[existingIndex];
-      _profiles[existingIndex] = profile.copyWith(latencyMs: old.latencyMs);
+      _profiles[existingIndex] = profile.copyWith(
+        latencyMs: old.latencyMs,
+        pingStatus: old.pingStatus,
+      );
     } else {
       _profiles.insert(0, profile);
     }
@@ -271,9 +274,7 @@ class ProfilesController extends ChangeNotifier {
         if (memberRemoved || fallbackRemoved) {
           _balancers[index] = balancer.copyWith(
             memberIds: memberRemoved
-                ? balancer.memberIds
-                    .where((member) => member != id)
-                    .toList()
+                ? balancer.memberIds.where((member) => member != id).toList()
                 : balancer.memberIds,
             clearFallback: fallbackRemoved,
           );
@@ -293,13 +294,18 @@ class ProfilesController extends ChangeNotifier {
     final index = _profiles.indexWhere((profile) => profile.id == id);
     if (index < 0) return;
     final profile = _profiles[index];
-    final latency = await _latencyProbe.measure(profile);
+    final result = await _latencyProbe.measure(profile);
     if (_disposed) return;
     final currentIndex = _profiles.indexWhere((item) => item.id == id);
-    if (currentIndex < 0 || _profiles[currentIndex].latencyMs == latency) return;
+    if (currentIndex < 0 ||
+        (_profiles[currentIndex].latencyMs == result.latencyMs &&
+            _profiles[currentIndex].pingStatus == result.status)) {
+      return;
+    }
     _profiles[currentIndex] = _profiles[currentIndex].copyWith(
-      latencyMs: latency,
-      clearLatency: latency == null,
+      latencyMs: result.latencyMs,
+      pingStatus: result.status,
+      clearLatency: result.latencyMs == null,
     );
     await _repository.saveProfiles(_profiles);
     if (_disposed) return;
@@ -313,13 +319,16 @@ class ProfilesController extends ChangeNotifier {
     var changed = false;
     try {
       for (final profile in List<TunnelProfile>.from(_profiles)) {
-        final latency = await _latencyProbe.measure(profile);
+        final result = await _latencyProbe.measure(profile);
         if (_disposed) return;
         final index = _profiles.indexWhere((item) => item.id == profile.id);
-        if (index >= 0 && _profiles[index].latencyMs != latency) {
+        if (index >= 0 &&
+            (_profiles[index].latencyMs != result.latencyMs ||
+                _profiles[index].pingStatus != result.status)) {
           _profiles[index] = _profiles[index].copyWith(
-            latencyMs: latency,
-            clearLatency: latency == null,
+            latencyMs: result.latencyMs,
+            pingStatus: result.status,
+            clearLatency: result.latencyMs == null,
           );
           changed = true;
         }
@@ -363,7 +372,11 @@ class ProfilesController extends ChangeNotifier {
     if (ipv4Mapped) {
       return _isPublicIpv4(bytes.sublist(12));
     }
-    return !unspecified && !loopback && !uniqueLocal && !linkLocal && !multicast;
+    return !unspecified &&
+        !loopback &&
+        !uniqueLocal &&
+        !linkLocal &&
+        !multicast;
   }
 
   bool _isPublicIpv4(List<int> bytes) {
@@ -435,7 +448,8 @@ class ProfilesController extends ChangeNotifier {
     }
     if (profile.alpn.length > 16 ||
         profile.alpn.any((value) => value.length > 4096)) {
-      throw const FormatException('Слишком много или слишком длинные ALPN-значения');
+      throw const FormatException(
+          'Слишком много или слишком длинные ALPN-значения');
     }
   }
 

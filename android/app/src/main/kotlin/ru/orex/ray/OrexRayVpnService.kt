@@ -32,6 +32,10 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val ACTION_START = "ru.orex.ray.action.START"
         const val ACTION_STOP = "ru.orex.ray.action.STOP"
         const val ACTION_UPDATE_METADATA = "ru.orex.ray.action.UPDATE_METADATA"
+        const val ACTION_UPDATE_RUNTIME_SETTINGS =
+            "ru.orex.ray.action.UPDATE_RUNTIME_SETTINGS"
+        const val ACTION_SET_STATS_UI_ACTIVE =
+            "ru.orex.ray.action.SET_STATS_UI_ACTIVE"
         const val EXTRA_CONFIG = "xray_config"
         const val EXTRA_MODE = "connection_mode"
         const val EXTRA_TARGET_NAME = "target_name"
@@ -45,6 +49,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val EXTRA_STATS_INTERVAL_SECONDS = "stats_interval_seconds"
         const val EXTRA_SHOW_NOTIFICATION_SPEED = "show_notification_speed"
         const val EXTRA_SHOW_NOTIFICATION_PING = "show_notification_ping"
+        const val EXTRA_STATS_UI_ACTIVE = "stats_ui_active"
         const val EXTRA_RESTART_SERVICE = "restart_service"
         const val EXTRA_APP_ROUTING_MODE = "app_routing_mode"
         const val EXTRA_APP_PACKAGES = "app_packages"
@@ -57,7 +62,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         private const val APP_ROUTING_ONLY = "only_selected"
 
         private const val TAG = "OrexRay"
-        private const val NOTIFICATION_CHANNEL_ID = "orexray_vpn"
+        const val NOTIFICATION_CHANNEL_ID = "orexray_vpn"
         private const val NOTIFICATION_ID = 7701
         private const val STOP_REQUEST_CODE = 7702
         private const val NOTIFICATION_MIN_UPDATE_MS = 5_000L
@@ -92,6 +97,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var activeStatsIntervalSeconds = 2
     private var showNotificationSpeed = true
     private var showNotificationPing = true
+    private var statsUiActive = false
     private var restartServiceOnKill = true
     private var activeAppRoutingMode = APP_ROUTING_ALL
     private var activeAppPackages = emptyList<String>()
@@ -121,6 +127,50 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 clearRestartState()
                 worker.execute { stopTunnel() }
                 return Service.START_NOT_STICKY
+            }
+
+            ACTION_SET_STATS_UI_ACTIVE -> {
+                if (coreController?.isRunning != true) {
+                    stopSelf()
+                    return Service.START_NOT_STICKY
+                }
+                statsUiActive = commandIntent.getBooleanExtra(
+                    EXTRA_STATS_UI_ACTIVE,
+                    false,
+                )
+                updateStatsLoopState()
+                return restartMode()
+            }
+
+            ACTION_UPDATE_RUNTIME_SETTINGS -> {
+                if (coreController?.isRunning != true) {
+                    stopSelf()
+                    return Service.START_NOT_STICKY
+                }
+                val nextInterval = commandIntent
+                    .getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, activeStatsIntervalSeconds)
+                    .let { if (it in setOf(1, 2, 5, 10)) it else activeStatsIntervalSeconds }
+                val intervalChanged = nextInterval != activeStatsIntervalSeconds
+                activeStatsIntervalSeconds = nextInterval
+                showNotificationSpeed = commandIntent.getBooleanExtra(
+                    EXTRA_SHOW_NOTIFICATION_SPEED,
+                    showNotificationSpeed,
+                )
+                showNotificationPing = commandIntent.getBooleanExtra(
+                    EXTRA_SHOW_NOTIFICATION_PING,
+                    showNotificationPing,
+                )
+                OrexRayStartIntentStore.updateRuntimeSettings(
+                    this,
+                    activeStatsIntervalSeconds,
+                    showNotificationSpeed,
+                    showNotificationPing,
+                )
+                updateStatsLoopState(restart = intervalChanged)
+                // A settings change is an explicit notification event. It is
+                // intentionally the only update when speed rendering is off.
+                updateRunningNotification(force = true)
+                return restartMode()
             }
 
             ACTION_UPDATE_METADATA -> {
@@ -181,6 +231,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     commandIntent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_SPEED, true)
                 showNotificationPing =
                     commandIntent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_PING, true)
+                statsUiActive =
+                    commandIntent.getBooleanExtra(EXTRA_STATS_UI_ACTIVE, false)
                 restartServiceOnKill = commandIntent.getBooleanExtra(EXTRA_RESTART_SERVICE, true)
                 activeAppRoutingMode = commandIntent.getStringExtra(EXTRA_APP_ROUTING_MODE)
                     ?.takeIf {
@@ -337,7 +389,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             }
             OrexRayDiagnosticsStore.coreRunning = true
             emitConnected()
-            startStatsLoop()
+            updateStatsLoopState()
             startWatchdog()
             updateRunningNotification(force = true)
             debugInfo("Xray started successfully mode=$mode")
@@ -493,25 +545,66 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         }
     }
 
-    private fun startStatsLoop() {
+    @Synchronized
+    private fun updateStatsLoopState(restart: Boolean = false) {
+        if (!shouldPollStats()) {
+            if (statsTask != null) {
+                debugInfo("Stats loop stopped: no active UI or notification consumer")
+                statsTask?.cancel(false)
+                statsTask = null
+            }
+            return
+        }
+
+        if (statsTask != null && !restart) return
         statsTask?.cancel(false)
         val interval = activeStatsIntervalSeconds.toLong()
+        debugInfo("Stats loop started: interval=${interval}s")
         statsTask = worker.scheduleAtFixedRate(
             {
                 val controller = coreController ?: return@scheduleAtFixedRate
-                if (!controller.isRunning || stopping) return@scheduleAtFixedRate
+                if (!controller.isRunning || stopping) {
+                    return@scheduleAtFixedRate
+                }
+                if (!shouldPollStats()) {
+                    // The notification can be disabled in Android settings
+                    // while the UI is in the background. Stop the recurring
+                    // job on its next scheduled tick instead of keeping an
+                    // otherwise idle wake-up alive.
+                    updateStatsLoopState()
+                    return@scheduleAtFixedRate
+                }
                 val delta = queryTrafficDelta(controller)
                 downloadBytes += delta.download
                 uploadBytes += delta.upload
                 downloadBytesPerSecond = delta.download / max(1, activeStatsIntervalSeconds)
                 uploadBytesPerSecond = delta.upload / max(1, activeStatsIntervalSeconds)
                 emitConnected()
-                if (showNotificationSpeed) updateRunningNotification()
+                if (isNotificationSpeedVisible()) updateRunningNotification()
             },
             interval,
             interval,
             TimeUnit.SECONDS,
         )
+    }
+
+    private fun shouldPollStats(): Boolean =
+        !stopping && coreController?.isRunning == true &&
+            (statsUiActive || isNotificationSpeedVisible())
+
+    private fun isNotificationSpeedVisible(): Boolean {
+        if (!showNotificationSpeed) return false
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = manager.getNotificationChannel(NOTIFICATION_CHANNEL_ID)
+            return channel != null &&
+                channel.importance != NotificationManager.IMPORTANCE_NONE
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            manager.areNotificationsEnabled()
+        } else {
+            true
+        }
     }
 
     private fun queryTrafficDelta(controller: CoreController): TrafficDelta {

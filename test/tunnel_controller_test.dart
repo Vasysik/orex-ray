@@ -8,7 +8,8 @@ import 'package:orex_ray/features/home/tunnel_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('controller connects selected imported profile in selected mode', () async {
+  test('controller connects selected imported profile in selected mode',
+      () async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();
     final settings = await ConnectionSettingsController.load(
@@ -53,7 +54,8 @@ void main() {
     expect(settings.dnsPreset, DnsPreset.automatic);
     expect(settings.dnsServers, ['1.1.1.1', '8.8.8.8']);
     expect(settings.supportedModes, contains(ConnectionMode.localProxy));
-    expect(settings.supportedModes, isNot(contains(ConnectionMode.systemProxy)));
+    expect(
+        settings.supportedModes, isNot(contains(ConnectionMode.systemProxy)));
 
     settings.dispose();
   });
@@ -142,6 +144,42 @@ void main() {
     expect(settings.closeToTray, isTrue);
   });
 
+  test('running Android service receives live stats and notification settings',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Test',
+    );
+    final engine = _RuntimeSettingsEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.connect();
+    await settings.setStatsIntervalSeconds(5);
+    await settings.setShowNotificationSpeed(false);
+    await settings.setShowNotificationPing(false);
+    await controller.setStatsUiActive(false);
+
+    expect(
+      engine.runtimeSettings,
+      contains((interval: 5, speed: false, ping: false)),
+    );
+    expect(engine.statsUiStates, [false]);
+  });
+
   test('shutdown awaits engine stop and dispose exactly once', () async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();
@@ -167,7 +205,8 @@ void main() {
     expect(engine.disposeCalls, 1);
   });
 
-  test('regular controller disposal does not stop a background tunnel', () async {
+  test('regular controller disposal does not stop a background tunnel',
+      () async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();
     final settings = await ConnectionSettingsController.load(
@@ -189,7 +228,8 @@ void main() {
     settings.dispose();
   });
 
-  test('switching profile while connected restarts the active tunnel', () async {
+  test('switching profile while connected restarts the active tunnel',
+      () async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();
     final settings = await ConnectionSettingsController.load(
@@ -280,5 +320,29 @@ class _RecordingTunnelEngine implements TunnelEngine {
   @override
   Future<void> dispose() async {
     disposeCalls += 1;
+  }
+}
+
+class _RuntimeSettingsEngine extends _RecordingTunnelEngine
+    implements TunnelRuntimeSettingsSink, TunnelStatsConsumerSink {
+  final List<({int interval, bool speed, bool ping})> runtimeSettings = [];
+  final List<bool> statsUiStates = [];
+
+  @override
+  Future<void> setStatsUiActive(bool active) async {
+    statsUiStates.add(active);
+  }
+
+  @override
+  Future<void> updateRuntimeSettings({
+    required int statsIntervalSeconds,
+    required bool showNotificationSpeed,
+    required bool showNotificationPing,
+  }) async {
+    runtimeSettings.add((
+      interval: statsIntervalSeconds,
+      speed: showNotificationSpeed,
+      ping: showNotificationPing,
+    ));
   }
 }

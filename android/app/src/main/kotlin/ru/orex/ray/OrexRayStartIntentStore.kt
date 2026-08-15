@@ -50,6 +50,28 @@ internal object OrexRayStartIntentStore {
         updateMetadata(context, QUICK_TILE_STATE_KEY, targetName, latencyMs)
     }
 
+    fun updateRuntimeSettings(
+        context: Context,
+        statsIntervalSeconds: Int,
+        showNotificationSpeed: Boolean,
+        showNotificationPing: Boolean,
+    ) {
+        updateRuntimeSettings(
+            context,
+            RESTART_STATE_KEY,
+            statsIntervalSeconds,
+            showNotificationSpeed,
+            showNotificationPing,
+        )
+        updateRuntimeSettings(
+            context,
+            QUICK_TILE_STATE_KEY,
+            statsIntervalSeconds,
+            showNotificationSpeed,
+            showNotificationPing,
+        )
+    }
+
     private fun save(
         context: Context,
         key: String,
@@ -229,6 +251,33 @@ internal object OrexRayStartIntentStore {
                 .put(OrexRayVpnService.EXTRA_LATENCY_MS, latencyMs ?: -1)
             secureStore.write(key, json.toString())
         }.onFailure { Log.w(TAG, "Could not update encrypted start metadata: $key", it) }
+    }
+
+    private fun updateRuntimeSettings(
+        context: Context,
+        key: String,
+        statsIntervalSeconds: Int,
+        showNotificationSpeed: Boolean,
+        showNotificationPing: Boolean,
+    ) {
+        val secureStore = AndroidSecureStore(context.applicationContext)
+        val payload = runCatching { secureStore.read(key) }.getOrNull() ?: return
+        runCatching {
+            val json = JSONObject(payload)
+                .put(
+                    OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
+                    statsIntervalSeconds,
+                )
+                .put(
+                    OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
+                    showNotificationSpeed,
+                )
+                .put(
+                    OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
+                    showNotificationPing,
+                )
+            secureStore.write(key, json.toString())
+        }.onFailure { Log.w(TAG, "Could not update encrypted start settings: $key", it) }
     }
 
     private fun clear(context: Context, key: String) {

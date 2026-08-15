@@ -41,7 +41,7 @@ class OrexRayApp extends StatefulWidget {
   State<OrexRayApp> createState() => _OrexRayAppState();
 }
 
-class _OrexRayAppState extends State<OrexRayApp> {
+class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
   late final TunnelController _tunnel = TunnelController(
     engine: widget.tunnelEngine ??
         createTunnelEngine(
@@ -54,10 +54,12 @@ class _OrexRayAppState extends State<OrexRayApp> {
   );
   WindowsLifecycleController? _windowsLifecycle;
   bool? _lastAndroidBootSetting;
+  bool? _lastStatsUiActive;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.theme.addListener(_refresh);
     widget.connectionSettings.addListener(_syncPlatformStartupSettings);
     if (Platform.isWindows) {
@@ -69,6 +71,7 @@ class _OrexRayAppState extends State<OrexRayApp> {
     }
     _syncPlatformStartupSettings();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncStatsUiActivity(WidgetsBinding.instance.lifecycleState);
       if (widget.connectionSettings.autoConnectOnStartup &&
           _tunnel.selectedProfile != null) {
         unawaited(Future<void>.delayed(
@@ -89,10 +92,24 @@ class _OrexRayAppState extends State<OrexRayApp> {
     );
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _syncStatsUiActivity(state);
+  }
+
+  void _syncStatsUiActivity(AppLifecycleState? state) {
+    if (!Platform.isAndroid) return;
+    final active = state == null || state == AppLifecycleState.resumed;
+    if (_lastStatsUiActive == active) return;
+    _lastStatsUiActive = active;
+    unawaited(_tunnel.setStatsUiActive(active));
+  }
+
   void _refresh() => setState(() {});
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.theme.removeListener(_refresh);
     widget.connectionSettings.removeListener(_syncPlatformStartupSettings);
     _windowsLifecycle?.dispose();

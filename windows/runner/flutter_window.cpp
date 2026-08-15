@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <flutter/standard_method_codec.h>
+#include <flutter_windows.h>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "process_job.h"
@@ -30,6 +31,92 @@ constexpr UINT kCompleteExitMessage = WM_APP + 78;
 constexpr UINT kNetworkChangedMessage = WM_APP + 79;
 constexpr UINT_PTR kExitFallbackTimerId = 7704;
 constexpr UINT kExitFallbackTimeoutMs = 15000;
+constexpr wchar_t kWindowPlacementRegistryPath[] = L"Software\\OrexRay";
+constexpr wchar_t kWindowPlacementRegistryValue[] = L"WindowPlacementV1";
+constexpr DWORD kWindowPlacementVersion = 1;
+constexpr LONG kMinimumWindowWidthDip = 480;
+constexpr LONG kMinimumWindowHeightDip = 360;
+constexpr LONG kMaximumStoredWindowDimension = 100000;
+
+struct StoredWindowPlacement {
+  DWORD version;
+  RECT normal_rect;
+  DWORD maximized;
+  DWORD dpi;
+};
+
+bool IsUsableWindowRect(const RECT& rect) {
+  const std::int64_t width =
+      static_cast<std::int64_t>(rect.right) - rect.left;
+  const std::int64_t height =
+      static_cast<std::int64_t>(rect.bottom) - rect.top;
+  return width > 0 && height > 0 && width <= kMaximumStoredWindowDimension &&
+         height <= kMaximumStoredWindowDimension;
+}
+
+LONG ScaleForDpi(LONG value, UINT source_dpi, UINT target_dpi) {
+  if (value <= 0 || source_dpi == 0 || target_dpi == 0) return value;
+  const LONG scaled = MulDiv(value, static_cast<int>(target_dpi),
+                             static_cast<int>(source_dpi));
+  return scaled > 0 ? scaled : value;
+}
+
+LONG ClampWindowDimension(LONG value, LONG minimum, LONG maximum) {
+  if (maximum <= 0) return value;
+  if (value < minimum) value = minimum;
+  return value > maximum ? maximum : value;
+}
+
+LONG ClampWindowPosition(LONG value, LONG minimum, LONG maximum) {
+  if (maximum < minimum) return minimum;
+  if (value < minimum) return minimum;
+  return value > maximum ? maximum : value;
+}
+
+bool LoadStoredWindowPlacement(StoredWindowPlacement* placement) {
+  if (placement == nullptr) return false;
+
+  HKEY key = nullptr;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER, kWindowPlacementRegistryPath, 0,
+                    KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
+    return false;
+  }
+
+  DWORD type = 0;
+  DWORD byte_count = static_cast<DWORD>(sizeof(*placement));
+  const LONG status = RegQueryValueExW(
+      key, kWindowPlacementRegistryValue, nullptr, &type,
+      reinterpret_cast<BYTE*>(placement), &byte_count);
+  RegCloseKey(key);
+
+  return status == ERROR_SUCCESS && type == REG_BINARY &&
+         byte_count == static_cast<DWORD>(sizeof(*placement)) &&
+         placement->version == kWindowPlacementVersion &&
+         placement->maximized <= 1 && placement->dpi >= 48 &&
+         placement->dpi <= 960 && IsUsableWindowRect(placement->normal_rect);
+}
+
+void StoreWindowPlacement(const StoredWindowPlacement& placement) {
+  HKEY key = nullptr;
+  if (RegCreateKeyExW(HKEY_CURRENT_USER, kWindowPlacementRegistryPath, 0,
+                      nullptr, 0, KEY_SET_VALUE, nullptr, &key,
+                      nullptr) != ERROR_SUCCESS) {
+    return;
+  }
+
+  RegSetValueExW(key, kWindowPlacementRegistryValue, 0, REG_BINARY,
+                 reinterpret_cast<const BYTE*>(&placement),
+                 static_cast<DWORD>(sizeof(placement)));
+  RegCloseKey(key);
+}
+
+bool SetHiddenNormalPlacement(HWND window, const RECT& normal_rect) {
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(placement);
+  placement.showCmd = SW_HIDE;
+  placement.rcNormalPosition = normal_rect;
+  return SetWindowPlacement(window, &placement) != FALSE;
+}
 
 const flutter::EncodableMap* AsMap(const flutter::EncodableValue* value) {
   return value == nullptr ? nullptr : std::get_if<flutter::EncodableMap>(value);
@@ -356,6 +443,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
 
+  RestoreWindowPlacement();
   RECT frame = GetClientArea();
   flutter_controller_ = std::make_unique<flutter::FlutterViewController>(
       frame.right - frame.left, frame.bottom - frame.top, project_);
@@ -575,13 +663,14 @@ bool FlutterWindow::OnCreate() {
       reinterpret_cast<PVOID>(GetHandle()), FALSE, &network_change_handle_);
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    if (!start_hidden_) this->Show();
+    if (!start_hidden_) this->ShowInitialWindow();
   });
   flutter_controller_->ForceRedraw();
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
+  SaveWindowPlacement();
   KillTimer(GetHandle(), kExitFallbackTimerId);
   if (network_change_handle_ != nullptr) {
     CancelMibChangeNotify2(network_change_handle_);
@@ -612,6 +701,7 @@ LRESULT FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   if (message == WM_CLOSE) {
+    SaveWindowPlacement();
     if (close_to_tray_ && !exit_requested_) {
       ShowWindow(hwnd, SW_HIDE);
       return 0;
@@ -661,6 +751,13 @@ LRESULT FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     }
   }
 
+  if (message == WM_EXITSIZEMOVE ||
+      (message == WM_SIZE &&
+       (wparam == SIZE_MAXIMIZED ||
+        (wparam == SIZE_RESTORED && restore_maximized_)))) {
+    SaveWindowPlacement();
+  }
+
   if (flutter_controller_) {
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
@@ -681,12 +778,126 @@ LRESULT FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
 }
 
+void FlutterWindow::RestoreWindowPlacement() {
+  HWND window = GetHandle();
+  if (window == nullptr) return;
+
+  StoredWindowPlacement saved{};
+  if (!LoadStoredWindowPlacement(&saved)) return;
+
+  // WINDOWPLACEMENT stores top-level positions in workspace coordinates. Use
+  // SetWindowPlacement first, then use the resulting screen-space rectangle
+  // for monitor validation and clamping below.
+  if (!SetHiddenNormalPlacement(window, saved.normal_rect)) return;
+
+  RECT restored_rect{};
+  if (!GetWindowRect(window, &restored_rect)) return;
+
+  HMONITOR monitor = MonitorFromRect(&restored_rect, MONITOR_DEFAULTTONULL);
+  const bool was_offscreen = monitor == nullptr;
+  if (monitor == nullptr) monitor = MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY);
+  if (monitor == nullptr) return;
+
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(monitor_info);
+  if (!GetMonitorInfoW(monitor, &monitor_info)) return;
+
+  const RECT work_area = monitor_info.rcWork;
+  const LONG work_width = work_area.right - work_area.left;
+  const LONG work_height = work_area.bottom - work_area.top;
+  if (work_width <= 0 || work_height <= 0) return;
+
+  const UINT target_dpi = FlutterDesktopGetDpiForMonitor(monitor);
+  const UINT effective_target_dpi = target_dpi == 0 ? 96 : target_dpi;
+  const LONG stored_width = saved.normal_rect.right - saved.normal_rect.left;
+  const LONG stored_height = saved.normal_rect.bottom - saved.normal_rect.top;
+
+  if (effective_target_dpi != saved.dpi) {
+    RECT scaled_normal_rect = saved.normal_rect;
+    scaled_normal_rect.right = scaled_normal_rect.left + ScaleForDpi(
+        stored_width, saved.dpi, effective_target_dpi);
+    scaled_normal_rect.bottom = scaled_normal_rect.top + ScaleForDpi(
+        stored_height, saved.dpi, effective_target_dpi);
+    if (!SetHiddenNormalPlacement(window, scaled_normal_rect) ||
+        !GetWindowRect(window, &restored_rect)) {
+      return;
+    }
+    monitor = MonitorFromRect(&restored_rect, MONITOR_DEFAULTTONULL);
+    if (monitor == nullptr) monitor = MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY);
+    if (monitor == nullptr || !GetMonitorInfoW(monitor, &monitor_info)) return;
+  }
+
+  const RECT effective_work_area = monitor_info.rcWork;
+  const LONG effective_work_width =
+      effective_work_area.right - effective_work_area.left;
+  const LONG effective_work_height =
+      effective_work_area.bottom - effective_work_area.top;
+  if (effective_work_width <= 0 || effective_work_height <= 0) return;
+
+  const LONG minimum_width =
+      ScaleForDpi(kMinimumWindowWidthDip, 96, effective_target_dpi);
+  const LONG minimum_height =
+      ScaleForDpi(kMinimumWindowHeightDip, 96, effective_target_dpi);
+  const LONG width = ClampWindowDimension(
+      restored_rect.right - restored_rect.left, minimum_width,
+      effective_work_width);
+  const LONG height = ClampWindowDimension(
+      restored_rect.bottom - restored_rect.top, minimum_height,
+      effective_work_height);
+
+  const LONG left = was_offscreen
+      ? effective_work_area.left + (effective_work_width - width) / 2
+      : ClampWindowPosition(restored_rect.left, effective_work_area.left,
+                            effective_work_area.right - width);
+  const LONG top = was_offscreen
+      ? effective_work_area.top + (effective_work_height - height) / 2
+      : ClampWindowPosition(restored_rect.top, effective_work_area.top,
+                            effective_work_area.bottom - height);
+
+  SetWindowPos(window, nullptr, left, top, width, height,
+               SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER);
+  restore_maximized_ = saved.maximized != 0;
+}
+
+void FlutterWindow::SaveWindowPlacement() {
+  HWND window = GetHandle();
+  if (window == nullptr || IsIconic(window)) return;
+
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(placement);
+  if (!GetWindowPlacement(window, &placement) ||
+      !IsUsableWindowRect(placement.rcNormalPosition)) {
+    return;
+  }
+
+  HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+  const UINT monitor_dpi = monitor == nullptr
+      ? 96
+      : FlutterDesktopGetDpiForMonitor(monitor);
+  const UINT effective_dpi = monitor_dpi == 0 ? 96 : monitor_dpi;
+  restore_maximized_ = IsZoomed(window) != FALSE;
+  StoreWindowPlacement(StoredWindowPlacement{
+      kWindowPlacementVersion,
+      placement.rcNormalPosition,
+      restore_maximized_ ? 1U : 0U,
+      effective_dpi,
+  });
+}
+
+void FlutterWindow::ShowInitialWindow() {
+  HWND window = GetHandle();
+  if (window == nullptr) return;
+  ShowWindow(window, restore_maximized_ ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL);
+}
+
 void FlutterWindow::ShowAndActivate() {
   HWND window = GetHandle();
   if (window == nullptr) return;
 
   if (IsIconic(window)) {
     ShowWindow(window, SW_RESTORE);
+  } else if (!IsWindowVisible(window) && restore_maximized_) {
+    ShowWindow(window, SW_SHOWMAXIMIZED);
   } else {
     ShowWindow(window, SW_SHOW);
   }
