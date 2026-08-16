@@ -436,7 +436,7 @@ class _MobileStatusCard extends StatelessWidget {
               Expanded(
                 child: _CompactMetric(
                   icon: Icons.network_ping_rounded,
-                  label: 'Ping',
+                  label: 'Пинг',
                   value: ping == null ? '—' : '$ping мс',
                   busy: tunnel.refreshingLatency,
                   onTap: snapshot.profile == null
@@ -493,12 +493,7 @@ class _CompactMetric extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       child: Column(
         children: [
-          busy
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Icon(icon, color: OrexColors.copper, size: 20),
+          Icon(icon, color: OrexColors.copper, size: 20),
           const SizedBox(height: 5),
           Text(
             label,
@@ -652,7 +647,7 @@ class _QuickInfo extends StatelessWidget {
             icon: target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
             title: target.name,
             subtitle: '${target.endpoint} · '
-                '${tunnel.effectiveLatencyFor(target) == null ? 'ping —' : '${tunnel.effectiveLatencyFor(target)} мс'}',
+                '${tunnel.effectiveLatencyFor(target) == null ? 'Пинг —' : '${tunnel.effectiveLatencyFor(target)} мс'}',
             selected: selectedId == target.id,
           ),
       ],
@@ -725,7 +720,7 @@ class _TrafficCard extends StatelessWidget {
           Expanded(
             child: _Metric(
               icon: Icons.network_ping_rounded,
-              label: 'Ping',
+              label: 'Пинг',
               value: ping == null ? '—' : '$ping мс',
               busy: tunnel.refreshingLatency,
               onTap: snapshot.profile == null
@@ -761,12 +756,7 @@ class _Metric extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          busy
-              ? const SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Icon(icon, color: OrexColors.copper),
+          Icon(icon, color: OrexColors.copper),
           const SizedBox(width: 10),
           Flexible(
             child: Column(

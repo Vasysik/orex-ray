@@ -60,7 +60,7 @@ enum BalancerStrategy {
   String get title => switch (this) {
         BalancerStrategy.random => 'Случайный',
         BalancerStrategy.roundRobin => 'По очереди',
-        BalancerStrategy.leastPing => 'Минимальный ping',
+        BalancerStrategy.leastPing => 'Минимальный пинг',
       };
 
   String get description => switch (this) {

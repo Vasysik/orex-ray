@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:orex_ray/core/profiles/latency_probe.dart';
 import 'package:orex_ray/core/profiles/profiles_controller.dart';
 import 'package:orex_ray/core/settings/connection_settings_controller.dart';
 import 'package:orex_ray/core/tunnel/tunnel_engine.dart';
@@ -57,6 +60,164 @@ void main() {
     expect(find.text('Имя пользователя (необязательно)'), findsOneWidget);
     expect(find.text('Пароль (необязательно)'), findsOneWidget);
   });
+
+  testWidgets('busy ping check keeps the static icon in profiles',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final probe = _PendingProfilesLatencyProbe();
+    final profiles = await ProfilesController.load(latencyProbe: probe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Test',
+    );
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    final refresh = tunnel.refreshAllLatencies();
+    await tester.pump();
+    expect(tunnel.refreshingLatency, isTrue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byIcon(Icons.network_ping_rounded), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    probe.complete(const LatencyProbeResult.success(123));
+    await refresh;
+  });
+
+  testWidgets(
+      'active VPN list keeps saved direct pings and disables other refreshes',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingProfilesLatencyProbe(
+      const LatencyProbeResult.success(600),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final active = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@active.example:443'
+      '?encryption=none&security=none&type=tcp#Active',
+    );
+    await profiles.refreshLatency(active.id);
+    final inactive = await profiles.createProfile(
+      const TunnelProfile(
+        id: 'inactive-profile',
+        name: 'Inactive',
+        address: 'inactive.example',
+        port: 443,
+        userId: '22222222-2222-4222-8222-222222222222',
+        latencyMs: 1000,
+        pingStatus: PingStatus.success,
+      ),
+    );
+    final balancer = await profiles.saveBalancer(
+      name: 'Pool',
+      memberIds: [active.id, inactive.id],
+      strategy: BalancerStrategy.random,
+      probeUrl: 'https://www.gstatic.com/generate_204',
+      probeIntervalSeconds: 30,
+    );
+    final tunnel = TunnelController(
+      engine: _MutableProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: _FixedProfilesRouteLatencyProbe(
+        const LatencyProbeResult.success(123),
+      ),
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tunnel.setMode(ConnectionMode.vpnTun);
+    await tunnel.connect();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tunnel.refreshSelectedLatency();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('123 мс'), findsNothing);
+    expect(find.text('600 мс'), findsNWidgets(2));
+    expect(find.text('1000 мс'), findsOneWidget);
+    for (final text in tester.widgetList<Text>(find.text('600 мс'))) {
+      expect(text.style?.color, OrexColors.copper);
+    }
+    expect(
+      tester.widget<Text>(find.text('1000 мс')).style?.color,
+      OrexColors.danger,
+    );
+    expect(tunnel.canRefreshTargetLatency(active.id), isTrue);
+    expect(tunnel.canRefreshTargetLatency(inactive.id), isFalse);
+    expect(tunnel.canRefreshTargetLatency(balancer.id), isFalse);
+
+    await tunnel.refreshProfileLatency(inactive.id);
+    expect(directProbe.calls, 1);
+  });
+}
+
+class _CountingProfilesLatencyProbe extends LatencyProbe {
+  _CountingProfilesLatencyProbe(this.result);
+
+  final LatencyProbeResult result;
+  int calls = 0;
+
+  @override
+  Future<LatencyProbeResult> measure(TunnelProfile profile) async {
+    calls++;
+    return result;
+  }
+}
+
+class _PendingProfilesLatencyProbe extends LatencyProbe {
+  final Completer<LatencyProbeResult> _result = Completer();
+
+  @override
+  Future<LatencyProbeResult> measure(TunnelProfile profile) => _result.future;
+
+  void complete(LatencyProbeResult result) => _result.complete(result);
+}
+
+class _FixedProfilesRouteLatencyProbe extends TunnelRouteLatencyProbe {
+  _FixedProfilesRouteLatencyProbe(this.result);
+
+  final LatencyProbeResult result;
+
+  @override
+  Future<LatencyProbeResult> measure({
+    required int httpPort,
+    Uri? probeUri,
+  }) async =>
+      result;
 }
 
 class _ProfilesTestTunnelEngine implements TunnelEngine {
@@ -79,6 +240,49 @@ class _ProfilesTestTunnelEngine implements TunnelEngine {
 
   @override
   Future<void> stop() async {}
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class _MutableProfilesTestTunnelEngine implements TunnelEngine {
+  TunnelSnapshot _current = const TunnelSnapshot(
+    status: TunnelStatus.disconnected,
+    stats: TrafficStats(),
+  );
+
+  @override
+  TunnelSnapshot get current => _current;
+
+  @override
+  Stream<TunnelSnapshot> get snapshots => const Stream.empty();
+
+  @override
+  Set<ConnectionMode> get supportedModes => const {
+        ConnectionMode.vpnTun,
+        ConnectionMode.localProxy,
+        ConnectionMode.systemProxy,
+      };
+
+  @override
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    _current = TunnelSnapshot(
+      status: TunnelStatus.connected,
+      mode: mode,
+      profile: profile,
+      stats: const TrafficStats(),
+    );
+  }
+
+  @override
+  Future<void> stop() async {
+    _current = TunnelSnapshot(
+      status: TunnelStatus.disconnected,
+      mode: _current.mode,
+      profile: _current.profile,
+      stats: const TrafficStats(),
+    );
+  }
 
   @override
   Future<void> dispose() async {}

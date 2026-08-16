@@ -15,7 +15,7 @@ object OrexRayTunnelEvents {
 
     @Synchronized
     fun attach(context: Context, eventSink: EventChannel.EventSink) {
-        lastEvent = OrexRayRuntimeStateStore.load(context)
+        lastEvent = OrexRayVpnService.runtimeState(context)
         sink = eventSink
         eventSink.success(lastEvent)
     }
@@ -39,6 +39,7 @@ object OrexRayTunnelEvents {
     fun event(
         status: String,
         mode: String = "vpn_tun",
+        targetId: String? = null,
         message: String? = null,
         errorMessage: String? = null,
         downloadBytes: Long = 0,
@@ -49,6 +50,7 @@ object OrexRayTunnelEvents {
     ): Map<String, Any?> = mapOf(
         "status" to status,
         "mode" to mode,
+        "targetId" to targetId,
         "message" to message,
         "errorMessage" to errorMessage,
         "downloadBytes" to downloadBytes,

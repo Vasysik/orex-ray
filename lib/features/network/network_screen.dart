@@ -45,7 +45,8 @@ class NetworkScreen extends StatelessWidget {
                         ),
                         title: Text(preset.title),
                         subtitle: Text(
-                          preset == DnsPreset.custom && settings.customDns.isNotEmpty
+                          preset == DnsPreset.custom &&
+                                  settings.customDns.isNotEmpty
                               ? settings.customDns
                               : preset.description,
                         ),
@@ -56,7 +57,8 @@ class NetworkScreen extends StatelessWidget {
               if (settings.dnsPreset == DnsPreset.custom) ...[
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.edit_note_rounded, color: OrexColors.copper),
+                  leading: const Icon(Icons.edit_note_rounded,
+                      color: OrexColors.copper),
                   title: const Text('Адреса DNS'),
                   subtitle: Text(
                     settings.customDns.isEmpty
@@ -74,26 +76,107 @@ class NetworkScreen extends StatelessWidget {
             title: 'Маршрутизация',
             children: [
               SwitchListTile(
-                secondary: const Icon(Icons.home_work_outlined, color: OrexColors.copper),
+                secondary: const Icon(Icons.home_work_outlined,
+                    color: OrexColors.copper),
                 title: const Text('Локальные сети напрямую'),
-                subtitle: const Text('Не отправлять частные IP-диапазоны через Xray'),
+                subtitle:
+                    const Text('Не отправлять частные IP-диапазоны через Xray'),
                 value: settings.bypassPrivateNetworks,
                 onChanged: settings.setBypassPrivateNetworks,
               ),
               const Divider(height: 1),
               SwitchListTile(
-                secondary: const Icon(Icons.manage_search_rounded, color: OrexColors.copper),
+                secondary: const Icon(Icons.manage_search_rounded,
+                    color: OrexColors.copper),
                 title: const Text('Sniffing протоколов'),
-                subtitle: const Text('Определять HTTP, TLS и QUIC для корректной маршрутизации'),
+                subtitle: const Text(
+                    'Определять HTTP, TLS и QUIC для корректной маршрутизации'),
                 value: settings.sniffingEnabled,
                 onChanged: settings.setSniffingEnabled,
               ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SettingsSection(
+            title: 'Проверка задержки',
+            subtitle: 'Публичный адрес для измерения задержки',
+            children: [
+              RadioGroup<LatencyProbePreset>(
+                groupValue: settings.latencyProbePreset,
+                onChanged: (preset) {
+                  if (preset != null) {
+                    _selectLatencyProbePreset(context, settings, preset);
+                  }
+                },
+                child: Column(
+                  children: [
+                    for (final preset in LatencyProbePreset.values)
+                      RadioListTile<LatencyProbePreset>(
+                        value: preset,
+                        secondary: const Icon(
+                          Icons.speed_rounded,
+                          color: OrexColors.copper,
+                        ),
+                        title: Text(preset.title),
+                        subtitle: Text(
+                          preset == LatencyProbePreset.custom &&
+                                  settings.customLatencyProbeUrl.isNotEmpty
+                              ? settings.customLatencyProbeUrl
+                              : preset.description,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (settings.latencyProbePreset == LatencyProbePreset.custom)
+                const Divider(height: 1),
+              if (settings.latencyProbePreset == LatencyProbePreset.custom)
+                ListTile(
+                  leading: const Icon(
+                    Icons.link_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Изменить URL'),
+                  subtitle: Text(settings.customLatencyProbeUrl),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _editCustomLatencyProbeUrl(context, settings),
+                ),
             ],
           ),
         ],
       ),
     );
   }
+}
+
+Future<void> _selectLatencyProbePreset(
+  BuildContext context,
+  ConnectionSettingsController settings,
+  LatencyProbePreset preset,
+) async {
+  if (preset == LatencyProbePreset.custom &&
+      settings.customLatencyProbeUrl.isEmpty) {
+    await _editCustomLatencyProbeUrl(context, settings);
+    return;
+  }
+  await settings.setLatencyProbePreset(preset);
+}
+
+Future<void> _editCustomLatencyProbeUrl(
+  BuildContext context,
+  ConnectionSettingsController settings,
+) {
+  return showOrexEditDialog(
+    context,
+    title: 'URL проверки задержки',
+    initialValue: settings.customLatencyProbeUrl,
+    keyboardType: TextInputType.url,
+    textInputAction: TextInputAction.done,
+    labelText: 'https://example.com/health',
+    helperText: 'Только публичный HTTP(S) адрес',
+    validator: ConnectionSettingsController.validateLatencyProbeUrl,
+    onSave: settings.setCustomLatencyProbeUrl,
+  );
 }
 
 Future<void> _editCustomDns(

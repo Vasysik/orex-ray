@@ -60,6 +60,21 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 15)),
   );
+
+  testWidgets('latency probe settings are not shown in Connection',
+      (tester) async {
+    final harness = await _pumpConnectionScreen(
+      tester,
+      status: TunnelStatus.disconnected,
+    );
+
+    expect(find.text('Проверка задержки'), findsNothing);
+    expect(find.text('Публичный адрес для измерения задержки'), findsNothing);
+
+    harness.tunnel.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
 }
 
 Future<_ConnectionHarness> _pumpConnectionScreen(

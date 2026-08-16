@@ -24,8 +24,7 @@ class ConnectionScreen extends StatelessWidget {
       builder: (context, _) {
         final locked = !tunnel.canChangeMode;
         final disabledColor = Theme.of(context).disabledColor;
-        final editableIconColor =
-            locked ? disabledColor : OrexColors.copper;
+        final editableIconColor = locked ? disabledColor : OrexColors.copper;
         final chevronColor = locked ? disabledColor : null;
         return ListView(
           padding: const EdgeInsets.all(20),
@@ -69,14 +68,16 @@ class ConnectionScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             SettingsSection(
-              title: 'Локальный прокси',
-              subtitle: 'Эти порты используются и режимом системного прокси Windows.',
+              title: 'Сеть',
+              subtitle:
+                  'Эти порты используются и режимом системного прокси Windows.',
               children: [
                 ListTile(
                   enabled: !locked,
                   leading: Icon(Icons.cable_rounded, color: editableIconColor),
                   title: const Text('SOCKS5'),
-                  subtitle: Text('${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.socksPort}'),
+                  subtitle: Text(
+                      '${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.socksPort}'),
                   trailing: Icon(
                     Icons.chevron_right_rounded,
                     color: chevronColor,
@@ -97,7 +98,8 @@ class ConnectionScreen extends StatelessWidget {
                   enabled: !locked,
                   leading: Icon(Icons.http_rounded, color: editableIconColor),
                   title: const Text('HTTP'),
-                  subtitle: Text('${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.httpPort}'),
+                  subtitle: Text(
+                      '${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.httpPort}'),
                   trailing: Icon(
                     Icons.chevron_right_rounded,
                     color: chevronColor,
@@ -115,9 +117,11 @@ class ConnectionScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(Icons.lan_rounded, color: OrexColors.copper),
+                  secondary:
+                      const Icon(Icons.lan_rounded, color: OrexColors.copper),
                   title: const Text('Доступ из локальной сети'),
-                  subtitle: const Text('Слушать 0.0.0.0 вместо только localhost'),
+                  subtitle:
+                      const Text('Слушать 0.0.0.0 вместо только localhost'),
                   value: settings.allowLan,
                   onChanged: locked
                       ? null
@@ -125,7 +129,8 @@ class ConnectionScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(Icons.multiple_stop_rounded, color: OrexColors.copper),
+                  secondary: const Icon(Icons.multiple_stop_rounded,
+                      color: OrexColors.copper),
                   title: const Text('Прокси параллельно VPN'),
                   subtitle: const Text(
                     'Оставлять SOCKS5 и HTTP доступными, пока работает TUN/VPN',
@@ -171,7 +176,6 @@ class ConnectionScreen extends StatelessWidget {
     );
   }
 }
-
 
 Future<void> _setAllowLan(
   BuildContext context,

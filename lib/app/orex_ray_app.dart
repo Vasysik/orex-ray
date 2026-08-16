@@ -47,6 +47,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
         createTunnelEngine(
           settings: widget.connectionSettings,
           appRouting: widget.appRouting,
+          profiles: widget.profiles,
           appVersion: widget.appVersion,
         ),
     profiles: widget.profiles,

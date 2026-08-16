@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../core/app_version.dart';
 import '../core/apps/app_routing_controller.dart';
+import '../core/profiles/profiles_controller.dart';
 import '../core/settings/connection_settings_controller.dart';
 import '../core/tunnel/tunnel_engine.dart';
 import 'android/android_xray_engine.dart';
@@ -11,13 +12,18 @@ import 'windows/windows_xray_engine.dart';
 TunnelEngine createTunnelEngine({
   required ConnectionSettingsController settings,
   required AppRoutingController appRouting,
+  required ProfilesController profiles,
   OrexAppVersion appVersion = OrexAppVersion.fallback,
 }) {
   if (Platform.isWindows) {
     return WindowsXrayEngine(settings: settings, appVersion: appVersion);
   }
   if (Platform.isAndroid) {
-    return AndroidXrayEngine(settings: settings, appRouting: appRouting);
+    return AndroidXrayEngine(
+      settings: settings,
+      appRouting: appRouting,
+      targetResolver: profiles.targetById,
+    );
   }
   return UnsupportedTunnelEngine(Platform.operatingSystem);
 }

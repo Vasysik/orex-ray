@@ -12,6 +12,7 @@ import '../../core/xray/xray_config_builder.dart';
 class AndroidXrayEngine
     implements
         TunnelEngine,
+        TunnelInitialStateSync,
         TunnelRuntimeMetadataSink,
         TunnelRuntimeSettingsSink,
         TunnelStatsConsumerSink,
@@ -20,9 +21,11 @@ class AndroidXrayEngine
     required ConnectionSettingsController settings,
     required AppRoutingController appRouting,
     XrayConfigBuilder? configBuilder,
+    TunnelTarget? Function(String targetId)? targetResolver,
   })  : _settings = settings,
         _appRouting = appRouting,
-        _configBuilder = configBuilder ?? const XrayConfigBuilder() {
+        _configBuilder = configBuilder ?? const XrayConfigBuilder(),
+        _targetResolver = targetResolver {
     _eventSubscription = _events.receiveBroadcastStream().listen(
           _onNativeEvent,
           onError: _onNativeStreamError,
@@ -36,7 +39,9 @@ class AndroidXrayEngine
   final ConnectionSettingsController _settings;
   final AppRoutingController _appRouting;
   final XrayConfigBuilder _configBuilder;
+  final TunnelTarget? Function(String targetId)? _targetResolver;
   final _snapshots = StreamController<TunnelSnapshot>.broadcast();
+  final _initialStateReady = Completer<void>();
   late final StreamSubscription<dynamic> _eventSubscription;
 
   TunnelTarget? _activeTarget;
@@ -60,7 +65,14 @@ class AndroidXrayEngine
       };
 
   @override
+  Future<void> waitForInitialState() => _initialStateReady.future;
+
+  @override
   Future<void> start(TunnelTarget target, ConnectionMode mode) async {
+    // A foreground Android VPN service can outlive the Activity/Dart engine.
+    // Do not issue another start request until the native state has been
+    // hydrated, otherwise we could overwrite metadata for the live route.
+    await waitForInitialState();
     if (_current.isBusy || _current.isConnected) return;
     if (!supportedModes.contains(mode)) {
       _emitError('Этот режим не поддерживается на Android.', mode: mode);
@@ -114,6 +126,7 @@ class AndroidXrayEngine
       await _channel.invokeMethod<void>('start', <String, Object?>{
         'config': config,
         'mode': mode.storageValue,
+        'targetId': target.id,
         'targetName': target.name,
         'latencyMs': target.latencyMs,
         'statsOutboundTags': target.isBalancer
@@ -131,6 +144,7 @@ class AndroidXrayEngine
         'statsIntervalSeconds': _settings.statsIntervalSeconds,
         'showNotificationSpeed': _settings.showNotificationSpeed,
         'showNotificationPing': _settings.showNotificationPing,
+        'allowNotificationDismissal': _settings.allowNotificationDismissal,
         'statsUiActive': _statsUiActive,
         'restartServiceOnKill': _settings.restartServiceOnKill,
         'appRoutingMode': _appRouting.mode.storageValue,
@@ -149,6 +163,7 @@ class AndroidXrayEngine
     try {
       await _channel
           .invokeMethod<void>('updateTargetMetadata', <String, Object?>{
+        'targetId': target.id,
         'targetName': target.name,
         'latencyMs': target.latencyMs,
       });
@@ -162,6 +177,7 @@ class AndroidXrayEngine
     required int statsIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
+    required bool allowNotificationDismissal,
   }) async {
     if (!_current.isConnected) return;
     try {
@@ -170,6 +186,7 @@ class AndroidXrayEngine
         'statsIntervalSeconds': statsIntervalSeconds,
         'showNotificationSpeed': showNotificationSpeed,
         'showNotificationPing': showNotificationPing,
+        'allowNotificationDismissal': allowNotificationDismissal,
       });
     } catch (_) {
       // Settings synchronization is best-effort and must not interrupt a
@@ -262,6 +279,8 @@ class AndroidXrayEngine
       if (event != null) _applyEvent(event);
     } catch (_) {
       // EventChannel delivers the first live state after attachment.
+    } finally {
+      if (!_initialStateReady.isCompleted) _initialStateReady.complete();
     }
   }
 
@@ -282,6 +301,18 @@ class AndroidXrayEngine
     final mode = ConnectionMode.fromStorageValue(event['mode'] as String?) ??
         _activeMode;
     _activeMode = mode;
+
+    final targetId = (event['targetId'] as String?)?.trim();
+    if (targetId != null && targetId.isNotEmpty) {
+      final resolved = _targetResolver?.call(targetId);
+      // Never replace an unknown restored target with the currently selected
+      // profile. That would make its saved direct ping look like a VPN route.
+      if (resolved?.id == targetId) {
+        _activeTarget = resolved;
+      } else if (_activeTarget?.id != targetId) {
+        _activeTarget = null;
+      }
+    }
 
     final downloadBytes = (event['downloadBytes'] as num?)?.toInt() ?? 0;
     final uploadBytes = (event['uploadBytes'] as num?)?.toInt() ?? 0;

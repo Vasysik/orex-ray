@@ -174,11 +174,17 @@ void main() {
     await settings.setStatsIntervalSeconds(5);
     await settings.setShowNotificationSpeed(false);
     await settings.setShowNotificationPing(false);
+    await settings.setAllowNotificationDismissal(true);
     await controller.setStatsUiActive(false);
 
     expect(
       engine.runtimeSettings,
-      contains((interval: 5, speed: false, ping: false)),
+      contains((
+        interval: 5,
+        speed: false,
+        ping: false,
+        allowDismissal: true,
+      )),
     );
     expect(engine.statsUiStates, [false]);
   });
@@ -314,6 +320,162 @@ void main() {
     expect(routeProbe.calls, 1);
     expect(controller.effectiveLatencyFor(controller.snapshot.profile), 123);
     expect(controller.routeLatencyFor(profile.id)?.status, PingStatus.success);
+  });
+
+  test('active local proxy uses the same route metric as VPN', () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(77),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final profile = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Local-route',
+    );
+    final routeProbe = _FixedRouteLatencyProbe(
+      const LatencyProbeResult.success(123),
+    );
+    final controller = TunnelController(
+      engine: _RecordingTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: routeProbe,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.setMode(ConnectionMode.localProxy);
+    await controller.connect();
+    await controller.refreshSelectedLatency();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(directProbe.calls, 0);
+    expect(routeProbe.calls, greaterThanOrEqualTo(1));
+    expect(controller.effectiveLatencyFor(controller.snapshot.profile), 123);
+    expect(controller.routeLatencyFor(profile.id)?.status, PingStatus.success);
+  });
+
+  test(
+      'changing the route probe service rechecks an active VPN without restart',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(2),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Route',
+    );
+    final engine = _RecordingTunnelEngine();
+    final routeProbe = _FixedRouteLatencyProbe(
+      const LatencyProbeResult.success(123),
+    );
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: routeProbe,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.setMode(ConnectionMode.vpnTun);
+    await controller.connect();
+    await controller.refreshSelectedLatency();
+    expect(
+      routeProbe.probeUris.last.toString(),
+      'https://cloudflare.com/cdn-cgi/trace',
+    );
+    final startCount = engine.startedTargets.length;
+
+    await settings.setLatencyProbePreset(LatencyProbePreset.google);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(engine.startedTargets.length, startCount);
+    expect(directProbe.calls, 0);
+    expect(routeProbe.calls, 2);
+    expect(
+      routeProbe.probeUris.last.toString(),
+      'https://www.gstatic.com/generate_204',
+    );
+  });
+
+  test('active VPN exposes its current route and retains other saved pings',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(2),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final active = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@active.example:443'
+      '?encryption=none&security=none&type=tcp#Active',
+    );
+    final inactive = await profiles.createProfile(
+      const TunnelProfile(
+        id: 'inactive-profile',
+        name: 'Inactive',
+        address: 'inactive.example',
+        port: 443,
+        userId: '22222222-2222-4222-8222-222222222222',
+        latencyMs: 2,
+        pingStatus: PingStatus.success,
+      ),
+    );
+    final routeProbe = _FixedRouteLatencyProbe(
+      const LatencyProbeResult.success(123),
+    );
+    final controller = TunnelController(
+      engine: _RecordingTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: routeProbe,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.setMode(ConnectionMode.vpnTun);
+    await controller.connect();
+    await controller.refreshSelectedLatency();
+
+    final activeTarget = profiles.targetById(active.id);
+    final inactiveTarget = profiles.targetById(inactive.id);
+    expect(controller.effectiveLatencyFor(activeTarget), 123);
+    expect(controller.effectiveLatencyFor(inactiveTarget), 2);
+    expect(
+      controller.effectivePingStatusFor(inactiveTarget),
+      PingStatus.unknown,
+    );
+    expect(controller.canRefreshTargetLatency(active.id), isTrue);
+    expect(controller.canRefreshTargetLatency(inactive.id), isFalse);
+
+    await controller.refreshProfileLatency(inactive.id);
+    await controller.refreshAllLatencies();
+
+    expect(directProbe.calls, 0);
+    expect(profiles.targetById(inactive.id)?.latencyMs, 2);
   });
 
   test(
@@ -485,6 +647,169 @@ void main() {
     expect(profiles.targetById('unselected')?.latencyMs, isNull);
   });
 
+  test('restored active VPN waits for its native target before probing',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(2),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final selected = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@selected.example:443'
+      '?encryption=none&security=none&type=tcp#Selected',
+    );
+    final active = await profiles.createProfile(
+      const TunnelProfile(
+        id: 'restored-active',
+        name: 'Restored active',
+        address: 'active.example',
+        port: 443,
+        userId: '22222222-2222-4222-8222-222222222222',
+      ),
+    );
+    final engine = _RestoringTunnelEngine();
+    final routeProbe = _FixedRouteLatencyProbe(
+      const LatencyProbeResult.success(123),
+    );
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: routeProbe,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    final checking = controller.refreshLatencyOnAppOpen();
+    engine.restore(
+      TunnelSnapshot(
+        status: TunnelStatus.connected,
+        mode: ConnectionMode.vpnTun,
+        profile: profiles.targetById(active.id),
+        stats: const TrafficStats(),
+      ),
+    );
+    await checking;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(selected.id, isNot(active.id));
+    expect(directProbe.calls, 0);
+    expect(controller.snapshot.profile?.id, active.id);
+    expect(controller.effectiveLatencyFor(controller.snapshot.profile), 123);
+  });
+
+  test('manual Ping refreshes the restored active VPN target, not selection',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(2),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final selected = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@selected.example:443'
+      '?encryption=none&security=none&type=tcp#Selected',
+    );
+    final active = await profiles.createProfile(
+      const TunnelProfile(
+        id: 'restored-active-manual',
+        name: 'Restored active manual',
+        address: 'active.example',
+        port: 443,
+        userId: '22222222-2222-4222-8222-222222222222',
+      ),
+    );
+    final engine = _RestoringTunnelEngine();
+    final routeProbe = _FixedRouteLatencyProbe(
+      const LatencyProbeResult.success(123),
+    );
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: routeProbe,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    engine.restore(
+      TunnelSnapshot(
+        status: TunnelStatus.connected,
+        mode: ConnectionMode.vpnTun,
+        profile: profiles.targetById(active.id),
+        stats: const TrafficStats(),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    routeProbe.calls = 0;
+
+    await controller.refreshSelectedLatency();
+
+    expect(selected.id, isNot(active.id));
+    expect(controller.snapshot.profile?.id, active.id);
+    expect(routeProbe.calls, 1);
+    expect(directProbe.calls, 0);
+  });
+
+  test(
+      'unknown restored VPN target never falls back to the selected direct ping',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _CountingLatencyProbe(
+      const LatencyProbeResult.success(2),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final selected = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@selected.example:443'
+      '?encryption=none&security=none&type=tcp#Selected',
+    );
+    await profiles.updateProfile(
+      selected.copyWith(latencyMs: 999, pingStatus: PingStatus.success),
+    );
+    final engine = _RestoringTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    final checking = controller.refreshLatencyOnAppOpen();
+    engine.restore(
+      const TunnelSnapshot(
+        status: TunnelStatus.connected,
+        mode: ConnectionMode.vpnTun,
+        stats: TrafficStats(),
+      ),
+    );
+    await checking;
+
+    expect(directProbe.calls, 0);
+    expect(controller.snapshot.profile, isNull);
+    expect(controller.effectiveLatencyFor(controller.snapshot.profile), isNull);
+  });
+
   test('VPN connection automatically checks the effective route', () async {
     SharedPreferences.setMockInitialValues({});
     final directProbe = _CountingLatencyProbe(
@@ -574,7 +899,8 @@ class _RecordingTunnelEngine implements TunnelEngine {
 
 class _RuntimeSettingsEngine extends _RecordingTunnelEngine
     implements TunnelRuntimeSettingsSink, TunnelStatsConsumerSink {
-  final List<({int interval, bool speed, bool ping})> runtimeSettings = [];
+  final List<({int interval, bool speed, bool ping, bool allowDismissal})>
+      runtimeSettings = [];
   final List<bool> statsUiStates = [];
 
   @override
@@ -587,11 +913,13 @@ class _RuntimeSettingsEngine extends _RecordingTunnelEngine
     required int statsIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
+    required bool allowNotificationDismissal,
   }) async {
     runtimeSettings.add((
       interval: statsIntervalSeconds,
       speed: showNotificationSpeed,
       ping: showNotificationPing,
+      allowDismissal: allowNotificationDismissal,
     ));
   }
 }
@@ -629,10 +957,15 @@ class _FixedRouteLatencyProbe extends TunnelRouteLatencyProbe {
 
   final LatencyProbeResult result;
   int calls = 0;
+  final List<Uri> probeUris = <Uri>[];
 
   @override
-  Future<LatencyProbeResult> measure({required int httpPort}) async {
+  Future<LatencyProbeResult> measure({
+    required int httpPort,
+    Uri? probeUri,
+  }) async {
     calls++;
+    if (probeUri != null) probeUris.add(probeUri);
     return result;
   }
 }
@@ -704,4 +1037,57 @@ class _EventTunnelEngine implements TunnelEngine {
     _current = value;
     _events.add(value);
   }
+}
+
+class _RestoringTunnelEngine implements TunnelEngine, TunnelInitialStateSync {
+  _RestoringTunnelEngine()
+      : _current = const TunnelSnapshot(
+          status: TunnelStatus.disconnected,
+          stats: TrafficStats(),
+        );
+
+  final _initialState = Completer<void>();
+  final _events = StreamController<TunnelSnapshot>.broadcast();
+  TunnelSnapshot _current;
+
+  @override
+  TunnelSnapshot get current => _current;
+
+  @override
+  Stream<TunnelSnapshot> get snapshots => _events.stream;
+
+  @override
+  Set<ConnectionMode> get supportedModes => const {
+        ConnectionMode.vpnTun,
+        ConnectionMode.localProxy,
+      };
+
+  @override
+  Future<void> waitForInitialState() => _initialState.future;
+
+  void restore(TunnelSnapshot value) {
+    _current = value;
+    if (!_initialState.isCompleted) _initialState.complete();
+    _events.add(value);
+  }
+
+  @override
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    _current = TunnelSnapshot(
+      status: TunnelStatus.connected,
+      mode: mode,
+      profile: profile,
+      stats: const TrafficStats(),
+    );
+    _events.add(_current);
+  }
+
+  @override
+  Future<void> stop() async {
+    _current = _current.copyWith(status: TunnelStatus.disconnected);
+    _events.add(_current);
+  }
+
+  @override
+  Future<void> dispose() => _events.close();
 }

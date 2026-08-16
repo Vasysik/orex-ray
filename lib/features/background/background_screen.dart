@@ -8,12 +8,14 @@ import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/settings_section.dart';
 
 class BackgroundScreen extends StatelessWidget {
-  const BackgroundScreen({super.key, required this.settings});
+  const BackgroundScreen({super.key, required this.settings, this.isAndroid});
 
   final ConnectionSettingsController settings;
+  final bool? isAndroid;
 
   @override
   Widget build(BuildContext context) {
+    final showAndroidNotificationSettings = isAndroid ?? Platform.isAndroid;
     return AnimatedBuilder(
       animation: settings,
       builder: (context, _) => ListView(
@@ -49,7 +51,35 @@ class BackgroundScreen extends StatelessWidget {
                   },
                 ),
               ),
-              if (Platform.isAndroid) ...[
+              if (showAndroidNotificationSettings) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(
+                    Icons.notifications_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Показывать уведомления'),
+                  subtitle: const Text(
+                    'Видимость меняется в системных настройках Android. '
+                    'При активном VPN минимальный статус службы может остаться обязательным.',
+                  ),
+                  trailing: const Icon(Icons.open_in_new_rounded),
+                  onTap: () => _openAndroidNotificationSettings(context),
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(
+                    Icons.swipe_rounded,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Разрешить смахивание'),
+                  subtitle: const Text(
+                    'При выключении запрашивается защита. Android 14+ или '
+                    'системный диспетчер всё равно могут скрыть или остановить VPN.',
+                  ),
+                  value: settings.allowNotificationDismissal,
+                  onChanged: settings.setAllowNotificationDismissal,
+                ),
                 const Divider(height: 1),
                 SwitchListTile(
                   secondary: const Icon(
@@ -68,25 +98,11 @@ class BackgroundScreen extends StatelessWidget {
                     Icons.network_ping_rounded,
                     color: OrexColors.copper,
                   ),
-                  title: const Text('Ping в уведомлении'),
+                  title: const Text('Пинг в уведомлении'),
                   subtitle: const Text(
                       'Показывать последнюю измеренную задержку профиля'),
                   value: settings.showNotificationPing,
                   onChanged: settings.setShowNotificationPing,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(
-                    Icons.tune_rounded,
-                    color: OrexColors.copper,
-                  ),
-                  title: const Text('Уведомление о работе VPN'),
-                  subtitle: const Text(
-                    'Включить или отключить канал через системные настройки Android. '
-                    'Во время VPN минимальный foreground-статус обязателен.',
-                  ),
-                  trailing: const Icon(Icons.open_in_new_rounded),
-                  onTap: () => _openAndroidNotificationSettings(context),
                 ),
               ],
             ],

@@ -23,8 +23,10 @@ enum DnsPreset {
       };
 
   String get description => switch (this) {
-        DnsPreset.system => 'Не задавать DNS в VPN и использовать DNS текущей сети',
-        DnsPreset.automatic => 'DNS приложений: 1.1.1.1 и 8.8.8.8 через туннель',
+        DnsPreset.system =>
+          'Не задавать DNS в VPN и использовать DNS текущей сети',
+        DnsPreset.automatic =>
+          'DNS приложений: 1.1.1.1 и 8.8.8.8 через туннель',
         DnsPreset.cloudflare => '1.1.1.1 и 1.0.0.1',
         DnsPreset.google => '8.8.8.8 и 8.8.4.4',
         DnsPreset.custom => 'Адреса, заданные вручную',
@@ -37,6 +39,36 @@ enum DnsPreset {
         'custom' => DnsPreset.custom,
         'system' => DnsPreset.system,
         _ => DnsPreset.automatic,
+      };
+}
+
+enum LatencyProbePreset {
+  cloudflare,
+  google,
+  custom;
+
+  static const cloudflareUrl = 'https://cloudflare.com/cdn-cgi/trace';
+  static const googleUrl = 'https://www.gstatic.com/generate_204';
+
+  String get storageValue => name;
+
+  String get title => switch (this) {
+        LatencyProbePreset.cloudflare => 'Cloudflare',
+        LatencyProbePreset.google => 'Google',
+        LatencyProbePreset.custom => 'Свой URL',
+      };
+
+  String get description => switch (this) {
+        LatencyProbePreset.cloudflare => cloudflareUrl,
+        LatencyProbePreset.google => googleUrl,
+        LatencyProbePreset.custom => 'Публичный HTTP(S) адрес',
+      };
+
+  static LatencyProbePreset fromStorageValue(String? value) => switch (value) {
+        'google' => LatencyProbePreset.google,
+        'custom' => LatencyProbePreset.custom,
+        'cloudflare' => LatencyProbePreset.cloudflare,
+        _ => LatencyProbePreset.cloudflare,
       };
 }
 
@@ -55,6 +87,8 @@ class ConnectionSettingsController extends ChangeNotifier {
     required String logLevel,
     required DnsPreset dnsPreset,
     required String customDns,
+    required LatencyProbePreset latencyProbePreset,
+    required String customLatencyProbeUrl,
     required bool geoRoutingEnabled,
     required String geoDirectRules,
     required String geoProxyRules,
@@ -62,6 +96,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     required int statsIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
+    required bool allowNotificationDismissal,
     required bool restartServiceOnKill,
     required bool closeToTray,
     required bool windowsRunAsAdministrator,
@@ -80,6 +115,8 @@ class ConnectionSettingsController extends ChangeNotifier {
         _logLevel = logLevel,
         _dnsPreset = dnsPreset,
         _customDns = customDns,
+        _latencyProbePreset = latencyProbePreset,
+        _customLatencyProbeUrl = customLatencyProbeUrl,
         _geoRoutingEnabled = geoRoutingEnabled,
         _geoDirectRules = geoDirectRules,
         _geoProxyRules = geoProxyRules,
@@ -87,6 +124,7 @@ class ConnectionSettingsController extends ChangeNotifier {
         _statsIntervalSeconds = statsIntervalSeconds,
         _showNotificationSpeed = showNotificationSpeed,
         _showNotificationPing = showNotificationPing,
+        _allowNotificationDismissal = allowNotificationDismissal,
         _restartServiceOnKill = restartServiceOnKill,
         _closeToTray = closeToTray,
         _windowsRunAsAdministrator = windowsRunAsAdministrator,
@@ -104,6 +142,9 @@ class ConnectionSettingsController extends ChangeNotifier {
   static const _logLevelKey = 'orex_ray_log_level_v1';
   static const _dnsPresetKey = 'orex_ray_dns_preset_v1';
   static const _customDnsKey = 'orex_ray_custom_dns_v1';
+  static const _latencyProbePresetKey = 'orex_ray_latency_probe_preset_v1';
+  static const _customLatencyProbeUrlKey =
+      'orex_ray_custom_latency_probe_url_v1';
   static const _geoRoutingEnabledKey = 'orex_ray_geo_routing_enabled_v1';
   static const _geoDirectRulesKey = 'orex_ray_geo_direct_rules_v1';
   static const _geoProxyRulesKey = 'orex_ray_geo_proxy_rules_v1';
@@ -111,13 +152,13 @@ class ConnectionSettingsController extends ChangeNotifier {
   static const _statsIntervalKey = 'orex_ray_stats_interval_v1';
   static const _notificationSpeedKey = 'orex_ray_notification_speed_v1';
   static const _notificationPingKey = 'orex_ray_notification_ping_v1';
+  static const _notificationDismissalKey = 'orex_ray_notification_dismissal_v1';
   static const _restartServiceKey = 'orex_ray_restart_service_v1';
   static const _closeToTrayKey = 'orex_ray_close_to_tray_v1';
   static const _windowsRunAsAdministratorKey =
       'orex_ray_windows_run_as_administrator_v1';
   static const _autoStartKey = 'orex_ray_auto_start_v1';
-  static const _autoConnectOnStartupKey =
-      'orex_ray_auto_connect_on_startup_v1';
+  static const _autoConnectOnStartupKey = 'orex_ray_auto_connect_on_startup_v1';
 
   static const int defaultSocksPort = 20808;
   static const int defaultHttpPort = 20809;
@@ -137,6 +178,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   String _logLevel;
   DnsPreset _dnsPreset;
   String _customDns;
+  LatencyProbePreset _latencyProbePreset;
+  String _customLatencyProbeUrl;
   bool _geoRoutingEnabled;
   String _geoDirectRules;
   String _geoProxyRules;
@@ -144,6 +187,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   int _statsIntervalSeconds;
   bool _showNotificationSpeed;
   bool _showNotificationPing;
+  bool _allowNotificationDismissal;
   bool _restartServiceOnKill;
   bool _closeToTray;
   bool _windowsRunAsAdministrator;
@@ -160,9 +204,19 @@ class ConnectionSettingsController extends ChangeNotifier {
       preferences.getString(_modeKey),
     );
     final fallback = defaultModeFor(platform);
-    final mode = stored != null && supportedModes.contains(stored)
-        ? stored
-        : fallback;
+    final mode =
+        stored != null && supportedModes.contains(stored) ? stored : fallback;
+    final storedLatencyProbePreset = LatencyProbePreset.fromStorageValue(
+      preferences.getString(_latencyProbePresetKey),
+    );
+    final customLatencyProbeUrl = _normalizePublicProbeUrl(
+      preferences.getString(_customLatencyProbeUrlKey),
+    );
+    final latencyProbePreset =
+        storedLatencyProbePreset == LatencyProbePreset.custom &&
+                customLatencyProbeUrl == null
+            ? LatencyProbePreset.cloudflare
+            : storedLatencyProbePreset;
 
     return ConnectionSettingsController._(
       preferences: preferences,
@@ -170,8 +224,7 @@ class ConnectionSettingsController extends ChangeNotifier {
       mode: mode,
       socksPort:
           _validPort(preferences.getInt(_socksPortKey)) ?? defaultSocksPort,
-      httpPort:
-          _validPort(preferences.getInt(_httpPortKey)) ?? defaultHttpPort,
+      httpPort: _validPort(preferences.getInt(_httpPortKey)) ?? defaultHttpPort,
       mtu: _validMtu(preferences.getInt(_mtuKey)) ?? defaultMtu,
       allowLan: preferences.getBool(_allowLanKey) ?? false,
       localProxyInVpn: preferences.getBool(_localProxyInVpnKey) ?? true,
@@ -182,17 +235,18 @@ class ConnectionSettingsController extends ChangeNotifier {
         preferences.getString(_dnsPresetKey),
       ),
       customDns: preferences.getString(_customDnsKey)?.trim() ?? '',
-      geoRoutingEnabled:
-          preferences.getBool(_geoRoutingEnabledKey) ?? false,
+      latencyProbePreset: latencyProbePreset,
+      customLatencyProbeUrl: customLatencyProbeUrl ?? '',
+      geoRoutingEnabled: preferences.getBool(_geoRoutingEnabledKey) ?? false,
       geoDirectRules: preferences.getString(_geoDirectRulesKey)?.trim() ?? '',
       geoProxyRules: preferences.getString(_geoProxyRulesKey)?.trim() ?? '',
       geoBlockRules: preferences.getString(_geoBlockRulesKey)?.trim() ?? '',
       statsIntervalSeconds:
           _validStatsInterval(preferences.getInt(_statsIntervalKey)) ?? 2,
-      showNotificationSpeed:
-          preferences.getBool(_notificationSpeedKey) ?? true,
-      showNotificationPing:
-          preferences.getBool(_notificationPingKey) ?? true,
+      showNotificationSpeed: preferences.getBool(_notificationSpeedKey) ?? true,
+      showNotificationPing: preferences.getBool(_notificationPingKey) ?? true,
+      allowNotificationDismissal:
+          preferences.getBool(_notificationDismissalKey) ?? false,
       restartServiceOnKill: preferences.getBool(_restartServiceKey) ?? true,
       closeToTray:
           preferences.getBool(_closeToTrayKey) ?? (platform == 'windows'),
@@ -216,6 +270,14 @@ class ConnectionSettingsController extends ChangeNotifier {
   String get logLevel => _logLevel;
   DnsPreset get dnsPreset => _dnsPreset;
   String get customDns => _customDns;
+  LatencyProbePreset get latencyProbePreset => _latencyProbePreset;
+  String get customLatencyProbeUrl => _customLatencyProbeUrl;
+  String get latencyProbeUrl => switch (_latencyProbePreset) {
+        LatencyProbePreset.cloudflare => LatencyProbePreset.cloudflareUrl,
+        LatencyProbePreset.google => LatencyProbePreset.googleUrl,
+        LatencyProbePreset.custom => _customLatencyProbeUrl,
+      };
+  Uri get latencyProbeUri => Uri.parse(latencyProbeUrl);
   bool get geoRoutingEnabled => _geoRoutingEnabled;
   String get geoDirectRulesText => _geoDirectRules;
   String get geoProxyRulesText => _geoProxyRules;
@@ -223,6 +285,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   int get statsIntervalSeconds => _statsIntervalSeconds;
   bool get showNotificationSpeed => _showNotificationSpeed;
   bool get showNotificationPing => _showNotificationPing;
+  bool get allowNotificationDismissal => _allowNotificationDismissal;
   bool get restartServiceOnKill => _restartServiceOnKill;
   bool get closeToTray => _closeToTray;
   bool get windowsRunAsAdministrator => _windowsRunAsAdministrator;
@@ -256,7 +319,8 @@ class ConnectionSettingsController extends ChangeNotifier {
       throw const FormatException('Порт должен быть от 1 до 65535');
     }
     if (port == _httpPort) {
-      throw const FormatException('SOCKS и HTTP должны использовать разные порты');
+      throw const FormatException(
+          'SOCKS и HTTP должны использовать разные порты');
     }
     if (_socksPort == port) return;
     _socksPort = port;
@@ -270,7 +334,8 @@ class ConnectionSettingsController extends ChangeNotifier {
       throw const FormatException('Порт должен быть от 1 до 65535');
     }
     if (port == _socksPort) {
-      throw const FormatException('SOCKS и HTTP должны использовать разные порты');
+      throw const FormatException(
+          'SOCKS и HTTP должны использовать разные порты');
     }
     if (_httpPort == port) return;
     _httpPort = port;
@@ -344,6 +409,49 @@ class ConnectionSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setLatencyProbePreset(LatencyProbePreset value) async {
+    if (value == LatencyProbePreset.custom && _customLatencyProbeUrl.isEmpty) {
+      throw const FormatException('Сначала укажи публичный HTTP(S) URL');
+    }
+    if (_latencyProbePreset == value) return;
+    _latencyProbePreset = value;
+    await _preferences.setString(_latencyProbePresetKey, value.storageValue);
+    notifyListeners();
+  }
+
+  /// Saves a public HTTP(S) endpoint and switches the route probe to it.
+  /// The next active VPN check reads this value without restarting Xray.
+  Future<void> setCustomLatencyProbeUrl(String value) async {
+    final normalized = _normalizePublicProbeUrl(value);
+    if (normalized == null) {
+      throw const FormatException(
+        'URL проверки должен быть публичным HTTP(S) адресом',
+      );
+    }
+    if (_customLatencyProbeUrl == normalized &&
+        _latencyProbePreset == LatencyProbePreset.custom) {
+      return;
+    }
+    _customLatencyProbeUrl = normalized;
+    _latencyProbePreset = LatencyProbePreset.custom;
+    await _preferences.setString(_customLatencyProbeUrlKey, normalized);
+    await _preferences.setString(
+      _latencyProbePresetKey,
+      LatencyProbePreset.custom.storageValue,
+    );
+    notifyListeners();
+  }
+
+  static String? validateLatencyProbeUrl(String value) {
+    final normalized = value.trim();
+    if (normalized.isEmpty) return 'Укажи URL проверки';
+    if (normalized.length > 8192) return 'URL проверки слишком длинный';
+    if (!_isSafePublicHttpUri(Uri.tryParse(normalized))) {
+      return 'Нужен публичный HTTP(S) URL без учётных данных';
+    }
+    return null;
+  }
+
   Future<void> setGeoRoutingEnabled(bool value) async {
     if (_geoRoutingEnabled == value) return;
     _geoRoutingEnabled = value;
@@ -407,6 +515,13 @@ class ConnectionSettingsController extends ChangeNotifier {
     if (_showNotificationPing == value) return;
     _showNotificationPing = value;
     await _preferences.setBool(_notificationPingKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setAllowNotificationDismissal(bool value) async {
+    if (_allowNotificationDismissal == value) return;
+    _allowNotificationDismissal = value;
+    await _preferences.setBool(_notificationDismissalKey, value);
     notifyListeners();
   }
 
@@ -482,6 +597,72 @@ class ConnectionSettingsController extends ChangeNotifier {
         _ => 'error',
       };
 
+  static String? _normalizePublicProbeUrl(String? value) {
+    final normalized = value?.trim() ?? '';
+    return validateLatencyProbeUrl(normalized) == null ? normalized : null;
+  }
+
+  static bool _isSafePublicHttpUri(Uri? uri) {
+    if (uri == null ||
+        !uri.hasAuthority ||
+        uri.userInfo.isNotEmpty ||
+        uri.fragment.isNotEmpty) {
+      return false;
+    }
+    if (uri.scheme != 'http' && uri.scheme != 'https') return false;
+    if (uri.hasPort && (uri.port < 1 || uri.port > 65535)) return false;
+    final rawHost = uri.host.trim().toLowerCase();
+    final host = rawHost.endsWith('.')
+        ? rawHost.substring(0, rawHost.length - 1)
+        : rawHost;
+    if (host.isEmpty ||
+        host.length > 253 ||
+        host == 'localhost' ||
+        host.endsWith('.localhost') ||
+        host.endsWith('.local')) {
+      return false;
+    }
+
+    final address = InternetAddress.tryParse(host);
+    if (address == null) return true;
+    final bytes = address.rawAddress;
+    if (address.type == InternetAddressType.IPv4) {
+      return _isPublicIpv4(bytes);
+    }
+
+    final unspecified = bytes.every((value) => value == 0);
+    final loopback =
+        bytes.take(15).every((value) => value == 0) && bytes[15] == 1;
+    final uniqueLocal = bytes[0] == 0xfc || bytes[0] == 0xfd;
+    final linkLocal = bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80;
+    final multicast = bytes[0] == 0xff;
+    final ipv4Mapped = bytes.take(10).every((value) => value == 0) &&
+        bytes[10] == 0xff &&
+        bytes[11] == 0xff;
+    if (ipv4Mapped) return _isPublicIpv4(bytes.sublist(12));
+    return !unspecified &&
+        !loopback &&
+        !uniqueLocal &&
+        !linkLocal &&
+        !multicast;
+  }
+
+  static bool _isPublicIpv4(List<int> bytes) {
+    final first = bytes[0];
+    final second = bytes[1];
+    final third = bytes[2];
+    return first != 0 &&
+        first != 10 &&
+        first != 127 &&
+        !(first == 100 && second >= 64 && second <= 127) &&
+        !(first == 169 && second == 254) &&
+        !(first == 172 && second >= 16 && second <= 31) &&
+        !(first == 192 && second == 0 && third == 0) &&
+        !(first == 192 && second == 168) &&
+        !(first == 198 && (second == 18 || second == 19)) &&
+        first < 224;
+  }
+
   static List<String> _parseDnsList(String value) {
     final seen = <String>{};
     for (final part in value.split(RegExp(r'[\s,;]+'))) {
@@ -492,10 +673,8 @@ class ConnectionSettingsController extends ChangeNotifier {
     return seen.toList(growable: false);
   }
 
-  static List<String> _parseGeoRules(String value) => _rawRuleTokens(value)
-      .where(_isGeoRule)
-      .toSet()
-      .toList(growable: false);
+  static List<String> _parseGeoRules(String value) =>
+      _rawRuleTokens(value).where(_isGeoRule).toSet().toList(growable: false);
 
   static Iterable<String> _rawRuleTokens(String value) => value
       .split(RegExp(r'[\s,;]+'))

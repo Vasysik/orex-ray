@@ -35,6 +35,7 @@ class MainActivity : FlutterActivity() {
     private data class StartRequest(
         val config: String,
         val mode: String,
+        val targetId: String?,
         val targetName: String,
         val latencyMs: Int?,
         val statsOutboundTags: List<String>,
@@ -46,6 +47,7 @@ class MainActivity : FlutterActivity() {
         val statsIntervalSeconds: Int,
         val showNotificationSpeed: Boolean,
         val showNotificationPing: Boolean,
+        val allowNotificationDismissal: Boolean,
         val statsUiActive: Boolean,
         val restartServiceOnKill: Boolean,
         val appRoutingMode: String,
@@ -84,6 +86,9 @@ class MainActivity : FlutterActivity() {
                         val request = StartRequest(
                             config = config,
                             mode = mode,
+                            targetId = call.argument<String>("targetId")
+                                ?.trim()
+                                ?.takeIf { it.isNotEmpty() },
                             targetName = call.argument<String>("targetName")
                                 ?.trim()
                                 ?.takeIf { it.isNotEmpty() }
@@ -119,6 +124,8 @@ class MainActivity : FlutterActivity() {
                                 call.argument<Boolean>("showNotificationSpeed") ?: true,
                             showNotificationPing =
                                 call.argument<Boolean>("showNotificationPing") ?: true,
+                            allowNotificationDismissal =
+                                call.argument<Boolean>("allowNotificationDismissal") ?: false,
                             statsUiActive =
                                 call.argument<Boolean>("statsUiActive") ?: false,
                             restartServiceOnKill =
@@ -159,6 +166,7 @@ class MainActivity : FlutterActivity() {
                     "updateTargetMetadata" -> {
                         runCatching {
                             updateTargetMetadata(
+                                targetId = call.argument<String>("targetId"),
                                 targetName = call.argument<String>("targetName"),
                                 latencyMs = call.argument<Int>("latencyMs"),
                             )
@@ -182,6 +190,8 @@ class MainActivity : FlutterActivity() {
                                     call.argument<Boolean>("showNotificationSpeed") ?: true,
                                 showNotificationPing =
                                     call.argument<Boolean>("showNotificationPing") ?: true,
+                                allowNotificationDismissal =
+                                    call.argument<Boolean>("allowNotificationDismissal") ?: false,
                             )
                         }
                             .onSuccess { result.success(null) }
@@ -208,7 +218,7 @@ class MainActivity : FlutterActivity() {
                             }
                     }
 
-                    "status" -> result.success(OrexRayRuntimeStateStore.load(this))
+                    "status" -> result.success(OrexRayVpnService.runtimeState(this))
                     "setAutoConnectOnBoot" -> {
                         OrexRayStartupStore.setAutoConnectOnBoot(
                             this,
@@ -427,6 +437,7 @@ class MainActivity : FlutterActivity() {
                 OrexRayTunnelEvents.event(
                     status = "connecting",
                     mode = request.mode,
+                    targetId = request.targetId,
                     message = "Подтверди системное разрешение VPN",
                 ),
             )
@@ -487,6 +498,7 @@ class MainActivity : FlutterActivity() {
             .setAction(OrexRayVpnService.ACTION_START)
             .putExtra(OrexRayVpnService.EXTRA_CONFIG, request.config)
             .putExtra(OrexRayVpnService.EXTRA_MODE, request.mode)
+            .putExtra(OrexRayVpnService.EXTRA_TARGET_ID, request.targetId)
             .putExtra(OrexRayVpnService.EXTRA_TARGET_NAME, request.targetName)
             .putExtra(OrexRayVpnService.EXTRA_LATENCY_MS, request.latencyMs ?: -1)
             .putStringArrayListExtra(
@@ -517,6 +529,10 @@ class MainActivity : FlutterActivity() {
                 request.showNotificationPing,
             )
             .putExtra(
+                OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
+                request.allowNotificationDismissal,
+            )
+            .putExtra(
                 OrexRayVpnService.EXTRA_STATS_UI_ACTIVE,
                 request.statsUiActive,
             )
@@ -541,9 +557,17 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun updateTargetMetadata(targetName: String?, latencyMs: Int?) {
+    private fun updateTargetMetadata(
+        targetId: String?,
+        targetName: String?,
+        latencyMs: Int?,
+    ) {
         val intent = Intent(this, OrexRayVpnService::class.java)
             .setAction(OrexRayVpnService.ACTION_UPDATE_METADATA)
+            .putExtra(
+                OrexRayVpnService.EXTRA_TARGET_ID,
+                targetId?.trim().orEmpty(),
+            )
             .putExtra(
                 OrexRayVpnService.EXTRA_TARGET_NAME,
                 targetName?.trim().orEmpty(),
@@ -556,6 +580,7 @@ class MainActivity : FlutterActivity() {
         statsIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
+        allowNotificationDismissal: Boolean,
     ) {
         val intent = Intent(this, OrexRayVpnService::class.java)
             .setAction(OrexRayVpnService.ACTION_UPDATE_RUNTIME_SETTINGS)
@@ -570,6 +595,10 @@ class MainActivity : FlutterActivity() {
             .putExtra(
                 OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
                 showNotificationPing,
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
+                allowNotificationDismissal,
             )
         startService(intent)
     }

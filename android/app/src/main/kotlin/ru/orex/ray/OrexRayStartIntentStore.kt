@@ -42,12 +42,22 @@ internal object OrexRayStartIntentStore {
         }
     }
 
-    fun updateRestartMetadata(context: Context, targetName: String, latencyMs: Int?) {
-        updateMetadata(context, RESTART_STATE_KEY, targetName, latencyMs)
+    fun updateRestartMetadata(
+        context: Context,
+        targetId: String?,
+        targetName: String,
+        latencyMs: Int?,
+    ) {
+        updateMetadata(context, RESTART_STATE_KEY, targetId, targetName, latencyMs)
     }
 
-    fun updateQuickTileMetadata(context: Context, targetName: String, latencyMs: Int?) {
-        updateMetadata(context, QUICK_TILE_STATE_KEY, targetName, latencyMs)
+    fun updateQuickTileMetadata(
+        context: Context,
+        targetId: String?,
+        targetName: String,
+        latencyMs: Int?,
+    ) {
+        updateMetadata(context, QUICK_TILE_STATE_KEY, targetId, targetName, latencyMs)
     }
 
     fun updateRuntimeSettings(
@@ -55,6 +65,7 @@ internal object OrexRayStartIntentStore {
         statsIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
+        allowNotificationDismissal: Boolean,
     ) {
         updateRuntimeSettings(
             context,
@@ -62,6 +73,7 @@ internal object OrexRayStartIntentStore {
             statsIntervalSeconds,
             showNotificationSpeed,
             showNotificationPing,
+            allowNotificationDismissal,
         )
         updateRuntimeSettings(
             context,
@@ -69,6 +81,7 @@ internal object OrexRayStartIntentStore {
             statsIntervalSeconds,
             showNotificationSpeed,
             showNotificationPing,
+            allowNotificationDismissal,
         )
     }
 
@@ -86,6 +99,10 @@ internal object OrexRayStartIntentStore {
             .put(
                 OrexRayVpnService.EXTRA_MODE,
                 intent.getStringExtra(OrexRayVpnService.EXTRA_MODE).orEmpty(),
+            )
+            .put(
+                OrexRayVpnService.EXTRA_TARGET_ID,
+                intent.getStringExtra(OrexRayVpnService.EXTRA_TARGET_ID).orEmpty(),
             )
             .put(
                 OrexRayVpnService.EXTRA_TARGET_NAME,
@@ -122,6 +139,13 @@ internal object OrexRayStartIntentStore {
             .put(
                 OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
                 intent.getBooleanExtra(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING, true),
+            )
+            .put(
+                OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
+                intent.getBooleanExtra(
+                    OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
+                    false,
+                ),
             )
             .put(
                 OrexRayVpnService.EXTRA_RESTART_SERVICE,
@@ -175,6 +199,10 @@ internal object OrexRayStartIntentStore {
                     json.optString(OrexRayVpnService.EXTRA_MODE, OrexRayVpnService.MODE_VPN),
                 )
                 .putExtra(
+                    OrexRayVpnService.EXTRA_TARGET_ID,
+                    json.optString(OrexRayVpnService.EXTRA_TARGET_ID, ""),
+                )
+                .putExtra(
                     OrexRayVpnService.EXTRA_TARGET_NAME,
                     json.optString(OrexRayVpnService.EXTRA_TARGET_NAME, "OrexRay"),
                 )
@@ -215,11 +243,18 @@ internal object OrexRayStartIntentStore {
                     OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
                     json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED, true),
                 )
-                .putExtra(
-                    OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
-                    json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING, true),
-                )
-                .putExtra(
+            .putExtra(
+                OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
+                json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING, true),
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
+                json.optBoolean(
+                    OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
+                    false,
+                ),
+            )
+            .putExtra(
                     OrexRayVpnService.EXTRA_RESTART_SERVICE,
                     json.optBoolean(OrexRayVpnService.EXTRA_RESTART_SERVICE, true),
                 )
@@ -240,6 +275,7 @@ internal object OrexRayStartIntentStore {
     private fun updateMetadata(
         context: Context,
         key: String,
+        targetId: String?,
         targetName: String,
         latencyMs: Int?,
     ) {
@@ -247,6 +283,7 @@ internal object OrexRayStartIntentStore {
         val payload = runCatching { secureStore.read(key) }.getOrNull() ?: return
         runCatching {
             val json = JSONObject(payload)
+                .put(OrexRayVpnService.EXTRA_TARGET_ID, targetId.orEmpty())
                 .put(OrexRayVpnService.EXTRA_TARGET_NAME, targetName)
                 .put(OrexRayVpnService.EXTRA_LATENCY_MS, latencyMs ?: -1)
             secureStore.write(key, json.toString())
@@ -259,6 +296,7 @@ internal object OrexRayStartIntentStore {
         statsIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
+        allowNotificationDismissal: Boolean,
     ) {
         val secureStore = AndroidSecureStore(context.applicationContext)
         val payload = runCatching { secureStore.read(key) }.getOrNull() ?: return
@@ -275,6 +313,10 @@ internal object OrexRayStartIntentStore {
                 .put(
                     OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
                     showNotificationPing,
+                )
+                .put(
+                    OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
+                    allowNotificationDismissal,
                 )
             secureStore.write(key, json.toString())
         }.onFailure { Log.w(TAG, "Could not update encrypted start settings: $key", it) }

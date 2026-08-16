@@ -13,6 +13,7 @@ internal object OrexRayRuntimeStateStore {
     private const val PREFERENCES = "orex_ray_runtime_state_v1"
     private const val KEY_STATUS = "status"
     private const val KEY_MODE = "mode"
+    private const val KEY_TARGET_ID = "target_id"
     private const val KEY_MESSAGE = "message"
     private const val KEY_ERROR = "error"
 
@@ -22,6 +23,7 @@ internal object OrexRayRuntimeStateStore {
             status = preferences.getString(KEY_STATUS, "disconnected") ?: "disconnected",
             mode = preferences.getString(KEY_MODE, OrexRayVpnService.MODE_VPN)
                 ?: OrexRayVpnService.MODE_VPN,
+            targetId = preferences.getString(KEY_TARGET_ID, null),
             message = preferences.getString(KEY_MESSAGE, null),
             errorMessage = preferences.getString(KEY_ERROR, null),
         )
@@ -30,6 +32,7 @@ internal object OrexRayRuntimeStateStore {
     fun save(context: Context, value: Map<String, Any?>) {
         val status = value["status"] as? String ?: "disconnected"
         val mode = value["mode"] as? String ?: OrexRayVpnService.MODE_VPN
+        val targetId = (value["targetId"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
         val message = value["message"] as? String
         val error = value["errorMessage"] as? String
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -37,6 +40,7 @@ internal object OrexRayRuntimeStateStore {
         if (
             preferences.getString(KEY_STATUS, null) == status &&
             preferences.getString(KEY_MODE, null) == mode &&
+            preferences.getString(KEY_TARGET_ID, null) == targetId &&
             status == "connected"
         ) {
             return
@@ -48,6 +52,7 @@ internal object OrexRayRuntimeStateStore {
             .putString(KEY_STATUS, status)
             .putString(KEY_MODE, mode)
             .apply {
+                if (targetId == null) remove(KEY_TARGET_ID) else putString(KEY_TARGET_ID, targetId)
                 if (message == null) remove(KEY_MESSAGE) else putString(KEY_MESSAGE, message)
                 if (error == null) remove(KEY_ERROR) else putString(KEY_ERROR, error)
             }

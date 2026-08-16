@@ -27,14 +27,14 @@ class ProfilesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([profiles, tunnel.egressChanges]),
+      animation: Listenable.merge([profiles, tunnel, tunnel.egressChanges]),
       builder: (context, _) {
         final selected = profiles.selectedTarget;
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
             _ProfilesHeader(
-              refreshingLatency: profiles.refreshingLatency,
+              refreshingLatency: tunnel.refreshingLatency,
               canRefreshLatency: profiles.profiles.isNotEmpty,
               onOpenProfileMenu: () => _showProfileMenu(context),
               onRefreshLatency: tunnel.refreshAllLatencies,
@@ -56,8 +56,10 @@ class ProfilesScreen extends StatelessWidget {
                     identity: tunnel.egressIdentityFor(profile.id),
                     selected: selected?.id == profile.id,
                     onSelect: () => tunnel.selectTarget(profile.id),
-                    onRefreshPing: () =>
-                        tunnel.refreshProfileLatency(profile.id),
+                    latencyMs: profile.latencyMs,
+                    onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
+                        ? () => tunnel.refreshProfileLatency(profile.id)
+                        : null,
                     onEdit: () => _showEditProfileDialog(context, profile),
                     onDelete: () =>
                         _deleteTarget(context, profile.id, profile.name),
@@ -81,6 +83,10 @@ class ProfilesScreen extends StatelessWidget {
                           ...profiles.profiles.where((item) => item.id == id),
                       ],
                       selected: selected?.id == balancer.id,
+                      latencyMs: profiles.targetById(balancer.id)?.latencyMs,
+                      onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
+                          ? () => tunnel.refreshTargetLatency(balancer.id)
+                          : null,
                       onSelect: () => tunnel.selectTarget(balancer.id),
                       onEdit: () =>
                           _showBalancerDialog(context, existing: balancer),
@@ -263,7 +269,7 @@ class _ProfilesHeader extends StatelessWidget {
         Text('Профили', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text(
-          'Серверы, ping и балансировщики Xray',
+          'Серверы, пинг и балансировщики Xray',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
@@ -288,13 +294,8 @@ class _ProfilesHeader extends StatelessWidget {
         OutlinedButton.icon(
           onPressed:
               refreshingLatency || !canRefreshLatency ? null : onRefreshLatency,
-          icon: refreshingLatency
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.network_ping_rounded),
-          label: const Text('Проверить ping'),
+          icon: const Icon(Icons.network_ping_rounded),
+          label: const Text('Проверить пинг'),
         ),
       ],
     );
@@ -387,6 +388,7 @@ class _ProfileCard extends StatelessWidget {
     required this.identity,
     required this.selected,
     required this.onSelect,
+    required this.latencyMs,
     required this.onRefreshPing,
     required this.onEdit,
     required this.onDelete,
@@ -396,7 +398,8 @@ class _ProfileCard extends StatelessWidget {
   final EgressIdentity? identity;
   final bool selected;
   final VoidCallback onSelect;
-  final VoidCallback onRefreshPing;
+  final int? latencyMs;
+  final VoidCallback? onRefreshPing;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -419,7 +422,7 @@ class _ProfileCard extends StatelessWidget {
                 child: Text(profile.name,
                     maxLines: 1, overflow: TextOverflow.ellipsis)),
             _PingBadge(
-              latencyMs: profile.latencyMs,
+              latencyMs: latencyMs,
               onTap: onRefreshPing,
             ),
           ],
@@ -436,12 +439,16 @@ class _ProfileCard extends StatelessWidget {
         trailing: PopupMenuButton<String>(
           onSelected: (value) {
             if (value == 'edit') onEdit();
-            if (value == 'ping') onRefreshPing();
+            if (value == 'ping') onRefreshPing?.call();
             if (value == 'delete') onDelete();
           },
-          itemBuilder: (context) => const [
+          itemBuilder: (context) => [
             PopupMenuItem(value: 'edit', child: Text('Редактировать')),
-            PopupMenuItem(value: 'ping', child: Text('Проверить ping')),
+            PopupMenuItem(
+              value: 'ping',
+              enabled: onRefreshPing != null,
+              child: const Text('Проверить пинг'),
+            ),
             PopupMenuDivider(),
             PopupMenuItem(value: 'delete', child: Text('Удалить')),
           ],
@@ -458,7 +465,7 @@ class _PingBadge extends StatelessWidget {
   });
 
   final int? latencyMs;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -467,7 +474,7 @@ class _PingBadge extends StatelessWidget {
         ? Theme.of(context).colorScheme.onSurfaceVariant
         : latency < 100
             ? OrexColors.online
-            : latency < 250
+            : latency < 1000
                 ? OrexColors.copper
                 : OrexColors.danger;
     return InkWell(
@@ -480,7 +487,7 @@ class _PingBadge extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
-          latency == null ? 'ping —' : '$latency ms',
+          latency == null ? 'Пинг —' : '$latency мс',
           style: TextStyle(
               color: color, fontSize: 12, fontWeight: FontWeight.w600),
         ),
@@ -495,6 +502,8 @@ class _BalancerCard extends StatelessWidget {
     required this.identity,
     required this.members,
     required this.selected,
+    required this.latencyMs,
+    required this.onRefreshPing,
     required this.onSelect,
     required this.onEdit,
     required this.onDelete,
@@ -504,13 +513,14 @@ class _BalancerCard extends StatelessWidget {
   final EgressIdentity? identity;
   final List<TunnelProfile> members;
   final bool selected;
+  final int? latencyMs;
+  final VoidCallback? onRefreshPing;
   final VoidCallback onSelect;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final target = TunnelTarget.balancer(balancer, members);
     return GlassPanel(
       borderRadius: 22,
       tint: selected ? OrexColors.copper : null,
@@ -529,8 +539,8 @@ class _BalancerCard extends StatelessWidget {
                 child: Text(balancer.name,
                     maxLines: 1, overflow: TextOverflow.ellipsis)),
             _PingBadge(
-              latencyMs: target.latencyMs,
-              onTap: onEdit,
+              latencyMs: latencyMs,
+              onTap: onRefreshPing,
             ),
           ],
         ),
@@ -1235,7 +1245,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                   title: Text(profile.name),
                   subtitle: Text(
                     '${profile.endpoint} · '
-                    '${profile.latencyMs == null ? 'ping —' : '${profile.latencyMs} мс'}',
+                    '${profile.latencyMs == null ? 'Пинг —' : '${profile.latencyMs} мс'}',
                   ),
                 ),
             ],

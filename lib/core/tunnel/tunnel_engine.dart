@@ -15,6 +15,16 @@ abstract interface class TunnelEngine {
   Future<void> dispose();
 }
 
+/// Optional startup barrier for engines whose native runtime can outlive the
+/// Flutter activity.
+///
+/// Android's foreground VPN service may still be connected when a new Dart
+/// engine is created. Consumers must wait for this barrier before deciding
+/// that a direct probe or a new connection is safe.
+abstract interface class TunnelInitialStateSync {
+  Future<void> waitForInitialState();
+}
+
 /// Optional bridge for engines that can update native/background UI while a
 /// tunnel is already running (for example Android's foreground notification).
 abstract interface class TunnelRuntimeMetadataSink {
@@ -34,6 +44,7 @@ abstract interface class TunnelRuntimeSettingsSink {
     required int statsIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
+    required bool allowNotificationDismissal,
   });
 }
 
