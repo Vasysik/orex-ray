@@ -233,16 +233,16 @@ class TunnelController extends ChangeNotifier {
     }
   }
 
-  /// A target outside the current route cannot be measured without a
-  /// reconnect. Its saved direct result is not refreshed while connected: in
-  /// VPN mode that can become a recursive 1–4 ms pseudo-ping, and in local
-  /// proxy mode it would not match the active route metric.
+  /// Direct TCP checks belong to the profile list, while the home screen has
+  /// its own end-to-end route metric. A VPN only permits list checks when the
+  /// selected probe explicitly proves it bypasses OrexRay's TUN; otherwise a
+  /// raw socket could produce a recursive 1–4 ms pseudo-ping.
   bool canRefreshTargetLatency(String targetId) {
     if (_engineSnapshot.isBusy) return false;
-    if (_engineSnapshot.isConnected) {
-      return _engineSnapshot.profile?.id == targetId;
-    }
-    return _profiles.targetById(targetId) != null;
+    if (_profiles.targetById(targetId) == null) return false;
+    return _canRefreshSavedDirectLatencies ||
+        (_engineSnapshot.isConnected &&
+            _engineSnapshot.profile?.id == targetId);
   }
 
   /// Performs the one event-driven check requested when the application is
@@ -312,18 +312,25 @@ class TunnelController extends ChangeNotifier {
         ? _engineSnapshot.profile
         : _profiles.selectedTarget;
     if (target == null) return;
-    await refreshTargetLatency(target.id);
+    // The home card always represents the active route, never the profile
+    // list's direct endpoint result. In particular, this must stay true on
+    // Android and Windows where list probes can safely bypass an active TUN.
+    if (_engineSnapshot.isConnected) {
+      await _refreshActiveRouteLatency(expectedTargetId: target.id);
+      return;
+    }
+    await _refreshDirectTargetLatency(target.id);
   }
 
-  /// Refreshes one target when it is safe to do so. Once a route is active,
-  /// only the target actually carrying traffic has a meaningful end-to-end
-  /// result.
+  /// Refreshes the saved direct TCP result shown in the profile list. The
+  /// connected target's end-to-end measurement remains exclusively on the
+  /// home card via [refreshSelectedLatency].
   Future<void> refreshTargetLatency(String targetId) async {
     await waitForInitialState();
     if (_closing) return;
     final target = _profiles.targetById(targetId);
     if (target == null) return;
-    if (_engineSnapshot.isConnected) {
+    if (_engineSnapshot.isConnected && !_canRefreshSavedDirectLatencies) {
       if (_isActiveRouteTarget(target.id)) {
         await _refreshActiveRouteLatency(expectedTargetId: target.id);
       }
@@ -336,7 +343,7 @@ class TunnelController extends ChangeNotifier {
     await waitForInitialState();
     if (_closing) return;
     final active = _engineSnapshot.profile;
-    if (_engineSnapshot.isConnected) {
+    if (_engineSnapshot.isConnected && !_canRefreshSavedDirectLatencies) {
       if (active?.id == profileId) {
         await _refreshActiveRouteLatency(expectedTargetId: active?.id);
       }
@@ -353,7 +360,9 @@ class TunnelController extends ChangeNotifier {
     await waitForInitialState();
     if (_closing) return;
     final active = _engineSnapshot.profile;
-    if (_engineSnapshot.isConnected && active != null) {
+    if (_engineSnapshot.isConnected &&
+        !_canRefreshSavedDirectLatencies &&
+        active != null) {
       await _refreshActiveRouteLatency(expectedTargetId: active.id);
       return;
     }
@@ -650,6 +659,12 @@ class TunnelController extends ChangeNotifier {
     }
     _activeRouteLatencyTargetId = targetId;
     _activeRouteLatency = result;
+    // Keep native foreground UI aligned with the value in the home screen.
+    // Do not mutate the saved profile: its latency is the direct TCP metric
+    // used in profile lists, whereas this is the current end-to-end route.
+    final activeTarget =
+        _profiles.targetById(targetId) ?? _engineSnapshot.profile;
+    if (activeTarget != null) _publishRuntimeMetadata(activeTarget);
     notifyListeners();
   }
 
@@ -714,8 +729,13 @@ class TunnelController extends ChangeNotifier {
       !_closing &&
       _latencyContextRevision == contextRevision &&
       !_engineSnapshot.isBusy &&
-      !_engineSnapshot.isConnected &&
+      _canRefreshSavedDirectLatencies &&
       (targetId == null || _profiles.selectedTarget?.id == targetId);
+
+  bool get _canRefreshSavedDirectLatencies =>
+      !_engineSnapshot.isConnected ||
+      _engineSnapshot.mode != ConnectionMode.vpnTun ||
+      _profiles.canMeasureLatencyWhileVpnActive;
 
   bool _latencyContextChanged(
     TunnelSnapshot previous,
@@ -726,6 +746,13 @@ class TunnelController extends ChangeNotifier {
       previous.profile?.id != next.profile?.id;
 
   void _handleBecameConnected(TunnelSnapshot value) {
+    // Clear a direct TCP value that can be left in Android's foreground
+    // notification by an earlier connection. The route probe below will push
+    // its own result once the active Xray path is ready.
+    final activeTarget = value.profile == null
+        ? null
+        : _profiles.targetById(value.profile!.id) ?? value.profile;
+    if (activeTarget != null) _publishRuntimeMetadata(activeTarget);
     final trigger = _hasConnectedBefore
         ? ExitLocationRefreshTrigger.reconnected
         : ExitLocationRefreshTrigger.connected;
@@ -894,13 +921,11 @@ class TunnelController extends ChangeNotifier {
     if (next.isConnected) _pendingVpnDirectLatencyTargetId = null;
     _engineSnapshot = next;
     _clearRouteLatencyIfStale();
+    if (!next.isConnected && !next.isBusy) {
+      _lastRuntimeMetadataKey = null;
+    }
     if (becameConnected) {
-      unawaited(
-        _refreshRouteLatencyForLifecycle(
-          expectedTargetId: next.profile?.id,
-          waitForProxy: true,
-        ),
-      );
+      _handleBecameConnected(next);
     }
     if (_engineSnapshot.status == TunnelStatus.disconnected) {
       final targetId = _pendingVpnDirectLatencyTargetId;
@@ -938,13 +963,7 @@ class TunnelController extends ChangeNotifier {
         _engine is TunnelRuntimeMetadataSink) {
       final refreshed = _profiles.targetById(active.id);
       if (refreshed != null) {
-        final metadataKey = _runtimeMetadataKey(refreshed);
-        if (metadataKey != _lastRuntimeMetadataKey) {
-          _lastRuntimeMetadataKey = metadataKey;
-          unawaited(
-            (_engine as TunnelRuntimeMetadataSink)
-                .updateTargetMetadata(refreshed),
-          );
+        if (_publishRuntimeMetadata(refreshed)) {
           if (_engineSnapshot.isConnected) {
             unawaited(
               _requestEgressRefresh(ExitLocationRefreshTrigger.profileChanged),
@@ -984,15 +1003,63 @@ class TunnelController extends ChangeNotifier {
           statsIntervalSeconds: _settings.statsIntervalSeconds,
           showNotificationSpeed: _settings.showNotificationSpeed,
           showNotificationPing: _settings.showNotificationPing,
-          allowNotificationDismissal: _settings.allowNotificationDismissal,
         ),
       );
     }
     notifyListeners();
   }
 
-  String _runtimeMetadataKey(TunnelTarget target) =>
-      '${target.id}\u0000${target.name}\u0000${target.latencyMs ?? -1}';
+  /// Synchronizes a native foreground presentation without ever replacing an
+  /// active route result with the saved direct TCP result of the profile.
+  ///
+  /// Engines that do not expose an effective-latency bridge retain their
+  /// existing metadata behaviour. Android implements the dedicated bridge so
+  /// its foreground notification shows the same route ping as the home card.
+  bool _publishRuntimeMetadata(TunnelTarget target) {
+    if (!(_engineSnapshot.isConnected || _engineSnapshot.isBusy) ||
+        _engine is! TunnelRuntimeMetadataSink) {
+      return false;
+    }
+
+    final isActiveTarget = _engineSnapshot.profile?.id == target.id;
+    final routeLatency =
+        _isActiveRouteTarget(target.id) ? _activeRouteLatency : null;
+    final usesEffectiveRoute =
+        isActiveTarget && _engine is TunnelRuntimeEffectiveLatencySink;
+    final metadataKey = _runtimeMetadataKey(
+      target,
+      effectiveRouteLatency: usesEffectiveRoute ? routeLatency : null,
+      usesEffectiveRoute: usesEffectiveRoute,
+    );
+    if (metadataKey == _lastRuntimeMetadataKey) return false;
+    _lastRuntimeMetadataKey = metadataKey;
+
+    if (usesEffectiveRoute) {
+      unawaited(
+        (_engine as TunnelRuntimeEffectiveLatencySink).updateEffectiveLatency(
+          target,
+          latencyMs: routeLatency?.latencyMs,
+        ),
+      );
+    } else {
+      unawaited(
+        (_engine as TunnelRuntimeMetadataSink).updateTargetMetadata(target),
+      );
+    }
+    return true;
+  }
+
+  String _runtimeMetadataKey(
+    TunnelTarget target, {
+    required bool usesEffectiveRoute,
+    required LatencyProbeResult? effectiveRouteLatency,
+  }) {
+    final latencyKey = usesEffectiveRoute
+        ? '${effectiveRouteLatency?.status.storageValue ?? 'unknown'}:'
+            '${effectiveRouteLatency?.latencyMs ?? -1}'
+        : 'direct:${target.latencyMs ?? -1}';
+    return '${target.id}\u0000${target.name}\u0000$latencyKey';
+  }
 
   @override
   void dispose() {

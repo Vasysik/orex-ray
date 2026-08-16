@@ -8,12 +8,17 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <chrono>
 #include <cstring>
 #include <limits>
+#include <mutex>
+#include <thread>
 #include <cwchar>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <flutter/standard_method_codec.h>
@@ -355,6 +360,258 @@ flutter::EncodableMap TunRouteStatus() {
   };
 }
 
+enum class DirectLatencyStatus {
+  kSuccess,
+  kTimeout,
+  kUnavailable,
+  kSkipped,
+};
+
+struct DirectLatencyResult {
+  DirectLatencyStatus status;
+  std::int32_t latency_ms = 0;
+};
+
+bool EnsureWinsock() {
+  static std::once_flag once;
+  static bool initialized = false;
+  std::call_once(once, []() {
+    WSADATA data{};
+    initialized = WSAStartup(MAKEWORD(2, 2), &data) == 0;
+  });
+  return initialized;
+}
+
+bool AdapterSupportsFamily(const IP_ADAPTER_ADDRESSES* adapter, int family) {
+  if (adapter == nullptr) return false;
+  for (auto* address = adapter->FirstUnicastAddress; address != nullptr;
+       address = address->Next) {
+    const SOCKADDR* socket_address = address->Address.lpSockaddr;
+    if (socket_address != nullptr && socket_address->sa_family == family) {
+      return true;
+    }
+  }
+  return false;
+}
+
+ULONG AdapterMetricForFamily(const IP_ADAPTER_ADDRESSES* adapter,
+                             int family) {
+  if (adapter == nullptr) return std::numeric_limits<ULONG>::max();
+  const ULONG metric = family == AF_INET6 ? adapter->Ipv6Metric
+                                          : adapter->Ipv4Metric;
+  return metric == 0 ? std::numeric_limits<ULONG>::max() : metric;
+}
+
+const IP_ADAPTER_ADDRESSES* BestPhysicalAdapterForFamily(
+    const IP_ADAPTER_ADDRESSES* adapters,
+    int family) {
+  const IP_ADAPTER_ADDRESSES* best = nullptr;
+  ULONG best_metric = std::numeric_limits<ULONG>::max();
+  for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next) {
+    if (!IsUsableOutboundAdapter(adapter) ||
+        !AdapterSupportsFamily(adapter, family)) {
+      continue;
+    }
+    const ULONG metric = AdapterMetricForFamily(adapter, family);
+    if (best == nullptr || metric < best_metric) {
+      best = adapter;
+      best_metric = metric;
+    }
+  }
+  return best;
+}
+
+DirectLatencyStatus ConnectDirectlyOnAdapter(
+    const ADDRINFOW* address,
+    const IP_ADAPTER_ADDRESSES* adapter,
+    DWORD timeout_ms) {
+  if (address == nullptr || adapter == nullptr || timeout_ms == 0) {
+    return DirectLatencyStatus::kSkipped;
+  }
+
+  const int family = address->ai_family;
+  const DWORD interface_index = family == AF_INET6 ? adapter->Ipv6IfIndex
+                                                     : adapter->IfIndex;
+  if (interface_index == 0) return DirectLatencyStatus::kSkipped;
+
+  SOCKET socket = WSASocketW(
+      family, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+  if (socket == INVALID_SOCKET) return DirectLatencyStatus::kUnavailable;
+
+  auto close_socket = [&socket]() {
+    if (socket != INVALID_SOCKET) {
+      closesocket(socket);
+      socket = INVALID_SOCKET;
+    }
+  };
+
+  // `IP_UNICAST_IF` uses a network-byte-order index for IPv4, while the IPv6
+  // variant uses host byte order. Binding the socket itself—not a temporary
+  // route—keeps profile checks outside OrexRay's Wintun default route.
+  const int interface_level = family == AF_INET6 ? IPPROTO_IPV6 : IPPROTO_IP;
+  const int interface_option =
+      family == AF_INET6 ? IPV6_UNICAST_IF : IP_UNICAST_IF;
+  const DWORD interface_value =
+      family == AF_INET6 ? interface_index : htonl(interface_index);
+  if (setsockopt(socket, interface_level, interface_option,
+                 reinterpret_cast<const char*>(&interface_value),
+                 sizeof(interface_value)) == SOCKET_ERROR) {
+    close_socket();
+    return DirectLatencyStatus::kSkipped;
+  }
+
+  u_long nonblocking = 1;
+  if (ioctlsocket(socket, FIONBIO, &nonblocking) == SOCKET_ERROR) {
+    close_socket();
+    return DirectLatencyStatus::kUnavailable;
+  }
+
+  const int connect_result = connect(socket, address->ai_addr,
+                                     static_cast<int>(address->ai_addrlen));
+  if (connect_result == 0) {
+    close_socket();
+    return DirectLatencyStatus::kSuccess;
+  }
+
+  const int connect_error = WSAGetLastError();
+  if (connect_error != WSAEWOULDBLOCK && connect_error != WSAEINPROGRESS &&
+      connect_error != WSAEALREADY) {
+    close_socket();
+    return connect_error == WSAETIMEDOUT ? DirectLatencyStatus::kTimeout
+                                         : DirectLatencyStatus::kUnavailable;
+  }
+
+  fd_set write_set;
+  fd_set error_set;
+  FD_ZERO(&write_set);
+  FD_ZERO(&error_set);
+  FD_SET(socket, &write_set);
+  FD_SET(socket, &error_set);
+  timeval wait{};
+  wait.tv_sec = static_cast<long>(timeout_ms / 1000);
+  wait.tv_usec = static_cast<long>((timeout_ms % 1000) * 1000);
+  const int selected = select(0, nullptr, &write_set, &error_set, &wait);
+  if (selected == 0) {
+    close_socket();
+    return DirectLatencyStatus::kTimeout;
+  }
+  if (selected == SOCKET_ERROR) {
+    close_socket();
+    return DirectLatencyStatus::kUnavailable;
+  }
+
+  int socket_error = 0;
+  int socket_error_length = sizeof(socket_error);
+  if (getsockopt(socket, SOL_SOCKET, SO_ERROR,
+                 reinterpret_cast<char*>(&socket_error),
+                 &socket_error_length) == SOCKET_ERROR) {
+    close_socket();
+    return DirectLatencyStatus::kUnavailable;
+  }
+  close_socket();
+  if (socket_error == 0) return DirectLatencyStatus::kSuccess;
+  return socket_error == WSAETIMEDOUT ? DirectLatencyStatus::kTimeout
+                                      : DirectLatencyStatus::kUnavailable;
+}
+
+DirectLatencyResult MeasureDirectTcpLatency(const std::string& host,
+                                            int port,
+                                            DWORD timeout_ms) {
+  if (host.empty() || port < 1 || port > 65535 || timeout_ms < 100 ||
+      timeout_ms > 10000 || !EnsureWinsock()) {
+    return {DirectLatencyStatus::kSkipped};
+  }
+
+  const std::wstring wide_host = Utf8ToWide(host);
+  if (wide_host.empty()) return {DirectLatencyStatus::kUnavailable};
+
+  const auto started = std::chrono::steady_clock::now();
+  ADDRINFOW hints{};
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_protocol = IPPROTO_TCP;
+  hints.ai_flags = AI_ADDRCONFIG;
+  ADDRINFOW* addresses = nullptr;
+  const std::wstring service = std::to_wstring(port);
+  if (GetAddrInfoW(wide_host.c_str(), service.c_str(), &hints, &addresses) !=
+      0) {
+    return {DirectLatencyStatus::kUnavailable};
+  }
+
+  ULONG adapter_bytes = 0;
+  constexpr ULONG adapter_flags =
+      GAA_FLAG_INCLUDE_PREFIX | GAA_FLAG_INCLUDE_GATEWAYS;
+  const ULONG adapter_initial = GetAdaptersAddresses(
+      AF_UNSPEC, adapter_flags, nullptr, nullptr, &adapter_bytes);
+  if (adapter_initial != ERROR_BUFFER_OVERFLOW || adapter_bytes == 0) {
+    FreeAddrInfoW(addresses);
+    return {DirectLatencyStatus::kSkipped};
+  }
+  std::vector<unsigned char> adapter_buffer(adapter_bytes);
+  auto* adapters =
+      reinterpret_cast<IP_ADAPTER_ADDRESSES*>(adapter_buffer.data());
+  if (GetAdaptersAddresses(AF_UNSPEC, adapter_flags, nullptr, adapters,
+                          &adapter_bytes) != NO_ERROR) {
+    FreeAddrInfoW(addresses);
+    return {DirectLatencyStatus::kSkipped};
+  }
+
+  bool attempted = false;
+  bool timed_out = false;
+  for (auto* address = addresses; address != nullptr; address = address->ai_next) {
+    if (address->ai_family != AF_INET && address->ai_family != AF_INET6) {
+      continue;
+    }
+    const auto* adapter = BestPhysicalAdapterForFamily(adapters,
+                                                         address->ai_family);
+    if (adapter == nullptr) continue;
+
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - started);
+    if (elapsed.count() >= timeout_ms) {
+      timed_out = true;
+      break;
+    }
+    const DWORD remaining = static_cast<DWORD>(timeout_ms - elapsed.count());
+    const DirectLatencyStatus status =
+        ConnectDirectlyOnAdapter(address, adapter, remaining);
+    if (status == DirectLatencyStatus::kSuccess) {
+      const auto success_elapsed =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now() - started)
+              .count();
+      FreeAddrInfoW(addresses);
+      return {DirectLatencyStatus::kSuccess,
+              static_cast<std::int32_t>(
+                  std::max<std::int64_t>(1, std::min<std::int64_t>(
+                                               success_elapsed, 60000)))};
+    }
+    if (status == DirectLatencyStatus::kSkipped) {
+      continue;
+    }
+    attempted = true;
+    if (status == DirectLatencyStatus::kTimeout) timed_out = true;
+  }
+  FreeAddrInfoW(addresses);
+  if (timed_out) return {DirectLatencyStatus::kTimeout};
+  if (attempted) return {DirectLatencyStatus::kUnavailable};
+  return {DirectLatencyStatus::kSkipped};
+}
+
+const char* DirectLatencyStatusName(DirectLatencyStatus status) {
+  switch (status) {
+    case DirectLatencyStatus::kSuccess:
+      return "success";
+    case DirectLatencyStatus::kTimeout:
+      return "timeout";
+    case DirectLatencyStatus::kUnavailable:
+      return "unavailable";
+    case DirectLatencyStatus::kSkipped:
+      return "skipped";
+  }
+  return "skipped";
+}
+
 std::wstring KnownFolderPath(REFKNOWNFOLDERID folder_id) {
   PWSTR raw_path = nullptr;
   if (FAILED(SHGetKnownFolderPath(folder_id, KF_FLAG_DEFAULT, nullptr,
@@ -635,6 +892,50 @@ bool FlutterWindow::OnCreate() {
 
         if (call.method_name() == "getTunRouteStatus") {
           result->Success(flutter::EncodableValue(TunRouteStatus()));
+          return;
+        }
+
+        if (call.method_name() == "measureDirectLatency") {
+          const auto* arguments = AsMap(call.arguments());
+          const std::string host = arguments == nullptr
+                                       ? std::string()
+                                       : ReadStringArgument(*arguments, "host");
+          const auto port = arguments == nullptr
+                                ? std::nullopt
+                                : ReadIntArgument(*arguments, "port");
+          const auto timeout = arguments == nullptr
+                                   ? std::nullopt
+                                   : ReadIntArgument(*arguments, "timeoutMs");
+          if (host.empty() || !port.has_value() || port.value() < 1 ||
+              port.value() > 65535 || !timeout.has_value() ||
+              timeout.value() < 100 || timeout.value() > 10000) {
+            result->Error("invalid_arguments",
+                          "Host, port, or timeout is invalid");
+            return;
+          }
+
+          // A TCP connect can wait for several seconds. The Flutter C++
+          // wrapper explicitly permits a MethodResult reply from any thread,
+          // so the worker never blocks window input or rendering.
+          std::thread(
+              [host, port = static_cast<int>(port.value()),
+               timeout = static_cast<DWORD>(timeout.value()),
+               result = std::move(result)]() mutable {
+                const DirectLatencyResult measurement =
+                    MeasureDirectTcpLatency(host, port, timeout);
+                flutter::EncodableMap response{
+                    {flutter::EncodableValue("status"),
+                     flutter::EncodableValue(
+                         DirectLatencyStatusName(measurement.status))},
+                };
+                if (measurement.status == DirectLatencyStatus::kSuccess) {
+                  response.emplace(flutter::EncodableValue("latencyMs"),
+                                   flutter::EncodableValue(
+                                       measurement.latency_ms));
+                }
+                result->Success(flutter::EncodableValue(response));
+              })
+              .detach();
           return;
         }
 

@@ -51,7 +51,6 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val EXTRA_STATS_INTERVAL_SECONDS = "stats_interval_seconds"
         const val EXTRA_SHOW_NOTIFICATION_SPEED = "show_notification_speed"
         const val EXTRA_SHOW_NOTIFICATION_PING = "show_notification_ping"
-        const val EXTRA_ALLOW_NOTIFICATION_DISMISSAL = "allow_notification_dismissal"
         const val EXTRA_STATS_UI_ACTIVE = "stats_ui_active"
         const val EXTRA_RESTART_SERVICE = "restart_service"
         const val EXTRA_APP_ROUTING_MODE = "app_routing_mode"
@@ -120,7 +119,6 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var activeStatsIntervalSeconds = 2
     private var showNotificationSpeed = true
     private var showNotificationPing = true
-    private var allowNotificationDismissal = false
     private var statsUiActive = false
     private var restartServiceOnKill = true
     private var activeAppRoutingMode = APP_ROUTING_ALL
@@ -185,25 +183,16 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     EXTRA_SHOW_NOTIFICATION_PING,
                     showNotificationPing,
                 )
-                allowNotificationDismissal = commandIntent.getBooleanExtra(
-                    EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                    allowNotificationDismissal,
-                )
                 activeStartIntent?.apply {
                     putExtra(EXTRA_STATS_INTERVAL_SECONDS, activeStatsIntervalSeconds)
                     putExtra(EXTRA_SHOW_NOTIFICATION_SPEED, showNotificationSpeed)
                     putExtra(EXTRA_SHOW_NOTIFICATION_PING, showNotificationPing)
-                    putExtra(
-                        EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                        allowNotificationDismissal,
-                    )
                 }
                 OrexRayStartIntentStore.updateRuntimeSettings(
                     this,
                     activeStatsIntervalSeconds,
                     showNotificationSpeed,
                     showNotificationPing,
-                    allowNotificationDismissal,
                 )
                 updateStatsLoopState(restart = intervalChanged)
                 // A settings change is an explicit notification event. It is
@@ -288,10 +277,6 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     commandIntent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_SPEED, true)
                 showNotificationPing =
                     commandIntent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_PING, true)
-                allowNotificationDismissal = commandIntent.getBooleanExtra(
-                    EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                    false,
-                )
                 statsUiActive =
                     commandIntent.getBooleanExtra(EXTRA_STATS_UI_ACTIVE, false)
                 restartServiceOnKill = commandIntent.getBooleanExtra(EXTRA_RESTART_SERVICE, true)
@@ -863,7 +848,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             parts += "↑ ${formatSpeed(uploadBytesPerSecond)}"
         }
         if (showNotificationPing) {
-            activeLatencyMs?.let { parts += "$it мс" }
+            // A missing value is an actual route timeout/unavailability, not
+            // permission to reuse a saved direct TCP ping from the profile.
+            parts += activeLatencyMs?.let { "$it мс" } ?: "—"
         }
         if (parts.isEmpty()) {
             parts += if (activeMode == MODE_VPN) {
@@ -882,7 +869,6 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             activeLocalProxyInVpn.toString(),
             activeSocksPort.toString(),
             activeHttpPort.toString(),
-            allowNotificationDismissal.toString(),
             text,
         ).joinToString("|")
         if (fingerprint == lastNotificationFingerprint) return
@@ -942,7 +928,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 },
             )
             .setContentIntent(openPendingIntent)
-            .setOngoing(!allowNotificationDismissal)
+            .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .addAction(0, "Отключить", stopPendingIntent)

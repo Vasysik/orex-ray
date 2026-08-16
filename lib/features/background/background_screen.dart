@@ -60,25 +60,10 @@ class BackgroundScreen extends StatelessWidget {
                   ),
                   title: const Text('Показывать уведомления'),
                   subtitle: const Text(
-                    'Видимость меняется в системных настройках Android. '
-                    'При активном VPN минимальный статус службы может остаться обязательным.',
+                    'Видимость меняется в системных настройках Android.',
                   ),
                   trailing: const Icon(Icons.open_in_new_rounded),
                   onTap: () => _openAndroidNotificationSettings(context),
-                ),
-                const Divider(height: 1),
-                SwitchListTile(
-                  secondary: const Icon(
-                    Icons.swipe_rounded,
-                    color: OrexColors.copper,
-                  ),
-                  title: const Text('Разрешить смахивание'),
-                  subtitle: const Text(
-                    'При выключении запрашивается защита. Android 14+ или '
-                    'системный диспетчер всё равно могут скрыть или остановить VPN.',
-                  ),
-                  value: settings.allowNotificationDismissal,
-                  onChanged: settings.setAllowNotificationDismissal,
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
@@ -100,7 +85,8 @@ class BackgroundScreen extends StatelessWidget {
                   ),
                   title: const Text('Пинг в уведомлении'),
                   subtitle: const Text(
-                      'Показывать последнюю измеренную задержку профиля'),
+                    'Показывать текущую задержку активного подключения',
+                  ),
                   value: settings.showNotificationPing,
                   onChanged: settings.setShowNotificationPing,
                 ),

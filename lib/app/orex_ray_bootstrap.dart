@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 import '../core/app_version.dart';
 import '../core/apps/app_routing_controller.dart';
 import '../core/geodata/geodata_controller.dart';
+import '../core/profiles/latency_probe.dart';
 import '../core/profiles/profiles_controller.dart';
 import '../core/settings/connection_settings_controller.dart';
+import '../platform/windows/windows_direct_latency_probe.dart';
 import '../platform/windows/windows_elevation_controller.dart';
 import '../shared/theme/glass.dart';
 import '../shared/theme/orex_theme.dart';
@@ -50,9 +52,15 @@ class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
     final geoDataFuture = _versionFuture.then(
       (version) => GeoDataController.load(appVersion: version),
     );
+    // Android excludes the OrexRay UID from its VpnService, so the regular
+    // socket is outside the TUN. Windows needs a native, interface-bound
+    // socket instead; other platforms keep direct checks disabled in a VPN.
+    final latencyProbe = Platform.isWindows
+        ? WindowsDirectLatencyProbe()
+        : LatencyProbe(canMeasureWhileVpnActive: Platform.isAndroid);
     final results = await Future.wait<Object>([
       ThemeController.load(),
-      ProfilesController.load(),
+      ProfilesController.load(latencyProbe: latencyProbe),
       ConnectionSettingsController.load(),
       AppRoutingController.load(),
       _versionFuture,

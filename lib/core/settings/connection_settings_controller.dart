@@ -96,7 +96,6 @@ class ConnectionSettingsController extends ChangeNotifier {
     required int statsIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
-    required bool allowNotificationDismissal,
     required bool restartServiceOnKill,
     required bool closeToTray,
     required bool windowsRunAsAdministrator,
@@ -124,7 +123,6 @@ class ConnectionSettingsController extends ChangeNotifier {
         _statsIntervalSeconds = statsIntervalSeconds,
         _showNotificationSpeed = showNotificationSpeed,
         _showNotificationPing = showNotificationPing,
-        _allowNotificationDismissal = allowNotificationDismissal,
         _restartServiceOnKill = restartServiceOnKill,
         _closeToTray = closeToTray,
         _windowsRunAsAdministrator = windowsRunAsAdministrator,
@@ -152,7 +150,6 @@ class ConnectionSettingsController extends ChangeNotifier {
   static const _statsIntervalKey = 'orex_ray_stats_interval_v1';
   static const _notificationSpeedKey = 'orex_ray_notification_speed_v1';
   static const _notificationPingKey = 'orex_ray_notification_ping_v1';
-  static const _notificationDismissalKey = 'orex_ray_notification_dismissal_v1';
   static const _restartServiceKey = 'orex_ray_restart_service_v1';
   static const _closeToTrayKey = 'orex_ray_close_to_tray_v1';
   static const _windowsRunAsAdministratorKey =
@@ -187,7 +184,6 @@ class ConnectionSettingsController extends ChangeNotifier {
   int _statsIntervalSeconds;
   bool _showNotificationSpeed;
   bool _showNotificationPing;
-  bool _allowNotificationDismissal;
   bool _restartServiceOnKill;
   bool _closeToTray;
   bool _windowsRunAsAdministrator;
@@ -245,8 +241,6 @@ class ConnectionSettingsController extends ChangeNotifier {
           _validStatsInterval(preferences.getInt(_statsIntervalKey)) ?? 2,
       showNotificationSpeed: preferences.getBool(_notificationSpeedKey) ?? true,
       showNotificationPing: preferences.getBool(_notificationPingKey) ?? true,
-      allowNotificationDismissal:
-          preferences.getBool(_notificationDismissalKey) ?? false,
       restartServiceOnKill: preferences.getBool(_restartServiceKey) ?? true,
       closeToTray:
           preferences.getBool(_closeToTrayKey) ?? (platform == 'windows'),
@@ -285,7 +279,6 @@ class ConnectionSettingsController extends ChangeNotifier {
   int get statsIntervalSeconds => _statsIntervalSeconds;
   bool get showNotificationSpeed => _showNotificationSpeed;
   bool get showNotificationPing => _showNotificationPing;
-  bool get allowNotificationDismissal => _allowNotificationDismissal;
   bool get restartServiceOnKill => _restartServiceOnKill;
   bool get closeToTray => _closeToTray;
   bool get windowsRunAsAdministrator => _windowsRunAsAdministrator;
@@ -515,13 +508,6 @@ class ConnectionSettingsController extends ChangeNotifier {
     if (_showNotificationPing == value) return;
     _showNotificationPing = value;
     await _preferences.setBool(_notificationPingKey, value);
-    notifyListeners();
-  }
-
-  Future<void> setAllowNotificationDismissal(bool value) async {
-    if (_allowNotificationDismissal == value) return;
-    _allowNotificationDismissal = value;
-    await _preferences.setBool(_notificationDismissalKey, value);
     notifyListeners();
   }
 

@@ -42,10 +42,20 @@ class LatencyProbeResult {
 class LatencyProbe {
   const LatencyProbe({
     this.timeout = const Duration(seconds: 4),
+    this.canMeasureWhileVpnActive = false,
     LatencySocketConnector? socketConnector,
   }) : _socketConnector = socketConnector;
 
   final Duration timeout;
+
+  /// Whether this probe can guarantee that its TCP socket bypasses OrexRay's
+  /// active TUN. The ordinary Dart socket intentionally reports `false`: on a
+  /// desktop TUN it would otherwise measure a recursive local route.
+  ///
+  /// Android's app UID exclusion and the Windows native interface-bound probe
+  /// opt in explicitly. This capability is consumed only by the profile list;
+  /// the home screen still uses [TunnelRouteLatencyProbe] while connected.
+  final bool canMeasureWhileVpnActive;
   final LatencySocketConnector? _socketConnector;
 
   Future<LatencyProbeResult> measure(TunnelProfile profile) async {
@@ -80,6 +90,16 @@ class LatencyProbe {
     required Duration timeout,
   }) =>
       Socket.connect(host, port, timeout: timeout);
+}
+
+/// Signals that a platform could not start a measurement at all.
+///
+/// This differs from a profile timeout or refusal: callers retain the last
+/// saved value because no trustworthy packet was sent. It is used when a
+/// protected Windows probe is unavailable rather than falling back to a raw
+/// socket that an active TUN could capture.
+class LatencyMeasurementSkipped implements Exception {
+  const LatencyMeasurementSkipped();
 }
 
 /// Measures an already active Xray route through its local HTTP proxy.

@@ -47,7 +47,6 @@ class MainActivity : FlutterActivity() {
         val statsIntervalSeconds: Int,
         val showNotificationSpeed: Boolean,
         val showNotificationPing: Boolean,
-        val allowNotificationDismissal: Boolean,
         val statsUiActive: Boolean,
         val restartServiceOnKill: Boolean,
         val appRoutingMode: String,
@@ -124,8 +123,6 @@ class MainActivity : FlutterActivity() {
                                 call.argument<Boolean>("showNotificationSpeed") ?: true,
                             showNotificationPing =
                                 call.argument<Boolean>("showNotificationPing") ?: true,
-                            allowNotificationDismissal =
-                                call.argument<Boolean>("allowNotificationDismissal") ?: false,
                             statsUiActive =
                                 call.argument<Boolean>("statsUiActive") ?: false,
                             restartServiceOnKill =
@@ -190,8 +187,6 @@ class MainActivity : FlutterActivity() {
                                     call.argument<Boolean>("showNotificationSpeed") ?: true,
                                 showNotificationPing =
                                     call.argument<Boolean>("showNotificationPing") ?: true,
-                                allowNotificationDismissal =
-                                    call.argument<Boolean>("allowNotificationDismissal") ?: false,
                             )
                         }
                             .onSuccess { result.success(null) }
@@ -529,10 +524,6 @@ class MainActivity : FlutterActivity() {
                 request.showNotificationPing,
             )
             .putExtra(
-                OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                request.allowNotificationDismissal,
-            )
-            .putExtra(
                 OrexRayVpnService.EXTRA_STATS_UI_ACTIVE,
                 request.statsUiActive,
             )
@@ -580,7 +571,6 @@ class MainActivity : FlutterActivity() {
         statsIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
-        allowNotificationDismissal: Boolean,
     ) {
         val intent = Intent(this, OrexRayVpnService::class.java)
             .setAction(OrexRayVpnService.ACTION_UPDATE_RUNTIME_SETTINGS)
@@ -595,10 +585,6 @@ class MainActivity : FlutterActivity() {
             .putExtra(
                 OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
                 showNotificationPing,
-            )
-            .putExtra(
-                OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                allowNotificationDismissal,
             )
         startService(intent)
     }

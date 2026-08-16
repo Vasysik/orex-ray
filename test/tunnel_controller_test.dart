@@ -174,7 +174,6 @@ void main() {
     await settings.setStatsIntervalSeconds(5);
     await settings.setShowNotificationSpeed(false);
     await settings.setShowNotificationPing(false);
-    await settings.setAllowNotificationDismissal(true);
     await controller.setStatsUiActive(false);
 
     expect(
@@ -183,7 +182,6 @@ void main() {
         interval: 5,
         speed: false,
         ping: false,
-        allowDismissal: true,
       )),
     );
     expect(engine.statsUiStates, [false]);
@@ -363,6 +361,63 @@ void main() {
   });
 
   test(
+      'active route ping replaces direct notification metadata and clears on timeout',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final imported = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@route.example:443'
+      '?encryption=none&security=none&type=tcp#Route-notification',
+    );
+    await profiles.updateProfile(
+      imported.copyWith(
+        latencyMs: 71,
+        pingStatus: PingStatus.success,
+      ),
+    );
+    final routeProbe = _MutableRouteLatencyProbe(
+      const LatencyProbeResult.success(321),
+    );
+    final engine = _EffectiveLatencyRecordingEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: routeProbe,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.connect();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(engine.directMetadata, isEmpty);
+    expect(
+      engine.effectiveLatencies,
+      contains((targetId: imported.id, latencyMs: 321)),
+    );
+    expect(
+      engine.effectiveLatencies,
+      isNot(contains((targetId: imported.id, latencyMs: 71))),
+    );
+
+    routeProbe.result = const LatencyProbeResult.timeout();
+    await controller.refreshSelectedLatency();
+
+    expect(
+      engine.effectiveLatencies.last,
+      (targetId: imported.id, latencyMs: null),
+    );
+  });
+
+  test(
       'changing the route probe service rechecks an active VPN without restart',
       () async {
     SharedPreferences.setMockInitialValues({});
@@ -476,6 +531,64 @@ void main() {
 
     expect(directProbe.calls, 0);
     expect(profiles.targetById(inactive.id)?.latencyMs, 2);
+  });
+
+  test(
+      'a protected direct probe refreshes profile-list pings in VPN without replacing the home route ping',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directProbe = _VpnSafeCountingLatencyProbe(
+      const LatencyProbeResult.success(88),
+    );
+    final profiles = await ProfilesController.load(latencyProbe: directProbe);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final active = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@active.example:443'
+      '?encryption=none&security=none&type=tcp#Active',
+    );
+    final inactive = await profiles.createProfile(
+      const TunnelProfile(
+        id: 'safe-inactive-profile',
+        name: 'Safe inactive',
+        address: 'inactive.example',
+        port: 443,
+        userId: '22222222-2222-4222-8222-222222222222',
+      ),
+    );
+    final routeProbe = _FixedRouteLatencyProbe(
+      const LatencyProbeResult.success(321),
+    );
+    final controller = TunnelController(
+      engine: _RecordingTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+      routeLatencyProbe: routeProbe,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.setMode(ConnectionMode.vpnTun);
+    await controller.connect();
+    routeProbe.calls = 0;
+
+    expect(controller.canRefreshTargetLatency(active.id), isTrue);
+    expect(controller.canRefreshTargetLatency(inactive.id), isTrue);
+
+    await controller.refreshProfileLatency(active.id);
+    await controller.refreshProfileLatency(inactive.id);
+    await controller.refreshSelectedLatency();
+
+    expect(directProbe.calls, 2);
+    expect(routeProbe.calls, 1);
+    expect(profiles.targetById(active.id)?.latencyMs, 88);
+    expect(profiles.targetById(inactive.id)?.latencyMs, 88);
+    expect(controller.effectiveLatencyFor(controller.snapshot.profile), 321);
   });
 
   test(
@@ -899,8 +1012,7 @@ class _RecordingTunnelEngine implements TunnelEngine {
 
 class _RuntimeSettingsEngine extends _RecordingTunnelEngine
     implements TunnelRuntimeSettingsSink, TunnelStatsConsumerSink {
-  final List<({int interval, bool speed, bool ping, bool allowDismissal})>
-      runtimeSettings = [];
+  final List<({int interval, bool speed, bool ping})> runtimeSettings = [];
   final List<bool> statsUiStates = [];
 
   @override
@@ -913,19 +1025,39 @@ class _RuntimeSettingsEngine extends _RecordingTunnelEngine
     required int statsIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
-    required bool allowNotificationDismissal,
   }) async {
     runtimeSettings.add((
       interval: statsIntervalSeconds,
       speed: showNotificationSpeed,
       ping: showNotificationPing,
-      allowDismissal: allowNotificationDismissal,
     ));
   }
 }
 
+class _EffectiveLatencyRecordingEngine extends _RecordingTunnelEngine
+    implements TunnelRuntimeMetadataSink, TunnelRuntimeEffectiveLatencySink {
+  final List<({String targetId, int? latencyMs})> directMetadata = [];
+  final List<({String targetId, int? latencyMs})> effectiveLatencies = [];
+
+  @override
+  Future<void> updateTargetMetadata(TunnelTarget target) async {
+    directMetadata.add((targetId: target.id, latencyMs: target.latencyMs));
+  }
+
+  @override
+  Future<void> updateEffectiveLatency(
+    TunnelTarget target, {
+    required int? latencyMs,
+  }) async {
+    effectiveLatencies.add((targetId: target.id, latencyMs: latencyMs));
+  }
+}
+
 class _CountingLatencyProbe extends LatencyProbe {
-  _CountingLatencyProbe(this.result);
+  _CountingLatencyProbe(
+    this.result, {
+    super.canMeasureWhileVpnActive = false,
+  });
 
   final LatencyProbeResult result;
   int calls = 0;
@@ -935,6 +1067,11 @@ class _CountingLatencyProbe extends LatencyProbe {
     calls++;
     return result;
   }
+}
+
+class _VpnSafeCountingLatencyProbe extends _CountingLatencyProbe {
+  _VpnSafeCountingLatencyProbe(super.result)
+      : super(canMeasureWhileVpnActive: true);
 }
 
 class _ControlledLatencyProbe extends LatencyProbe {
@@ -968,6 +1105,19 @@ class _FixedRouteLatencyProbe extends TunnelRouteLatencyProbe {
     if (probeUri != null) probeUris.add(probeUri);
     return result;
   }
+}
+
+class _MutableRouteLatencyProbe extends TunnelRouteLatencyProbe {
+  _MutableRouteLatencyProbe(this.result);
+
+  LatencyProbeResult result;
+
+  @override
+  Future<LatencyProbeResult> measure({
+    required int httpPort,
+    Uri? probeUri,
+  }) async =>
+      result;
 }
 
 class _EventTunnelEngine implements TunnelEngine {

@@ -152,6 +152,26 @@ void main() {
     expect(restored.profiles.single.pingStatus, PingStatus.timeout);
   });
 
+  test('skipped protected probe retains the previous direct ping', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load(
+      latencyProbe: const _SkippedLatencyProbe(),
+    );
+    addTearDown(profiles.dispose);
+    final profile = await profiles.importVlessLink(link);
+    await profiles.updateProfile(
+      profile.copyWith(
+        latencyMs: 143,
+        pingStatus: PingStatus.success,
+      ),
+    );
+
+    await profiles.refreshLatency(profile.id);
+
+    expect(profiles.profiles.single.latencyMs, 143);
+    expect(profiles.profiles.single.pingStatus, PingStatus.success);
+  });
+
   test('reimport preserves a legacy ID for the same connection', () async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();
@@ -298,4 +318,12 @@ class _FixedLatencyProbe extends LatencyProbe {
 
   @override
   Future<LatencyProbeResult> measure(TunnelProfile profile) async => result;
+}
+
+class _SkippedLatencyProbe extends LatencyProbe {
+  const _SkippedLatencyProbe();
+
+  @override
+  Future<LatencyProbeResult> measure(TunnelProfile profile) =>
+      Future<LatencyProbeResult>.error(const LatencyMeasurementSkipped());
 }

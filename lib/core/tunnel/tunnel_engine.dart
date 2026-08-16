@@ -31,6 +31,19 @@ abstract interface class TunnelRuntimeMetadataSink {
   Future<void> updateTargetMetadata(TunnelTarget target);
 }
 
+/// Optional bridge for the end-to-end latency of an already active route.
+///
+/// A profile's saved [TunnelTarget.latencyMs] is a direct TCP measurement and
+/// must not be reused as the latency of a connected VPN route.  Native
+/// foreground UI can implement this separately so it receives the exact
+/// effective value (or `null` after a timeout) shown by the home screen.
+abstract interface class TunnelRuntimeEffectiveLatencySink {
+  Future<void> updateEffectiveLatency(
+    TunnelTarget target, {
+    required int? latencyMs,
+  });
+}
+
 /// Optional bridge for a running engine whose statistics are only needed while
 /// the application UI has an active consumer.
 abstract interface class TunnelStatsConsumerSink {
@@ -44,7 +57,6 @@ abstract interface class TunnelRuntimeSettingsSink {
     required int statsIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
-    required bool allowNotificationDismissal,
   });
 }
 

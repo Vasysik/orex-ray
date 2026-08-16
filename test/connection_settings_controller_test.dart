@@ -99,22 +99,4 @@ void main() {
     expect(reloaded.autoStart, isTrue);
     expect(reloaded.autoConnectOnStartup, isTrue);
   });
-
-  test('notification dismissal permission is opt-in and persists', () async {
-    SharedPreferences.setMockInitialValues({});
-
-    final settings = await ConnectionSettingsController.load(
-      operatingSystem: 'android',
-    );
-    addTearDown(settings.dispose);
-    expect(settings.allowNotificationDismissal, isFalse);
-
-    await settings.setAllowNotificationDismissal(true);
-
-    final reloaded = await ConnectionSettingsController.load(
-      operatingSystem: 'android',
-    );
-    addTearDown(reloaded.dispose);
-    expect(reloaded.allowNotificationDismissal, isTrue);
-  });
 }

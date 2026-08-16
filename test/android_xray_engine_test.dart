@@ -84,8 +84,7 @@ void main() {
     expect(engine.current.profile, isNull);
   });
 
-  test('forwards the notification dismissal choice to a running service',
-      () async {
+  test('forwards notification content choices to a running service', () async {
     final calls = <MethodCall>[];
     await _mockStatus(
       messenger,
@@ -113,9 +112,8 @@ void main() {
     await engine.waitForInitialState();
     await engine.updateRuntimeSettings(
       statsIntervalSeconds: 2,
-      showNotificationSpeed: true,
-      showNotificationPing: true,
-      allowNotificationDismissal: true,
+      showNotificationSpeed: false,
+      showNotificationPing: false,
     );
 
     final runtimeSettings = calls.singleWhere(
@@ -123,8 +121,109 @@ void main() {
     );
     expect(
       (runtimeSettings.arguments
-          as Map<Object?, Object?>)['allowNotificationDismissal'],
-      isTrue,
+          as Map<Object?, Object?>)['showNotificationSpeed'],
+      isFalse,
+    );
+    expect(
+      (runtimeSettings.arguments
+          as Map<Object?, Object?>)['showNotificationPing'],
+      isFalse,
+    );
+  });
+
+  test('forwards effective route latency and clears a timed-out route',
+      () async {
+    final calls = <MethodCall>[];
+    final target = TunnelTarget.single(
+      const TunnelProfile(
+        id: 'native-active-target',
+        name: 'Native active',
+        address: 'active.example',
+        port: 443,
+        userId: '11111111-1111-4111-8111-111111111111',
+        latencyMs: 71,
+      ),
+    );
+    await _mockStatus(
+      messenger,
+      targetId: target.id,
+      onMethodCall: (call) async {
+        calls.add(call);
+        return null;
+      },
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final appRouting = await AppRoutingController.load();
+    final engine = AndroidXrayEngine(
+      settings: settings,
+      appRouting: appRouting,
+      targetResolver: (id) => id == target.id ? target : null,
+    );
+    addTearDown(() async {
+      await engine.dispose();
+      appRouting.dispose();
+      settings.dispose();
+    });
+
+    await engine.waitForInitialState();
+    await engine.updateEffectiveLatency(target, latencyMs: 321);
+    await engine.updateEffectiveLatency(target, latencyMs: null);
+
+    final updates = calls
+        .where((call) => call.method == 'updateTargetMetadata')
+        .map(
+          (call) => (call.arguments as Map<Object?, Object?>)['latencyMs'],
+        )
+        .toList(growable: false);
+    expect(updates, hasLength(2));
+    expect(updates.first, 321);
+    expect(updates.last, isNull);
+  });
+
+  test('does not seed a new route with saved direct TCP latency', () async {
+    final calls = <MethodCall>[];
+    final target = TunnelTarget.single(
+      const TunnelProfile(
+        id: 'new-active-target',
+        name: 'New active',
+        address: 'active.example',
+        port: 443,
+        userId: '11111111-1111-4111-8111-111111111111',
+        latencyMs: 71,
+      ),
+    );
+    await _mockStatus(
+      messenger,
+      targetId: '',
+      status: 'disconnected',
+      onMethodCall: (call) async {
+        calls.add(call);
+        return null;
+      },
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final appRouting = await AppRoutingController.load();
+    final engine = AndroidXrayEngine(
+      settings: settings,
+      appRouting: appRouting,
+    );
+    addTearDown(() async {
+      await engine.dispose();
+      appRouting.dispose();
+      settings.dispose();
+    });
+
+    await engine.waitForInitialState();
+    await engine.start(target, ConnectionMode.vpnTun);
+
+    final start = calls.singleWhere((call) => call.method == 'start');
+    expect(
+      (start.arguments as Map<Object?, Object?>)['latencyMs'],
+      isNull,
     );
   });
 }
@@ -132,13 +231,14 @@ void main() {
 Future<void> _mockStatus(
   TestDefaultBinaryMessenger messenger, {
   required String targetId,
+  String status = 'connected',
   Future<Object?> Function(MethodCall call)? onMethodCall,
 }) async {
   const channel = MethodChannel('ru.orex.ray/tunnel');
   messenger.setMockMethodCallHandler(channel, (call) async {
     if (call.method == 'status') {
       return <String, dynamic>{
-        'status': 'connected',
+        'status': status,
         'mode': 'vpn_tun',
         'targetId': targetId,
         'downloadBytes': 0,

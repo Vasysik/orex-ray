@@ -19,11 +19,17 @@ enum ExitLocationRefreshTrigger {
 /// just to re-check a country that is not currently visible. Windows keeps its
 /// existing periodic refresh through this same coordinator.
 class ExitLocationRefreshPolicy {
-  const ExitLocationRefreshPolicy.eventDriven() : periodicInterval = null;
+  const ExitLocationRefreshPolicy.disabled()
+      : _enabled = false,
+        periodicInterval = null;
+
+  const ExitLocationRefreshPolicy.eventDriven()
+      : _enabled = true,
+        periodicInterval = null;
 
   const ExitLocationRefreshPolicy.windows({
     this.periodicInterval = const Duration(minutes: 5),
-  });
+  }) : _enabled = true;
 
   factory ExitLocationRefreshPolicy.forOperatingSystem(String operatingSystem) {
     return operatingSystem == 'windows'
@@ -31,11 +37,13 @@ class ExitLocationRefreshPolicy {
         : const ExitLocationRefreshPolicy.eventDriven();
   }
 
+  final bool _enabled;
   final Duration? periodicInterval;
 
   bool allows(ExitLocationRefreshTrigger trigger) =>
-      trigger != ExitLocationRefreshTrigger.periodic ||
-      periodicInterval != null;
+      _enabled &&
+      (trigger != ExitLocationRefreshTrigger.periodic ||
+          periodicInterval != null);
 }
 
 /// Serializes refreshes for each target and owns the optional periodic policy.
@@ -70,6 +78,7 @@ class ExitLocationRefreshCoordinator {
 
   final Map<String, Future<void>> _inFlight = {};
   Timer? _periodicTimer;
+  bool _disposed = false;
 
   bool get hasPeriodicRefresh => _periodicTimer != null;
 
@@ -77,7 +86,9 @@ class ExitLocationRefreshCoordinator {
     String targetId, {
     required ExitLocationRefreshTrigger trigger,
   }) {
-    if (!_policy.allows(trigger) || !_canRefresh(targetId, trigger)) {
+    if (_disposed ||
+        !_policy.allows(trigger) ||
+        !_canRefresh(targetId, trigger)) {
       return Future<void>.value();
     }
 
@@ -96,8 +107,13 @@ class ExitLocationRefreshCoordinator {
   }
 
   void startPeriodic() {
+    if (_disposed) return;
     final interval = _policy.periodicInterval;
-    if (interval == null || _periodicTimer != null) return;
+    if (!_policy.allows(ExitLocationRefreshTrigger.periodic) ||
+        interval == null ||
+        _periodicTimer != null) {
+      return;
+    }
     _periodicTimer = Timer.periodic(interval, (_) {
       final targetId = _activeTargetId();
       if (targetId == null) return;
@@ -115,7 +131,11 @@ class ExitLocationRefreshCoordinator {
     _periodicTimer = null;
   }
 
-  void dispose() => stopPeriodic();
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    stopPeriodic();
+  }
 
   void _removeInFlight(String targetId, Future<void> refresh) {
     if (identical(_inFlight[targetId], refresh)) {

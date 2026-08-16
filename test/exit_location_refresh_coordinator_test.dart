@@ -5,6 +5,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/egress/exit_location_refresh_coordinator.dart';
 
 void main() {
+  test('disabled policy never starts refresh work', () async {
+    var calls = 0;
+    final coordinator = ExitLocationRefreshCoordinator(
+      policy: const ExitLocationRefreshPolicy.disabled(),
+      activeTargetId: () => 'profile-a',
+      canRefresh: (_, __) => true,
+      refresh: (_, __) async {
+        calls++;
+      },
+    );
+    addTearDown(coordinator.dispose);
+
+    coordinator.startPeriodic();
+    await coordinator.request(
+      'profile-a',
+      trigger: ExitLocationRefreshTrigger.connected,
+    );
+
+    expect(coordinator.hasPeriodicRefresh, isFalse);
+    expect(calls, 0);
+  });
+
   test('Android event-driven policy never schedules a periodic refresh', () {
     final coordinator = ExitLocationRefreshCoordinator(
       policy: const ExitLocationRefreshPolicy.eventDriven(),

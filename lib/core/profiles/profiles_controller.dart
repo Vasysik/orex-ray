@@ -57,6 +57,11 @@ class ProfilesController extends ChangeNotifier {
   List<BalancerProfile> get balancers => List.unmodifiable(_balancers);
   bool get refreshingLatency => _refreshingLatency;
 
+  /// Whether the injected direct TCP probe is protected from an active VPN
+  /// TUN. See [LatencyProbe.canMeasureWhileVpnActive].
+  bool get canMeasureLatencyWhileVpnActive =>
+      _latencyProbe.canMeasureWhileVpnActive;
+
   List<TunnelTarget> get targets => [
         ..._profiles.map(TunnelTarget.single),
         ..._balancers.map(_resolveBalancer).whereType<TunnelTarget>(),
@@ -308,7 +313,12 @@ class ProfilesController extends ChangeNotifier {
     final index = _profiles.indexWhere((profile) => profile.id == id);
     if (index < 0) return;
     final profile = _profiles[index];
-    final result = await _latencyProbe.measure(profile);
+    LatencyProbeResult result;
+    try {
+      result = await _latencyProbe.measure(profile);
+    } on LatencyMeasurementSkipped {
+      return;
+    }
     if (_disposed || (shouldApply != null && !shouldApply())) return;
     final currentIndex = _profiles.indexWhere((item) => item.id == id);
     if (currentIndex < 0 ||
@@ -339,7 +349,15 @@ class ProfilesController extends ChangeNotifier {
     try {
       for (final profile in List<TunnelProfile>.from(_profiles)) {
         if (shouldApply != null && !shouldApply()) return;
-        final result = await _latencyProbe.measure(profile);
+        LatencyProbeResult result;
+        try {
+          result = await _latencyProbe.measure(profile);
+        } on LatencyMeasurementSkipped {
+          // Do not erase useful saved measurements when the protected native
+          // probe itself is unavailable. Continue with the remaining profiles
+          // because another endpoint can still be measured safely.
+          continue;
+        }
         if (_disposed || (shouldApply != null && !shouldApply())) return;
         final index = _profiles.indexWhere((item) => item.id == profile.id);
         if (index >= 0 &&

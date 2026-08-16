@@ -18,7 +18,7 @@ void main() {
   });
 
   testWidgets(
-    'Android notification controls open system visibility settings and persist dismissal choice',
+    'Android notification controls open system visibility settings',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final settings = await ConnectionSettingsController.load(
@@ -42,16 +42,15 @@ void main() {
       await tester.pump();
 
       expect(find.text('Показывать уведомления'), findsOneWidget);
-      expect(find.text('Разрешить смахивание'), findsOneWidget);
-      expect(settings.allowNotificationDismissal, isFalse);
+      expect(
+        find.text('Видимость меняется в системных настройках Android.'),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.swipe_rounded), findsNothing);
 
       await tester.tap(find.text('Показывать уведомления'));
       await tester.pump();
       expect(openedSystemSettings, isTrue);
-
-      await tester.tap(find.text('Разрешить смахивание'));
-      await tester.pump();
-      expect(settings.allowNotificationDismissal, isTrue);
     },
   );
 }

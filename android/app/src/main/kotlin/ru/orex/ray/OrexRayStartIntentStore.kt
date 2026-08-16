@@ -65,7 +65,6 @@ internal object OrexRayStartIntentStore {
         statsIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
-        allowNotificationDismissal: Boolean,
     ) {
         updateRuntimeSettings(
             context,
@@ -73,7 +72,6 @@ internal object OrexRayStartIntentStore {
             statsIntervalSeconds,
             showNotificationSpeed,
             showNotificationPing,
-            allowNotificationDismissal,
         )
         updateRuntimeSettings(
             context,
@@ -81,7 +79,6 @@ internal object OrexRayStartIntentStore {
             statsIntervalSeconds,
             showNotificationSpeed,
             showNotificationPing,
-            allowNotificationDismissal,
         )
     }
 
@@ -139,13 +136,6 @@ internal object OrexRayStartIntentStore {
             .put(
                 OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
                 intent.getBooleanExtra(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING, true),
-            )
-            .put(
-                OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                intent.getBooleanExtra(
-                    OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                    false,
-                ),
             )
             .put(
                 OrexRayVpnService.EXTRA_RESTART_SERVICE,
@@ -248,13 +238,6 @@ internal object OrexRayStartIntentStore {
                 json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING, true),
             )
             .putExtra(
-                OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                json.optBoolean(
-                    OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                    false,
-                ),
-            )
-            .putExtra(
                     OrexRayVpnService.EXTRA_RESTART_SERVICE,
                     json.optBoolean(OrexRayVpnService.EXTRA_RESTART_SERVICE, true),
                 )
@@ -296,7 +279,6 @@ internal object OrexRayStartIntentStore {
         statsIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
-        allowNotificationDismissal: Boolean,
     ) {
         val secureStore = AndroidSecureStore(context.applicationContext)
         val payload = runCatching { secureStore.read(key) }.getOrNull() ?: return
@@ -313,10 +295,6 @@ internal object OrexRayStartIntentStore {
                 .put(
                     OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
                     showNotificationPing,
-                )
-                .put(
-                    OrexRayVpnService.EXTRA_ALLOW_NOTIFICATION_DISMISSAL,
-                    allowNotificationDismissal,
                 )
             secureStore.write(key, json.toString())
         }.onFailure { Log.w(TAG, "Could not update encrypted start settings: $key", it) }

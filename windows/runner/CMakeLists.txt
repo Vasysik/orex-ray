@@ -36,7 +36,7 @@ target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
-target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib" "gdiplus.lib" "ole32.lib" "wininet.lib" "shell32.lib" "iphlpapi.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib" "gdiplus.lib" "ole32.lib" "wininet.lib" "shell32.lib" "iphlpapi.lib" "ws2_32.lib")
 # The UAC/DPI manifest is embedded by Runner.rc. Disabling linker-generated
 # manifests avoids the mt.exe merge step that caused LNK1327 on some Windows SDK setups.
 target_link_options(${BINARY_NAME} PRIVATE "/MANIFEST:NO")

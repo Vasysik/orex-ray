@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:orex_ray/core/egress/exit_location_refresh_coordinator.dart';
 import 'package:orex_ray/core/profiles/latency_probe.dart';
 import 'package:orex_ray/core/profiles/profiles_controller.dart';
 import 'package:orex_ray/core/settings/connection_settings_controller.dart';
@@ -141,6 +142,7 @@ void main() {
       engine: _MutableProfilesTestTunnelEngine(),
       profiles: profiles,
       settings: settings,
+      egressRefreshPolicy: const ExitLocationRefreshPolicy.disabled(),
       routeLatencyProbe: _FixedProfilesRouteLatencyProbe(
         const LatencyProbeResult.success(123),
       ),

@@ -14,6 +14,7 @@ class AndroidXrayEngine
         TunnelEngine,
         TunnelInitialStateSync,
         TunnelRuntimeMetadataSink,
+        TunnelRuntimeEffectiveLatencySink,
         TunnelRuntimeSettingsSink,
         TunnelStatsConsumerSink,
         TunnelDiagnosticsProvider {
@@ -128,7 +129,11 @@ class AndroidXrayEngine
         'mode': mode.storageValue,
         'targetId': target.id,
         'targetName': target.name,
-        'latencyMs': target.latencyMs,
+        // The saved profile value is only a direct TCP handshake.  The
+        // foreground notification must wait for TunnelController's
+        // end-to-end active-route measurement instead of showing it as VPN
+        // latency while the route check is still pending.
+        'latencyMs': null,
         'statsOutboundTags': target.isBalancer
             ? [
                 for (var index = 0; index < target.profiles.length; index++)
@@ -144,7 +149,6 @@ class AndroidXrayEngine
         'statsIntervalSeconds': _settings.statsIntervalSeconds,
         'showNotificationSpeed': _settings.showNotificationSpeed,
         'showNotificationPing': _settings.showNotificationPing,
-        'allowNotificationDismissal': _settings.allowNotificationDismissal,
         'statsUiActive': _statsUiActive,
         'restartServiceOnKill': _settings.restartServiceOnKill,
         'appRoutingMode': _appRouting.mode.storageValue,
@@ -158,14 +162,27 @@ class AndroidXrayEngine
   }
 
   @override
-  Future<void> updateTargetMetadata(TunnelTarget target) async {
+  Future<void> updateTargetMetadata(TunnelTarget target) =>
+      _updateTargetMetadata(target, latencyMs: target.latencyMs);
+
+  @override
+  Future<void> updateEffectiveLatency(
+    TunnelTarget target, {
+    required int? latencyMs,
+  }) =>
+      _updateTargetMetadata(target, latencyMs: latencyMs);
+
+  Future<void> _updateTargetMetadata(
+    TunnelTarget target, {
+    required int? latencyMs,
+  }) async {
     _activeTarget = target;
     try {
       await _channel
           .invokeMethod<void>('updateTargetMetadata', <String, Object?>{
         'targetId': target.id,
         'targetName': target.name,
-        'latencyMs': target.latencyMs,
+        'latencyMs': latencyMs,
       });
     } catch (_) {
       // Runtime metadata is best-effort and must never interrupt the tunnel.
@@ -177,7 +194,6 @@ class AndroidXrayEngine
     required int statsIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
-    required bool allowNotificationDismissal,
   }) async {
     if (!_current.isConnected) return;
     try {
@@ -186,7 +202,6 @@ class AndroidXrayEngine
         'statsIntervalSeconds': statsIntervalSeconds,
         'showNotificationSpeed': showNotificationSpeed,
         'showNotificationPing': showNotificationPing,
-        'allowNotificationDismissal': allowNotificationDismissal,
       });
     } catch (_) {
       // Settings synchronization is best-effort and must not interrupt a
