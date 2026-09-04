@@ -17,6 +17,7 @@ internal object OrexRayStartIntentStore {
     private const val TAG = "OrexRay"
     private const val RESTART_STATE_KEY = "service_restart_state_v1"
     private const val QUICK_TILE_STATE_KEY = "quick_tile_start_state_v1"
+    private const val MIGRATION_MARKER_KEY = "vpn_state_store_migrated_v2"
 
     fun saveRestart(context: Context, intent: Intent) {
         save(context, RESTART_STATE_KEY, intent, restartServiceOverride = true)
@@ -201,11 +202,11 @@ internal object OrexRayStartIntentStore {
                 ),
             )
 
-        AndroidSecureStore(context.applicationContext).write(key, json.toString())
+        vpnSecureStore(context).write(key, json.toString())
     }
 
     private fun load(context: Context, key: String): Intent? {
-        val secureStore = AndroidSecureStore(context.applicationContext)
+        val secureStore = vpnSecureStore(context)
         val payload = runCatching { secureStore.read(key) }
             .onFailure { Log.e(TAG, "Could not read encrypted start state: $key", it) }
             .getOrNull()
@@ -311,7 +312,7 @@ internal object OrexRayStartIntentStore {
         pingStatus: String,
         latencyProbeUrl: String,
     ) {
-        val secureStore = AndroidSecureStore(context.applicationContext)
+        val secureStore = vpnSecureStore(context)
         val payload = runCatching { secureStore.read(key) }.getOrNull() ?: return
         runCatching {
             val json = JSONObject(payload)
@@ -332,7 +333,7 @@ internal object OrexRayStartIntentStore {
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
     ) {
-        val secureStore = AndroidSecureStore(context.applicationContext)
+        val secureStore = vpnSecureStore(context)
         val payload = runCatching { secureStore.read(key) }.getOrNull() ?: return
         runCatching {
             val json = JSONObject(payload)
@@ -357,8 +358,30 @@ internal object OrexRayStartIntentStore {
     }
 
     private fun clear(context: Context, key: String) {
-        runCatching { AndroidSecureStore(context.applicationContext).delete(key) }
+        runCatching { vpnSecureStore(context).delete(key) }
             .onFailure { Log.w(TAG, "Could not clear encrypted start state: $key", it) }
+    }
+
+    @Synchronized
+    private fun vpnSecureStore(context: Context): AndroidSecureStore {
+        val appContext = context.applicationContext
+        val vpnStore = AndroidSecureStore(appContext, AndroidSecureStore.VPN_PREFS_NAME)
+        val migrated = runCatching { vpnStore.read(MIGRATION_MARKER_KEY) }
+            .getOrNull() == "1"
+        if (migrated) return vpnStore
+
+        // Service/tile state used to share the Flutter process' secure
+        // SharedPreferences file. A dedicated :vpn process must not write that
+        // same XML file concurrently with Flutter, so migrate these two keys
+        // once and keep all future VPN writes in their own file.
+        val legacyStore = AndroidSecureStore(appContext)
+        for (key in listOf(RESTART_STATE_KEY, QUICK_TILE_STATE_KEY)) {
+            val legacy = runCatching { legacyStore.read(key) }.getOrNull() ?: continue
+            runCatching { vpnStore.write(key, legacy) }
+                .onFailure { Log.w(TAG, "Could not migrate encrypted VPN state: $key", it) }
+        }
+        vpnStore.write(MIGRATION_MARKER_KEY, "1")
+        return vpnStore
     }
 
     private fun JSONArray?.toStringArrayList(): ArrayList<String> {

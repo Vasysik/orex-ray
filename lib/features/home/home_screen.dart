@@ -139,7 +139,7 @@ class _Header extends StatelessWidget {
         StatusPill(
           label: label,
           active: snapshot.isConnected && !timedOut,
-          color: timedOut ? OrexColors.danger : null,
+          color: timedOut ? OrexColors.dangerStrong : null,
         ),
       ],
     );
@@ -359,13 +359,9 @@ class _ConnectButton extends StatelessWidget {
     final canTap = enabled && !busy;
     final timedOut = active && pingStatus == PingStatus.timeout;
     final pingConfirmed = active && pingStatus == PingStatus.success;
-    final ringColor = timedOut
-        ? OrexColors.danger
-        : pingConfirmed
-            ? OrexColors.online
-            : OrexColors.cream;
+    final healthConfirmed = timedOut || pingConfirmed;
     final glowColor = timedOut
-        ? OrexColors.danger
+        ? OrexColors.dangerStrong
         : pingConfirmed
             ? OrexColors.online
             : OrexColors.copper;
@@ -390,26 +386,30 @@ class _ConnectButton extends StatelessWidget {
               shape: BoxShape.circle,
               gradient: OrexColors.copperGradient,
               border: Border.all(
-                color: ringColor.withValues(
-                  alpha: timedOut || pingConfirmed
-                      ? 0.92
+                // Timeout deliberately keeps the exact same cream ring and
+                // geometry as a healthy connection. Only the ambient glow
+                // changes hue, so red reads as a state rather than a second
+                // button design.
+                color: OrexColors.cream.withValues(
+                  alpha: healthConfirmed
+                      ? 0.65
                       : active
                           ? 0.48
                           : 0.28,
                 ),
-                width: timedOut || pingConfirmed ? 3 : 2,
+                width: 2,
               ),
               boxShadow: [
                 BoxShadow(
                   color: glowColor.withValues(
                     alpha: timedOut
-                        ? 0.5
+                        ? 0.58
                         : pingConfirmed
-                            ? 0.40
+                            ? 0.32
                             : 0.22,
                   ),
-                  blurRadius: timedOut || pingConfirmed ? 52 : 30,
-                  spreadRadius: timedOut || pingConfirmed ? 4 : 0,
+                  blurRadius: healthConfirmed ? 52 : 30,
+                  spreadRadius: healthConfirmed ? 4 : 0,
                 ),
               ],
             ),

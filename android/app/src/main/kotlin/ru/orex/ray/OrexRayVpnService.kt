@@ -13,8 +13,10 @@ import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
 import android.net.VpnService
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.os.ResultReceiver
 import android.os.SystemClock
 import android.util.Log
 import go.Seq
@@ -42,6 +44,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             "ru.orex.ray.action.UPDATE_RUNTIME_SETTINGS"
         const val ACTION_SET_STATS_UI_ACTIVE =
             "ru.orex.ray.action.SET_STATS_UI_ACTIVE"
+        const val ACTION_QUERY_STATE = "ru.orex.ray.action.QUERY_STATE"
+        const val ACTION_QUERY_DIAGNOSTICS = "ru.orex.ray.action.QUERY_DIAGNOSTICS"
         const val EXTRA_CONFIG = "xray_config"
         const val EXTRA_MODE = "connection_mode"
         const val EXTRA_TARGET_ID = "target_id"
@@ -63,6 +67,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val EXTRA_RESTART_SERVICE = "restart_service"
         const val EXTRA_APP_ROUTING_MODE = "app_routing_mode"
         const val EXTRA_APP_PACKAGES = "app_packages"
+        const val EXTRA_RESULT_RECEIVER = "result_receiver"
 
         const val MODE_VPN = "vpn_tun"
         const val MODE_LOCAL_PROXY = "local_proxy"
@@ -85,20 +90,22 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         private var activeService: OrexRayVpnService? = null
 
         /**
-         * Persisted active state can outlive a killed service. Prefer the
-         * actual foreground-service state when it is available in-process.
+         * Quick Settings is intentionally hosted in the same :vpn process. If
+         * that process was recreated after LMK/SIGKILL, a persisted connected
+         * flag is stale until the VPN service itself is alive again.
          */
-        fun runtimeState(context: Context): Map<String, Any?> {
+        fun runtimeStateInVpnProcess(context: Context): Map<String, Any?> {
             activeService?.let { return it.currentRuntimeState() }
             val persisted = OrexRayRuntimeStateStore.load(context)
             return when (persisted["status"] as? String) {
-                "connected", "disconnecting" -> OrexRayTunnelEvents.event(
+                "connected", "connecting", "disconnecting" -> OrexRayTunnelEvents.event(
                     status = "disconnected",
                     mode = persisted["mode"] as? String ?: MODE_VPN,
                 )
                 else -> persisted
             }
         }
+
     }
 
     private data class TrafficDelta(val download: Long, val upload: Long)
@@ -109,7 +116,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private val notificationLargeIcon by lazy {
         BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
     }
-    private val secureStore by lazy { AndroidSecureStore(applicationContext) }
+    private val secureStore by lazy {
+        AndroidSecureStore(applicationContext, AndroidSecureStore.VPN_PREFS_NAME)
+    }
     private var coreController: CoreController? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var statsTask: ScheduledFuture<*>? = null
@@ -175,6 +184,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         }
 
         when (commandIntent.action) {
+            ACTION_QUERY_STATE -> return handleStateQuery(commandIntent, startId)
+            ACTION_QUERY_DIAGNOSTICS -> return handleDiagnosticsQuery(commandIntent, startId)
+
             ACTION_STOP -> {
                 restartServiceOnKill = false
                 clearRestartState()
@@ -183,14 +195,20 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             }
 
             ACTION_SET_STATS_UI_ACTIVE -> {
-                if (coreController?.isRunning != true) {
-                    stopSelf()
-                    return Service.START_NOT_STICKY
-                }
                 val nextStatsUiActive = commandIntent.getBooleanExtra(
                     EXTRA_STATS_UI_ACTIVE,
                     false,
                 )
+                if (coreController?.isRunning != true) {
+                    if (nextStatsUiActive && restartFromPersistedState { restored ->
+                            restored.putExtra(EXTRA_STATS_UI_ACTIVE, true)
+                        }
+                    ) {
+                        return Service.START_STICKY
+                    }
+                    stopSelf(startId)
+                    return Service.START_NOT_STICKY
+                }
                 val consumerChanged = nextStatsUiActive != statsUiActive
                 statsUiActive = nextStatsUiActive
                 updateStatsLoopState(restart = consumerChanged)
@@ -207,7 +225,28 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
             ACTION_UPDATE_RUNTIME_SETTINGS -> {
                 if (coreController?.isRunning != true) {
-                    stopSelf()
+                    if (restartFromPersistedState { restored ->
+                            restored.putExtra(
+                                EXTRA_STATS_INTERVAL_SECONDS,
+                                commandIntent.getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, 2),
+                            )
+                            restored.putExtra(
+                                EXTRA_PING_INTERVAL_SECONDS,
+                                commandIntent.getIntExtra(EXTRA_PING_INTERVAL_SECONDS, 60),
+                            )
+                            restored.putExtra(
+                                EXTRA_SHOW_NOTIFICATION_SPEED,
+                                commandIntent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_SPEED, true),
+                            )
+                            restored.putExtra(
+                                EXTRA_SHOW_NOTIFICATION_PING,
+                                commandIntent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_PING, true),
+                            )
+                        }
+                    ) {
+                        return Service.START_STICKY
+                    }
+                    stopSelf(startId)
                     return Service.START_NOT_STICKY
                 }
                 val nextInterval = commandIntent
@@ -464,6 +503,85 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         super.onDestroy()
     }
 
+    private fun handleStateQuery(intent: Intent, startId: Int): Int {
+        val receiver = intent.resultReceiver()
+        if (coreController?.isRunning == true || activeStartIntent != null) {
+            receiver?.send(0, OrexRayTunnelEvents.toBundle(currentRuntimeState()))
+            return restartMode()
+        }
+
+        val restored = restoreRestartIntent()
+        if (restored != null) {
+            val targetId = restored.getStringExtra(EXTRA_TARGET_ID)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+            val mode = restored.getStringExtra(EXTRA_MODE) ?: MODE_VPN
+            receiver?.send(
+                0,
+                OrexRayTunnelEvents.toBundle(
+                    OrexRayTunnelEvents.event(
+                        status = "connecting",
+                        mode = mode,
+                        targetId = targetId,
+                        message = "Восстанавливаем VPN после перезапуска процесса…",
+                    ),
+                ),
+            )
+            startService(restored)
+            return Service.START_STICKY
+        }
+
+        receiver?.send(
+            0,
+            OrexRayTunnelEvents.toBundle(
+                OrexRayTunnelEvents.event(status = "disconnected"),
+            ),
+        )
+        stopSelf(startId)
+        return Service.START_NOT_STICKY
+    }
+
+    private fun handleDiagnosticsQuery(intent: Intent, startId: Int): Int {
+        intent.resultReceiver()?.send(0, diagnosticsBundle())
+        if (coreController?.isRunning == true || activeStartIntent != null) {
+            return restartMode()
+        }
+        stopSelf(startId)
+        return Service.START_NOT_STICKY
+    }
+
+    private fun diagnosticsBundle(): Bundle {
+        val snapshot = OrexRayDiagnosticsStore.snapshot()
+        return Bundle().apply {
+            (snapshot["pid"] as? Number)?.toInt()?.let { putInt("pid", it) }
+            putBoolean("coreRunning", snapshot["coreRunning"] == true)
+            (snapshot["lastError"] as? String)?.let { putString("lastError", it) }
+            (snapshot["lastExitCode"] as? Number)?.toLong()?.let { putLong("lastExitCode", it) }
+            putInt(
+                "automaticRestarts",
+                (snapshot["automaticRestarts"] as? Number)?.toInt() ?: 0,
+            )
+            putStringArrayList(
+                "logs",
+                ArrayList((snapshot["logs"] as? List<*>)?.filterIsInstance<String>().orEmpty()),
+            )
+        }
+    }
+
+    private fun restartFromPersistedState(update: (Intent) -> Unit = {}): Boolean {
+        val restored = restoreRestartIntent() ?: return false
+        update(restored)
+        startService(restored)
+        return true
+    }
+
+    private fun Intent.resultReceiver(): ResultReceiver? = if (Build.VERSION.SDK_INT >= 33) {
+        getParcelableExtra(EXTRA_RESULT_RECEIVER, ResultReceiver::class.java)
+    } else {
+        @Suppress("DEPRECATION")
+        getParcelableExtra(EXTRA_RESULT_RECEIVER)
+    }
+
     private fun ensureCoreController(): CoreController {
         coreController?.let { return it }
 
@@ -507,8 +625,19 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         return OrexRayTunnelEvents.lastEvent
     }
 
-    private fun xudpBaseKey(): String =
-        secureStore.getOrCreateRandomUrlSafeToken("xudp_base_key_v1", 32)
+    private fun xudpBaseKey(): String {
+        val key = "xudp_base_key_v1"
+        secureStore.read(key)?.let { return it }
+        // Preserve the pre-multiprocess token once, then keep future writes
+        // away from Flutter's secure SharedPreferences file.
+        runCatching { AndroidSecureStore(applicationContext).read(key) }
+            .getOrNull()
+            ?.let { legacy ->
+                runCatching { secureStore.write(key, legacy) }
+                return legacy
+            }
+        return secureStore.getOrCreateRandomUrlSafeToken(key, 32)
+    }
 
     private fun startTunnel(config: String, mode: String) {
         val controller = try {

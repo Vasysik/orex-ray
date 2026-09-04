@@ -9,6 +9,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.VpnService
 import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.ResultReceiver
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
@@ -19,6 +23,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : FlutterActivity() {
     companion object {
@@ -32,6 +37,7 @@ class MainActivity : FlutterActivity() {
         private const val FILE_EXPORT_REQUEST = 7713
         private const val MODE_VPN = "vpn_tun"
         private const val MODE_LOCAL_PROXY = "local_proxy"
+        private const val VPN_QUERY_TIMEOUT_MS = 2_000L
     }
 
     private data class StartRequest(
@@ -63,6 +69,7 @@ class MainActivity : FlutterActivity() {
     private var pendingFileExportContent: String? = null
     private val secureStore by lazy { AndroidSecureStore(applicationContext) }
     private val packageWorker = Executors.newFixedThreadPool(2)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var activityDestroyed = false
@@ -236,7 +243,7 @@ class MainActivity : FlutterActivity() {
                             }
                     }
 
-                    "status" -> result.success(OrexRayVpnService.runtimeState(this))
+                    "status" -> queryVpnState(result)
                     "setAutoConnectOnBoot" -> {
                         OrexRayStartupStore.setAutoConnectOnBoot(
                             this,
@@ -255,7 +262,7 @@ class MainActivity : FlutterActivity() {
                                 )
                             }
                     }
-                    "diagnostics" -> result.success(OrexRayDiagnosticsStore.snapshot())
+                    "diagnostics" -> queryVpnDiagnostics(result)
                     "assetDirectory" -> result.success(
                         File(filesDir, "xray").apply { mkdirs() }.absolutePath,
                     )
@@ -461,6 +468,7 @@ class MainActivity : FlutterActivity() {
         )
         pendingFileExportResult = null
         pendingFileExportContent = null
+        OrexRayTunnelEvents.detach()
         packageWorker.shutdownNow()
         super.onDestroy()
     }
@@ -499,7 +507,7 @@ class MainActivity : FlutterActivity() {
         pendingStart = request
         val permissionIntent = VpnService.prepare(this)
         if (permissionIntent != null) {
-            OrexRayTunnelEvents.emit(
+            OrexRayTunnelEvents.emitTransient(
                 this,
                 OrexRayTunnelEvents.event(
                     status = "connecting",
@@ -597,7 +605,7 @@ class MainActivity : FlutterActivity() {
             runCatching { startCoreService(request) }
                 .onFailure { error ->
                     Log.e(TAG, "Could not start VPN service after permission", error)
-                    OrexRayTunnelEvents.emit(
+                    OrexRayTunnelEvents.emitTransient(
                         this,
                         OrexRayTunnelEvents.event(
                             status = "error",
@@ -607,7 +615,7 @@ class MainActivity : FlutterActivity() {
                     )
                 }
         } else {
-            OrexRayTunnelEvents.emit(
+            OrexRayTunnelEvents.emitTransient(
                 this,
                 OrexRayTunnelEvents.event(
                     status = "error",
@@ -765,6 +773,72 @@ class MainActivity : FlutterActivity() {
             .setAction(OrexRayVpnService.ACTION_SET_STATS_UI_ACTIVE)
             .putExtra(OrexRayVpnService.EXTRA_STATS_UI_ACTIVE, active)
         startService(intent)
+    }
+
+    private fun queryVpnState(result: MethodChannel.Result) {
+        queryVpnService(
+            action = OrexRayVpnService.ACTION_QUERY_STATE,
+            fallback = OrexRayTunnelEvents.event(status = "disconnected"),
+            result = result,
+        ) { bundle -> OrexRayTunnelEvents.fromBundle(bundle) }
+    }
+
+    private fun queryVpnDiagnostics(result: MethodChannel.Result) {
+        queryVpnService(
+            action = OrexRayVpnService.ACTION_QUERY_DIAGNOSTICS,
+            fallback = mapOf(
+                "pid" to null,
+                "coreRunning" to false,
+                "lastError" to null,
+                "lastExitCode" to null,
+                "automaticRestarts" to 0,
+                "logs" to emptyList<String>(),
+            ),
+            result = result,
+        ) { bundle ->
+            mapOf(
+                "pid" to bundle.getInt("pid").takeIf { bundle.containsKey("pid") },
+                "coreRunning" to bundle.getBoolean("coreRunning"),
+                "lastError" to bundle.getString("lastError"),
+                "lastExitCode" to bundle.getLong("lastExitCode")
+                    .takeIf { bundle.containsKey("lastExitCode") },
+                "automaticRestarts" to bundle.getInt("automaticRestarts"),
+                "logs" to bundle.getStringArrayList("logs").orEmpty(),
+            )
+        }
+    }
+
+    private fun <T> queryVpnService(
+        action: String,
+        fallback: T,
+        result: MethodChannel.Result,
+        decode: (Bundle) -> T,
+    ) {
+        val completed = AtomicBoolean(false)
+        val timeout = Runnable {
+            if (completed.compareAndSet(false, true)) result.success(fallback)
+        }
+        val receiver = object : ResultReceiver(mainHandler) {
+            override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                if (!completed.compareAndSet(false, true)) return
+                mainHandler.removeCallbacks(timeout)
+                result.success(resultData?.let(decode) ?: fallback)
+            }
+        }
+        mainHandler.postDelayed(timeout, VPN_QUERY_TIMEOUT_MS)
+        runCatching {
+            startService(
+                Intent(this, OrexRayVpnService::class.java)
+                    .setAction(action)
+                    .putExtra(OrexRayVpnService.EXTRA_RESULT_RECEIVER, receiver),
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "VPN service query failed: $action", error)
+            if (completed.compareAndSet(false, true)) {
+                mainHandler.removeCallbacks(timeout)
+                result.success(fallback)
+            }
+        }
     }
 
     private fun openNotificationSettings() {

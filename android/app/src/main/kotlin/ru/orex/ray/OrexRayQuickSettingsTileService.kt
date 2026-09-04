@@ -35,7 +35,7 @@ class OrexRayQuickSettingsTileService : TileService() {
     override fun onClick() {
         super.onClick()
 
-        val event = OrexRayRuntimeStateStore.load(this)
+        val event = OrexRayVpnService.runtimeStateInVpnProcess(this)
         val status = event["status"] as? String ?: "disconnected"
         val mode = event["mode"] as? String ?: OrexRayVpnService.MODE_VPN
 
@@ -138,7 +138,7 @@ class OrexRayQuickSettingsTileService : TileService() {
     }
 
     private fun updateTileFromRuntime() {
-        val event = OrexRayRuntimeStateStore.load(this)
+        val event = OrexRayVpnService.runtimeStateInVpnProcess(this)
         val status = event["status"] as? String ?: "disconnected"
         val mode = event["mode"] as? String ?: OrexRayVpnService.MODE_VPN
         val savedVpn = OrexRayStartIntentStore.loadQuickTileVpn(this)

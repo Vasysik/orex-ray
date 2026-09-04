@@ -12,16 +12,20 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class AndroidSecureStore(context: Context) {
+class AndroidSecureStore(
+    context: Context,
+    preferencesName: String = DEFAULT_PREFS_NAME,
+) {
     companion object {
         private const val KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "orexray_secure_store_key_v1"
-        private const val PREFS_NAME = "orexray_secure_store_v1"
+        internal const val DEFAULT_PREFS_NAME = "orexray_secure_store_v1"
+        internal const val VPN_PREFS_NAME = "orexray_vpn_secure_store_v2"
         private const val IV_LENGTH_BYTES = 12
         private const val GCM_TAG_LENGTH_BITS = 128
     }
 
-    private val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
     private val secureRandom = SecureRandom()
 
     fun read(key: String): String? {
