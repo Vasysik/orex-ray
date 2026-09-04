@@ -35,8 +35,12 @@ class BackgroundScreen extends StatelessWidget {
               ListTile(
                 leading:
                     const Icon(Icons.speed_rounded, color: OrexColors.copper),
-                title: const Text('Интервал обновления'),
-                subtitle: Text('Каждые ${settings.statsIntervalSeconds} с'),
+                title: const Text('Интервал статистики'),
+                subtitle: Text(
+                  'Интерфейс: ${settings.statsIntervalSeconds} с · '
+                  'уведомление в фоне: '
+                  '${_backgroundStatsInterval(settings.statsIntervalSeconds)} с',
+                ),
                 trailing: DropdownButton<int>(
                   value: settings.statsIntervalSeconds,
                   underline: const SizedBox.shrink(),
@@ -72,8 +76,10 @@ class BackgroundScreen extends StatelessWidget {
                     color: OrexColors.copper,
                   ),
                   title: const Text('Скорость в уведомлении'),
-                  subtitle:
-                      const Text('Показывать текущие ↓/↑ без звука и вибрации'),
+                  subtitle: const Text(
+                    'Показывать текущие ↓/↑. Если выключено и интерфейс закрыт, '
+                    'stats-loop полностью останавливается.',
+                  ),
                   value: settings.showNotificationSpeed,
                   onChanged: settings.setShowNotificationSpeed,
                 ),
@@ -85,10 +91,38 @@ class BackgroundScreen extends StatelessWidget {
                   ),
                   title: const Text('Пинг в уведомлении'),
                   subtitle: const Text(
-                    'Текущая задержка активного подключения · обновление раз в минуту',
+                    'Если выключено и интерфейс закрыт, фоновые проверки пинга '
+                    'полностью останавливаются.',
                   ),
                   value: settings.showNotificationPing,
                   onChanged: settings.setShowNotificationPing,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(
+                    Icons.timer_outlined,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Интервал пинга'),
+                  subtitle: Text(
+                    'Первый замер примерно через 5 с, затем '
+                    '${_pingIntervalLabel(settings.pingIntervalSeconds)}. '
+                    'В фоне работает только при включённом пинге в уведомлении.',
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: settings.pingIntervalSeconds,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(value: 15, child: Text('15 с')),
+                      DropdownMenuItem(value: 30, child: Text('30 с')),
+                      DropdownMenuItem(value: 60, child: Text('1 мин')),
+                      DropdownMenuItem(value: 120, child: Text('2 мин')),
+                      DropdownMenuItem(value: 300, child: Text('5 мин')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) settings.setPingIntervalSeconds(value);
+                    },
+                  ),
                 ),
               ],
             ],
@@ -202,6 +236,15 @@ class BackgroundScreen extends StatelessWidget {
     );
   }
 }
+
+int _backgroundStatsInterval(int seconds) => seconds < 5 ? 5 : seconds;
+
+String _pingIntervalLabel(int seconds) => switch (seconds) {
+      60 => 'раз в минуту',
+      120 => 'раз в 2 минуты',
+      300 => 'раз в 5 минут',
+      _ => 'раз в $seconds с',
+    };
 
 Future<void> _openAndroidNotificationSettings(BuildContext context) async {
   try {

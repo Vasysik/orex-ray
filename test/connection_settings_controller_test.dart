@@ -3,6 +3,28 @@ import 'package:orex_ray/core/settings/connection_settings_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('ping interval defaults, validates and persists', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    addTearDown(settings.dispose);
+
+    expect(settings.pingIntervalSeconds, 60);
+    await settings.setPingIntervalSeconds(120);
+    expect(settings.pingIntervalSeconds, 120);
+    await expectLater(
+      settings.setPingIntervalSeconds(17),
+      throwsA(isA<FormatException>()),
+    );
+
+    final reloaded = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    addTearDown(reloaded.dispose);
+    expect(reloaded.pingIntervalSeconds, 120);
+  });
+
   test('latency probe service defaults to Cloudflare and persists custom URL',
       () async {
     SharedPreferences.setMockInitialValues({});

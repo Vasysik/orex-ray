@@ -64,7 +64,7 @@ void main() {
     expect(find.text('Пароль (необязательно)'), findsOneWidget);
   });
 
-  testWidgets('copies all Xray profiles as a JSON array', (tester) async {
+  testWidgets('copies selected Xray profiles as a JSON array', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();
     final settings = await ConnectionSettingsController.load(
@@ -105,9 +105,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.longPress(find.text('Copy-all'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Экспорт JSON Xray'));
+    expect(find.text('Выбрано: 1'), findsOneWidget);
+    await tester.tap(find.byTooltip('Экспортировать выбранные'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Копировать массив JSON'));
     await tester.pump();
@@ -116,6 +117,83 @@ void main() {
     final decoded = jsonDecode(clipboardText!);
     expect(decoded, isA<List>());
     expect(decoded as List, hasLength(1));
+  });
+
+  testWidgets('long press selection exposes bulk actions and reorder mode',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Bulk-actions',
+    );
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('Bulk-actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Выбрано: 1'), findsOneWidget);
+    expect(find.byTooltip('Проверить пинг выбранных'), findsOneWidget);
+    expect(find.byTooltip('Экспортировать выбранные'), findsOneWidget);
+    expect(find.byTooltip('Удалить выбранные'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Изменить порядок'));
+    await tester.pumpAndSettle();
+    expect(find.text('Порядок серверов'), findsOneWidget);
+    expect(find.text('Готово'), findsOneWidget);
+  });
+
+  testWidgets('create menu no longer contains profile export', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Экспорт JSON Xray'), findsNothing);
   });
 
   testWidgets('copies one profile as a single Xray JSON object', (tester) async {

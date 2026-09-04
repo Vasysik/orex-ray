@@ -19,7 +19,6 @@ import '../home/tunnel_controller.dart';
 enum _ProfileCreateAction {
   importLink,
   importXrayJson,
-  exportXrayJson,
   newProfile,
   balancer,
 }
@@ -37,87 +36,7 @@ class ProfilesScreen extends StatelessWidget {
   final TunnelController tunnel;
 
   @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([profiles, tunnel, tunnel.egressChanges]),
-      builder: (context, _) {
-        final selected = profiles.selectedTarget;
-        return ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            _ProfilesHeader(
-              refreshingLatency: tunnel.refreshingLatency,
-              canRefreshLatency: profiles.profiles.isNotEmpty,
-              onOpenProfileMenu: () => _showProfileMenu(context),
-              onRefreshLatency: tunnel.refreshAllLatencies,
-            ),
-            const SizedBox(height: 20),
-            if (profiles.profiles.isEmpty)
-              _EmptyProfiles(onImport: () => _showProfileMenu(context))
-            else ...[
-              _SectionTitle(
-                title: 'Серверы',
-                count: profiles.profiles.length,
-              ),
-              const SizedBox(height: 10),
-              for (final profile in profiles.profiles)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _ProfileCard(
-                    profile: profile,
-                    identity: tunnel.egressIdentityFor(profile.id),
-                    selected: selected?.id == profile.id,
-                    onSelect: () => tunnel.selectTarget(profile.id),
-                    latencyMs: profile.latencyMs,
-                    onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
-                        ? () => tunnel.refreshProfileLatency(profile.id)
-                        : null,
-                    onEdit: () => _showEditProfileDialog(context, profile),
-                    onExport: () => _showXrayJsonExportMenu(
-                      context,
-                      profileId: profile.id,
-                      suggestedBaseName: profile.name,
-                    ),
-                    onDelete: () =>
-                        _deleteTarget(context, profile.id, profile.name),
-                  ),
-                ),
-              if (profiles.balancers.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                _SectionTitle(
-                  title: 'Балансировщики',
-                  count: profiles.balancers.length,
-                ),
-                const SizedBox(height: 10),
-                for (final balancer in profiles.balancers)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _BalancerCard(
-                      balancer: balancer,
-                      identity: tunnel.egressIdentityFor(balancer.id),
-                      members: [
-                        for (final id in balancer.memberIds)
-                          ...profiles.profiles.where((item) => item.id == id),
-                      ],
-                      selected: selected?.id == balancer.id,
-                      latencyMs: profiles.targetById(balancer.id)?.latencyMs,
-                      onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
-                          ? () => tunnel.refreshTargetLatency(balancer.id)
-                          : null,
-                      onSelect: () => tunnel.selectTarget(balancer.id),
-                      onEdit: () =>
-                          _showBalancerDialog(context, existing: balancer),
-                      onDelete: () =>
-                          _deleteTarget(context, balancer.id, balancer.name),
-                    ),
-                  ),
-              ],
-            ],
-          ],
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => _ProfilesBody(owner: this);
 
   Future<void> _showProfileMenu(BuildContext context) async {
     final action = await showOrexChoiceSheet<_ProfileCreateAction>(
@@ -134,12 +53,6 @@ class ProfilesScreen extends StatelessWidget {
           icon: Icons.data_object_rounded,
           title: 'Импорт JSON Xray',
           subtitle: 'Файл, сырой JSON, массив [] или HTTP/HTTPS URL',
-        ),
-        OrexChoiceSheetOption<_ProfileCreateAction>(
-          value: _ProfileCreateAction.exportXrayJson,
-          icon: Icons.file_download_outlined,
-          title: 'Экспорт JSON Xray',
-          subtitle: 'Скопировать массив JSON или сохранить .json',
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.newProfile,
@@ -163,9 +76,6 @@ class ProfilesScreen extends StatelessWidget {
         break;
       case _ProfileCreateAction.importXrayJson:
         await _showXrayJsonImportDialog(context);
-        break;
-      case _ProfileCreateAction.exportXrayJson:
-        await _showXrayJsonExportMenu(context);
         break;
       case _ProfileCreateAction.newProfile:
         await _showCreateProfileDialog(context);
@@ -211,26 +121,32 @@ class ProfilesScreen extends StatelessWidget {
   Future<void> _showXrayJsonExportMenu(
     BuildContext context, {
     String? profileId,
+    Iterable<String>? profileIds,
     String? suggestedBaseName,
   }) async {
-    if (profileId == null && profiles.profiles.isEmpty) {
+    final selectedIds = profileIds?.toSet();
+    if (profileId == null &&
+        (selectedIds == null || selectedIds.isEmpty) &&
+        profiles.profiles.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Нет профилей для экспорта')),
       );
       return;
     }
 
-    final exportingAll = profileId == null;
+    final exportingMultiple = profileId == null;
+    final exportCount = selectedIds?.length ?? profiles.profiles.length;
     final action = await showOrexChoiceSheet<_XrayJsonExportAction>(
       context,
-      title: exportingAll ? 'Экспорт JSON Xray' : 'Экспорт профиля',
+      title: exportingMultiple ? 'Экспорт $exportCount профилей' : 'Экспорт профиля',
       options: [
         OrexChoiceSheetOption<_XrayJsonExportAction>(
           value: _XrayJsonExportAction.copy,
           icon: Icons.content_copy_rounded,
-          title: exportingAll ? 'Копировать массив JSON' : 'Копировать JSON',
-          subtitle: exportingAll
-              ? 'Все профили как массив полных Xray-конфигов'
+          title:
+              exportingMultiple ? 'Копировать массив JSON' : 'Копировать JSON',
+          subtitle: exportingMultiple
+              ? 'Выбранные профили как массив полных Xray-конфигов'
               : 'Полный Xray-конфиг профиля в буфер обмена',
         ),
         const OrexChoiceSheetOption<_XrayJsonExportAction>(
@@ -244,7 +160,9 @@ class ProfilesScreen extends StatelessWidget {
     if (action == null || !context.mounted) return;
 
     try {
-      final payload = profiles.exportXrayJson(profileId: profileId);
+      final payload = selectedIds == null
+          ? profiles.exportXrayJson(profileId: profileId)
+          : profiles.exportSelectedXrayJson(selectedIds);
       switch (action) {
         case _XrayJsonExportAction.copy:
           await Clipboard.setData(ClipboardData(text: payload));
@@ -252,7 +170,7 @@ class ProfilesScreen extends StatelessWidget {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                exportingAll
+                exportingMultiple
                     ? 'Массив JSON Xray скопирован'
                     : 'JSON Xray скопирован',
               ),
@@ -261,7 +179,7 @@ class ProfilesScreen extends StatelessWidget {
           break;
         case _XrayJsonExportAction.saveFile:
           final baseName = _safeFileName(
-            suggestedBaseName ?? 'orexray-xray-${profiles.profiles.length}',
+            suggestedBaseName ?? 'orexray-selected-$exportCount',
           );
           final saved = await const XrayJsonFileExporter().save(
             content: payload,
@@ -382,6 +300,393 @@ class ProfilesScreen extends StatelessWidget {
       ),
     );
     if (confirmed == true) await profiles.delete(id);
+  }
+}
+
+class _ProfilesBody extends StatefulWidget {
+  const _ProfilesBody({required this.owner});
+
+  final ProfilesScreen owner;
+
+  @override
+  State<_ProfilesBody> createState() => _ProfilesBodyState();
+}
+
+class _ProfilesBodyState extends State<_ProfilesBody> {
+  final Set<String> _selectedProfileIds = <String>{};
+  bool _reorderMode = false;
+
+  ProfilesController get profiles => widget.owner.profiles;
+  TunnelController get tunnel => widget.owner.tunnel;
+  bool get _selectionMode => _selectedProfileIds.isNotEmpty;
+
+  void _toggleSelection(String id) {
+    setState(() {
+      if (!_selectedProfileIds.add(id)) {
+        _selectedProfileIds.remove(id);
+      }
+    });
+  }
+
+  void _enterSelection(String id) {
+    if (_selectionMode) {
+      _toggleSelection(id);
+      return;
+    }
+    setState(() => _selectedProfileIds.add(id));
+  }
+
+  void _clearSelection() {
+    if (!_selectionMode) return;
+    setState(_selectedProfileIds.clear);
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedProfileIds
+        ..clear()
+        ..addAll(profiles.profiles.map((profile) => profile.id));
+    });
+  }
+
+  Future<void> _deleteSelected(BuildContext context) async {
+    final count = _selectedProfileIds.length;
+    if (count == 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить $count профилей?'),
+        content: const Text(
+          'Выбранные серверы будут удалены с этого устройства. '
+          'Балансировщики с недостаточным числом серверов тоже будут удалены.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ids = Set<String>.from(_selectedProfileIds);
+    await profiles.deleteProfiles(ids);
+    if (mounted) _clearSelection();
+  }
+
+  Future<void> _exportSelected(BuildContext context) async {
+    final ids = Set<String>.from(_selectedProfileIds);
+    if (ids.isEmpty) return;
+    await widget.owner._showXrayJsonExportMenu(
+      context,
+      profileIds: ids,
+      suggestedBaseName: 'orexray-selected-${ids.length}',
+    );
+  }
+
+  Future<void> _pingSelected() async {
+    if (_selectedProfileIds.isEmpty || tunnel.refreshingLatency) return;
+    await tunnel.refreshProfileLatencies(
+      Set<String>.from(_selectedProfileIds),
+    );
+  }
+
+  void _startReorder() {
+    setState(() {
+      _selectedProfileIds.clear();
+      _reorderMode = true;
+    });
+  }
+
+  void _finishReorder() {
+    if (!_reorderMode) return;
+    setState(() => _reorderMode = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([profiles, tunnel, tunnel.egressChanges]),
+      builder: (context, _) {
+        final currentProfiles = profiles.profiles;
+        final validIds = currentProfiles.map((profile) => profile.id).toSet();
+        _selectedProfileIds.removeWhere((id) => !validIds.contains(id));
+        final activeTarget = profiles.selectedTarget;
+
+        if (_reorderMode) {
+          return ReorderableListView.builder(
+            padding: const EdgeInsets.all(20),
+            buildDefaultDragHandles: false,
+            header: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ProfilesReorderHeader(onDone: _finishReorder),
+                const SizedBox(height: 20),
+                _SectionTitle(
+                  title: 'Серверы',
+                  count: currentProfiles.length,
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+            itemCount: currentProfiles.length,
+            onReorderItem: profiles.reorderProfiles,
+            itemBuilder: (context, index) {
+              final profile = currentProfiles[index];
+              return Padding(
+                key: ValueKey(profile.id),
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _ProfileCard(
+                  profile: profile,
+                  identity: tunnel.egressIdentityFor(profile.id),
+                  selected: activeTarget?.id == profile.id,
+                  multiSelected: false,
+                  selectionMode: false,
+                  reorderIndex: index,
+                  onSelect: () {},
+                  onLongPress: null,
+                  latencyMs: profile.latencyMs,
+                  onRefreshPing: null,
+                  onEdit: () {},
+                  onExport: () {},
+                  onDelete: () {},
+                ),
+              );
+            },
+          );
+        }
+
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            if (_selectionMode)
+              _ProfilesSelectionHeader(
+                selectedCount: _selectedProfileIds.length,
+                allSelected: _selectedProfileIds.length == currentProfiles.length,
+                refreshingLatency: tunnel.refreshingLatency,
+                onClose: _clearSelection,
+                onSelectAll: _selectAll,
+                onPing: _pingSelected,
+                onExport: () => _exportSelected(context),
+                onReorder: _startReorder,
+                onDelete: () => _deleteSelected(context),
+              )
+            else
+              _ProfilesHeader(
+                refreshingLatency: tunnel.refreshingLatency,
+                canRefreshLatency: currentProfiles.isNotEmpty,
+                onOpenProfileMenu: () => widget.owner._showProfileMenu(context),
+                onRefreshLatency: tunnel.refreshAllLatencies,
+              ),
+            const SizedBox(height: 20),
+            if (currentProfiles.isEmpty)
+              _EmptyProfiles(
+                onImport: () => widget.owner._showProfileMenu(context),
+              )
+            else ...[
+              _SectionTitle(title: 'Серверы', count: currentProfiles.length),
+              const SizedBox(height: 10),
+              for (final profile in currentProfiles)
+                  Padding(
+                    key: ValueKey(profile.id),
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _ProfileCard(
+                      profile: profile,
+                      identity: tunnel.egressIdentityFor(profile.id),
+                      selected: activeTarget?.id == profile.id,
+                      multiSelected: _selectedProfileIds.contains(profile.id),
+                      selectionMode: _selectionMode,
+                      onSelect: () => _selectionMode
+                          ? _toggleSelection(profile.id)
+                          : tunnel.selectTarget(profile.id),
+                      onLongPress: () => _enterSelection(profile.id),
+                      latencyMs: profile.latencyMs,
+                      onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
+                          ? () => tunnel.refreshProfileLatency(profile.id)
+                          : null,
+                      onEdit: () =>
+                          widget.owner._showEditProfileDialog(context, profile),
+                      onExport: () => widget.owner._showXrayJsonExportMenu(
+                        context,
+                        profileId: profile.id,
+                        suggestedBaseName: profile.name,
+                      ),
+                      onDelete: () => widget.owner._deleteTarget(
+                        context,
+                        profile.id,
+                        profile.name,
+                      ),
+                    ),
+                  ),
+              if (!_selectionMode && profiles.balancers.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _SectionTitle(
+                  title: 'Балансировщики',
+                  count: profiles.balancers.length,
+                ),
+                const SizedBox(height: 10),
+                for (final balancer in profiles.balancers)
+                  Padding(
+                    key: ValueKey(balancer.id),
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _BalancerCard(
+                      balancer: balancer,
+                      identity: tunnel.egressIdentityFor(balancer.id),
+                      members: [
+                        for (final id in balancer.memberIds)
+                          ...currentProfiles.where((item) => item.id == id),
+                      ],
+                      selected: activeTarget?.id == balancer.id,
+                      latencyMs: profiles.targetById(balancer.id)?.latencyMs,
+                      onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
+                          ? () => tunnel.refreshTargetLatency(balancer.id)
+                          : null,
+                      onSelect: _selectionMode
+                          ? () {}
+                          : () => tunnel.selectTarget(balancer.id),
+                      onEdit: () => widget.owner._showBalancerDialog(
+                        context,
+                        existing: balancer,
+                      ),
+                      onDelete: () => widget.owner._deleteTarget(
+                        context,
+                        balancer.id,
+                        balancer.name,
+                      ),
+                    ),
+                  ),
+              ],
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ProfilesSelectionHeader extends StatelessWidget {
+  const _ProfilesSelectionHeader({
+    required this.selectedCount,
+    required this.allSelected,
+    required this.refreshingLatency,
+    required this.onClose,
+    required this.onSelectAll,
+    required this.onPing,
+    required this.onExport,
+    required this.onReorder,
+    required this.onDelete,
+  });
+
+  final int selectedCount;
+  final bool allSelected;
+  final bool refreshingLatency;
+  final VoidCallback onClose;
+  final VoidCallback onSelectAll;
+  final Future<void> Function() onPing;
+  final VoidCallback onExport;
+  final VoidCallback onReorder;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      borderRadius: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Закрыть выбор',
+                onPressed: onClose,
+                icon: const Icon(Icons.close_rounded),
+              ),
+              Expanded(
+                child: Text(
+                  'Выбрано: $selectedCount',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: allSelected ? 'Выбраны все' : 'Выбрать все',
+                onPressed: allSelected ? null : onSelectAll,
+                icon: const Icon(Icons.select_all_rounded),
+              ),
+            ],
+          ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 4,
+            children: [
+              IconButton(
+                tooltip: 'Проверить пинг выбранных',
+                onPressed: refreshingLatency ? null : () => onPing(),
+                icon: const Icon(Icons.network_ping_rounded),
+              ),
+              IconButton(
+                tooltip: 'Экспортировать выбранные',
+                onPressed: onExport,
+                icon: const Icon(Icons.ios_share_rounded),
+              ),
+              IconButton(
+                tooltip: 'Изменить порядок',
+                onPressed: onReorder,
+                icon: const Icon(Icons.swap_vert_rounded),
+              ),
+              IconButton(
+                tooltip: 'Удалить выбранные',
+                onPressed: onDelete,
+                color: OrexColors.danger,
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfilesReorderHeader extends StatelessWidget {
+  const _ProfilesReorderHeader({required this.onDone});
+
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      borderRadius: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          const Icon(Icons.drag_indicator_rounded, color: OrexColors.copper),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Порядок серверов',
+                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Перетаскивай карточки за ручку справа',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: onDone,
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('Готово'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -524,36 +829,49 @@ class _ProfileCard extends StatelessWidget {
     required this.profile,
     required this.identity,
     required this.selected,
+    required this.multiSelected,
+    required this.selectionMode,
     required this.onSelect,
+    required this.onLongPress,
     required this.latencyMs,
     required this.onRefreshPing,
     required this.onEdit,
     required this.onExport,
     required this.onDelete,
+    this.reorderIndex,
   });
 
   final TunnelProfile profile;
   final EgressIdentity? identity;
   final bool selected;
+  final bool multiSelected;
+  final bool selectionMode;
   final VoidCallback onSelect;
+  final VoidCallback? onLongPress;
   final int? latencyMs;
   final VoidCallback? onRefreshPing;
   final VoidCallback onEdit;
   final VoidCallback onExport;
   final VoidCallback onDelete;
+  final int? reorderIndex;
 
   @override
   Widget build(BuildContext context) {
     return GlassPanel(
       borderRadius: 22,
-      tint: selected ? OrexColors.copper : null,
-      opacity: selected ? 0.16 : 0.50,
+      tint: multiSelected || selected ? OrexColors.copper : null,
+      opacity: multiSelected
+          ? 0.24
+          : selected
+              ? 0.16
+              : 0.50,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         onTap: onSelect,
+        onLongPress: onLongPress,
         leading: EgressAvatar(
           identity: identity,
-          selected: selected,
+          selected: selected || multiSelected,
         ),
         title: Row(
           children: [
@@ -575,28 +893,47 @@ class _ProfileCard extends StatelessWidget {
           ),
         ),
         isThreeLine: true,
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) {
-            if (value == 'edit') onEdit();
-            if (value == 'ping') onRefreshPing?.call();
-            if (value == 'export') onExport();
-            if (value == 'delete') onDelete();
-          },
-          itemBuilder: (context) => [
-            PopupMenuItem(value: 'edit', child: Text('Редактировать')),
-            PopupMenuItem(
-              value: 'ping',
-              enabled: onRefreshPing != null,
-              child: const Text('Проверить пинг'),
-            ),
-            const PopupMenuItem(
-              value: 'export',
-              child: Text('Экспорт JSON Xray'),
-            ),
-            const PopupMenuDivider(),
-            const PopupMenuItem(value: 'delete', child: Text('Удалить')),
-          ],
-        ),
+        trailing: reorderIndex != null
+            ? ReorderableDragStartListener(
+                index: reorderIndex!,
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Icon(Icons.drag_handle_rounded),
+                ),
+              )
+            : selectionMode
+                ? Checkbox(
+                    value: multiSelected,
+                    onChanged: (_) => onSelect(),
+                  )
+                : PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'edit') onEdit();
+                      if (value == 'ping') onRefreshPing?.call();
+                      if (value == 'export') onExport();
+                      if (value == 'delete') onDelete();
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Text('Редактировать'),
+                      ),
+                      PopupMenuItem(
+                        value: 'ping',
+                        enabled: onRefreshPing != null,
+                        child: const Text('Проверить пинг'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'export',
+                        child: Text('Экспорт JSON Xray'),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Удалить'),
+                      ),
+                    ],
+                  ),
       ),
     );
   }

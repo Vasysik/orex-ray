@@ -83,6 +83,7 @@ internal object OrexRayStartIntentStore {
     fun updateRuntimeSettings(
         context: Context,
         statsIntervalSeconds: Int,
+        pingIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
     ) {
@@ -90,6 +91,7 @@ internal object OrexRayStartIntentStore {
             context,
             RESTART_STATE_KEY,
             statsIntervalSeconds,
+            pingIntervalSeconds,
             showNotificationSpeed,
             showNotificationPing,
         )
@@ -97,6 +99,7 @@ internal object OrexRayStartIntentStore {
             context,
             QUICK_TILE_STATE_KEY,
             statsIntervalSeconds,
+            pingIntervalSeconds,
             showNotificationSpeed,
             showNotificationPing,
         )
@@ -156,6 +159,10 @@ internal object OrexRayStartIntentStore {
             .put(
                 OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
                 intent.getIntExtra(OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS, 2),
+            )
+            .put(
+                OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,
+                intent.getIntExtra(OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS, 60),
             )
             .put(
                 OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
@@ -266,6 +273,10 @@ internal object OrexRayStartIntentStore {
                     json.optInt(OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS, 2),
                 )
                 .putExtra(
+                    OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,
+                    json.optInt(OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS, 60),
+                )
+                .putExtra(
                     OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
                     json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED, true),
                 )
@@ -317,6 +328,7 @@ internal object OrexRayStartIntentStore {
         context: Context,
         key: String,
         statsIntervalSeconds: Int,
+        pingIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
     ) {
@@ -327,6 +339,10 @@ internal object OrexRayStartIntentStore {
                 .put(
                     OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
                     statsIntervalSeconds,
+                )
+                .put(
+                    OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,
+                    pingIntervalSeconds,
                 )
                 .put(
                     OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,

@@ -94,6 +94,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     required String geoProxyRules,
     required String geoBlockRules,
     required int statsIntervalSeconds,
+    required int pingIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
     required bool restartServiceOnKill,
@@ -121,6 +122,7 @@ class ConnectionSettingsController extends ChangeNotifier {
         _geoProxyRules = geoProxyRules,
         _geoBlockRules = geoBlockRules,
         _statsIntervalSeconds = statsIntervalSeconds,
+        _pingIntervalSeconds = pingIntervalSeconds,
         _showNotificationSpeed = showNotificationSpeed,
         _showNotificationPing = showNotificationPing,
         _restartServiceOnKill = restartServiceOnKill,
@@ -148,6 +150,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   static const _geoProxyRulesKey = 'orex_ray_geo_proxy_rules_v1';
   static const _geoBlockRulesKey = 'orex_ray_geo_block_rules_v1';
   static const _statsIntervalKey = 'orex_ray_stats_interval_v1';
+  static const _pingIntervalKey = 'orex_ray_ping_interval_v1';
   static const _notificationSpeedKey = 'orex_ray_notification_speed_v1';
   static const _notificationPingKey = 'orex_ray_notification_ping_v1';
   static const _restartServiceKey = 'orex_ray_restart_service_v1';
@@ -182,6 +185,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   String _geoProxyRules;
   String _geoBlockRules;
   int _statsIntervalSeconds;
+  int _pingIntervalSeconds;
   bool _showNotificationSpeed;
   bool _showNotificationPing;
   bool _restartServiceOnKill;
@@ -239,6 +243,8 @@ class ConnectionSettingsController extends ChangeNotifier {
       geoBlockRules: preferences.getString(_geoBlockRulesKey)?.trim() ?? '',
       statsIntervalSeconds:
           _validStatsInterval(preferences.getInt(_statsIntervalKey)) ?? 2,
+      pingIntervalSeconds:
+          _validPingInterval(preferences.getInt(_pingIntervalKey)) ?? 60,
       showNotificationSpeed: preferences.getBool(_notificationSpeedKey) ?? true,
       showNotificationPing: preferences.getBool(_notificationPingKey) ?? true,
       restartServiceOnKill: preferences.getBool(_restartServiceKey) ?? true,
@@ -277,6 +283,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   String get geoProxyRulesText => _geoProxyRules;
   String get geoBlockRulesText => _geoBlockRules;
   int get statsIntervalSeconds => _statsIntervalSeconds;
+  int get pingIntervalSeconds => _pingIntervalSeconds;
   bool get showNotificationSpeed => _showNotificationSpeed;
   bool get showNotificationPing => _showNotificationPing;
   bool get restartServiceOnKill => _restartServiceOnKill;
@@ -497,6 +504,19 @@ class ConnectionSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setPingIntervalSeconds(int value) async {
+    final normalized = _validPingInterval(value);
+    if (normalized == null) {
+      throw const FormatException(
+        'Интервал пинга должен быть 15, 30, 60, 120 или 300 секунд',
+      );
+    }
+    if (_pingIntervalSeconds == normalized) return;
+    _pingIntervalSeconds = normalized;
+    await _preferences.setInt(_pingIntervalKey, normalized);
+    notifyListeners();
+  }
+
   Future<void> setShowNotificationSpeed(bool value) async {
     if (_showNotificationSpeed == value) return;
     _showNotificationSpeed = value;
@@ -575,6 +595,9 @@ class ConnectionSettingsController extends ChangeNotifier {
 
   static int? _validStatsInterval(int? value) =>
       const {1, 2, 5, 10}.contains(value) ? value : null;
+
+  static int? _validPingInterval(int? value) =>
+      const {15, 30, 60, 120, 300}.contains(value) ? value : null;
 
   static String _normalizeLogLevel(String? value) => switch (value) {
         'warning' => 'warning',

@@ -112,6 +112,7 @@ void main() {
     await engine.waitForInitialState();
     await engine.updateRuntimeSettings(
       statsIntervalSeconds: 2,
+      pingIntervalSeconds: 120,
       showNotificationSpeed: false,
       showNotificationPing: false,
     );
@@ -128,6 +129,11 @@ void main() {
       (runtimeSettings.arguments
           as Map<Object?, Object?>)['showNotificationPing'],
       isFalse,
+    );
+    expect(
+      (runtimeSettings.arguments
+          as Map<Object?, Object?>)['pingIntervalSeconds'],
+      120,
     );
   });
 

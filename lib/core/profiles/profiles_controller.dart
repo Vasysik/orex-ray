@@ -247,6 +247,17 @@ class ProfilesController extends ChangeNotifier {
     return _xrayJsonCodec.encodeProfiles([profile]);
   }
 
+  String exportSelectedXrayJson(Iterable<String> profileIds) {
+    final ids = profileIds.toSet();
+    final selected = _profiles
+        .where((profile) => ids.contains(profile.id))
+        .toList(growable: false);
+    if (selected.isEmpty) {
+      throw const FormatException('Нет выбранных профилей для экспорта');
+    }
+    return _xrayJsonCodec.encodeProfiles(selected, forceArray: true);
+  }
+
   /// Legacy public API retained for callers built when VLESS was the only
   /// supported outbound. It now accepts the same supported link set as the UI.
   Future<TunnelProfile> importVlessLink(String link) => importLink(link);
@@ -399,6 +410,58 @@ class ProfilesController extends ChangeNotifier {
     _notifyListeners();
   }
 
+  /// Deletes several direct profiles as one repository transaction.
+  ///
+  /// Balancers that lose too many members are removed, while valid balancers
+  /// are rewritten once after every selected profile has been removed.
+  Future<void> deleteProfiles(Iterable<String> ids) async {
+    final removedIds = ids.toSet()
+      ..retainAll(_profiles.map((profile) => profile.id).toSet());
+    if (removedIds.isEmpty) return;
+
+    _profiles.removeWhere((profile) => removedIds.contains(profile.id));
+    _balancers.removeWhere((balancer) {
+      final remaining = balancer.memberIds
+          .where((member) => !removedIds.contains(member))
+          .length;
+      return remaining < 2;
+    });
+    for (var index = 0; index < _balancers.length; index++) {
+      final balancer = _balancers[index];
+      final remainingMembers = balancer.memberIds
+          .where((member) => !removedIds.contains(member))
+          .toList(growable: false);
+      final fallbackRemoved = balancer.fallbackProfileId != null &&
+          removedIds.contains(balancer.fallbackProfileId);
+      if (remainingMembers.length != balancer.memberIds.length ||
+          fallbackRemoved) {
+        _balancers[index] = balancer.copyWith(
+          memberIds: remainingMembers,
+          clearFallback: fallbackRemoved,
+        );
+      }
+    }
+
+    if (_selectedId == null ||
+        removedIds.contains(_selectedId) ||
+        !targets.any((target) => target.id == _selectedId)) {
+      _selectedId = targets.isEmpty ? null : targets.first.id;
+    }
+    await _persist();
+    _notifyListeners();
+  }
+
+  /// Persists the user-visible order of direct server profiles.
+  Future<void> reorderProfiles(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _profiles.length) return;
+    if (newIndex < 0 || newIndex >= _profiles.length) return;
+    if (oldIndex == newIndex) return;
+    final profile = _profiles.removeAt(oldIndex);
+    _profiles.insert(newIndex, profile);
+    await _repository.saveProfiles(_profiles);
+    _notifyListeners();
+  }
+
   /// Refreshes one direct server reachability value.
   ///
   /// [shouldApply] lets a caller discard a result if the network context
@@ -456,6 +519,57 @@ class ProfilesController extends ChangeNotifier {
           // Do not erase useful saved measurements when the protected native
           // probe itself is unavailable. Continue with the remaining profiles
           // because another endpoint can still be measured safely.
+          continue;
+        }
+        if (_disposed || (shouldApply != null && !shouldApply())) return;
+        final index = _profiles.indexWhere((item) => item.id == profile.id);
+        if (index >= 0 &&
+            (_profiles[index].latencyMs != result.latencyMs ||
+                _profiles[index].pingStatus != result.status)) {
+          _profiles[index] = _profiles[index].copyWith(
+            latencyMs: result.latencyMs,
+            pingStatus: result.status,
+            clearLatency: result.latencyMs == null,
+          );
+          changed = true;
+        }
+      }
+      if (!_disposed && changed) await _repository.saveProfiles(_profiles);
+    } finally {
+      _refreshingLatency = false;
+      _notifyListeners();
+    }
+  }
+
+  /// Refreshes only the requested direct profiles and saves their results in
+  /// one repository write. This keeps bulk selection actions cheap even for a
+  /// large list.
+  Future<void> refreshLatencies(
+    Iterable<String> ids, {
+    bool Function()? shouldApply,
+  }) async {
+    final requested = ids.toSet();
+    if (_disposed ||
+        _refreshingLatency ||
+        requested.isEmpty ||
+        (shouldApply != null && !shouldApply())) {
+      return;
+    }
+    final candidates = _profiles
+        .where((profile) => requested.contains(profile.id))
+        .toList(growable: false);
+    if (candidates.isEmpty) return;
+
+    _refreshingLatency = true;
+    _notifyListeners();
+    var changed = false;
+    try {
+      for (final profile in candidates) {
+        if (_disposed || (shouldApply != null && !shouldApply())) return;
+        LatencyProbeResult result;
+        try {
+          result = await _latencyProbe.measure(profile);
+        } on LatencyMeasurementSkipped {
           continue;
         }
         if (_disposed || (shouldApply != null && !shouldApply())) return;

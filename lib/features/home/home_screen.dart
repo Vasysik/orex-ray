@@ -291,8 +291,10 @@ class _ConnectionHero extends StatelessWidget {
     final profile = snapshot.profile;
     final active = snapshot.isConnected;
     final hasProfile = profile != null;
-    final timedOut = active &&
-        tunnel.effectivePingStatusFor(profile) == PingStatus.timeout;
+    final pingStatus = active
+        ? tunnel.effectivePingStatusFor(profile)
+        : PingStatus.unknown;
+    final timedOut = pingStatus == PingStatus.timeout;
 
     return GlassPanel(
       borderRadius: 28,
@@ -317,7 +319,7 @@ class _ConnectionHero extends StatelessWidget {
           const SizedBox(height: 28),
           _ConnectButton(
             snapshot: snapshot,
-            timedOut: timedOut,
+            pingStatus: pingStatus,
             enabled: hasProfile || snapshot.isConnected,
             onTap: onTap,
           ),
@@ -340,13 +342,13 @@ class _ConnectionHero extends StatelessWidget {
 class _ConnectButton extends StatelessWidget {
   const _ConnectButton({
     required this.snapshot,
-    required this.timedOut,
+    required this.pingStatus,
     required this.enabled,
     required this.onTap,
   });
 
   final TunnelSnapshot snapshot;
-  final bool timedOut;
+  final PingStatus pingStatus;
   final bool enabled;
   final Future<void> Function() onTap;
 
@@ -355,6 +357,18 @@ class _ConnectButton extends StatelessWidget {
     final active = snapshot.isConnected;
     final busy = snapshot.isBusy;
     final canTap = enabled && !busy;
+    final timedOut = active && pingStatus == PingStatus.timeout;
+    final pingConfirmed = active && pingStatus == PingStatus.success;
+    final ringColor = timedOut
+        ? OrexColors.danger
+        : pingConfirmed
+            ? OrexColors.online
+            : OrexColors.cream;
+    final glowColor = timedOut
+        ? OrexColors.danger
+        : pingConfirmed
+            ? OrexColors.online
+            : OrexColors.copper;
     return Semantics(
       button: true,
       enabled: canTap,
@@ -376,22 +390,26 @@ class _ConnectButton extends StatelessWidget {
               shape: BoxShape.circle,
               gradient: OrexColors.copperGradient,
               border: Border.all(
-                color: timedOut
-                    ? OrexColors.danger.withValues(alpha: 0.92)
-                    : OrexColors.cream
-                        .withValues(alpha: active ? 0.65 : 0.28),
-                width: timedOut ? 3 : 2,
+                color: ringColor.withValues(
+                  alpha: timedOut || pingConfirmed
+                      ? 0.92
+                      : active
+                          ? 0.48
+                          : 0.28,
+                ),
+                width: timedOut || pingConfirmed ? 3 : 2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: (timedOut
-                          ? OrexColors.danger
-                          : active
-                              ? OrexColors.online
-                              : OrexColors.copper)
-                      .withValues(alpha: timedOut ? 0.5 : 0.32),
-                  blurRadius: timedOut || active ? 52 : 32,
-                  spreadRadius: timedOut || active ? 4 : 0,
+                  color: glowColor.withValues(
+                    alpha: timedOut
+                        ? 0.5
+                        : pingConfirmed
+                            ? 0.40
+                            : 0.22,
+                  ),
+                  blurRadius: timedOut || pingConfirmed ? 52 : 30,
+                  spreadRadius: timedOut || pingConfirmed ? 4 : 0,
                 ),
               ],
             ),
@@ -850,8 +868,7 @@ class _InfoRow extends StatelessWidget {
 
 String _pingLabel(TunnelController tunnel, TunnelTarget? target) {
   final status = tunnel.effectivePingStatusFor(target);
-  if (status == PingStatus.timeout) return 'Таймаут';
-  if (status == PingStatus.unavailable) return 'Недоступен';
+  if (status != PingStatus.success) return '—';
   final ping = tunnel.effectiveLatencyFor(target);
   return ping == null ? '—' : '$ping мс';
 }

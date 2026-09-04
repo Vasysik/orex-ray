@@ -80,6 +80,7 @@ void main() {
     await settings.setCustomDns('9.9.9.9, 149.112.112.112');
     await settings.setDnsPreset(DnsPreset.custom);
     await settings.setStatsIntervalSeconds(5);
+    await settings.setPingIntervalSeconds(120);
     await settings.setShowNotificationSpeed(false);
     await settings.setShowNotificationPing(false);
     await settings.setGeoRoutingEnabled(true);
@@ -98,6 +99,7 @@ void main() {
     expect(settings.logLevel, 'info');
     expect(settings.dnsServers, ['9.9.9.9', '149.112.112.112']);
     expect(settings.statsIntervalSeconds, 5);
+    expect(settings.pingIntervalSeconds, 120);
     expect(settings.showNotificationSpeed, isFalse);
     expect(settings.showNotificationPing, isFalse);
     expect(settings.geoRoutingEnabled, isTrue);
@@ -121,6 +123,7 @@ void main() {
     expect(settings.dnsPreset, DnsPreset.automatic);
     expect(settings.localProxyInVpn, isTrue);
     expect(settings.showNotificationPing, isTrue);
+    expect(settings.pingIntervalSeconds, 60);
     expect(settings.closeToTray, isFalse);
   });
 
@@ -172,6 +175,7 @@ void main() {
 
     await controller.connect();
     await settings.setStatsIntervalSeconds(5);
+    await settings.setPingIntervalSeconds(120);
     await settings.setShowNotificationSpeed(false);
     await settings.setShowNotificationPing(false);
     await controller.setStatsUiActive(false);
@@ -180,6 +184,7 @@ void main() {
       engine.runtimeSettings,
       contains((
         interval: 5,
+        pingInterval: 120,
         speed: false,
         ping: false,
       )),
@@ -1062,7 +1067,8 @@ class _RecordingTunnelEngine implements TunnelEngine {
 
 class _RuntimeSettingsEngine extends _RecordingTunnelEngine
     implements TunnelRuntimeSettingsSink, TunnelStatsConsumerSink {
-  final List<({int interval, bool speed, bool ping})> runtimeSettings = [];
+  final List<({int interval, int pingInterval, bool speed, bool ping})>
+      runtimeSettings = [];
   final List<bool> statsUiStates = [];
 
   @override
@@ -1073,11 +1079,13 @@ class _RuntimeSettingsEngine extends _RecordingTunnelEngine
   @override
   Future<void> updateRuntimeSettings({
     required int statsIntervalSeconds,
+    required int pingIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
   }) async {
     runtimeSettings.add((
       interval: statsIntervalSeconds,
+      pingInterval: pingIntervalSeconds,
       speed: showNotificationSpeed,
       ping: showNotificationPing,
     ));

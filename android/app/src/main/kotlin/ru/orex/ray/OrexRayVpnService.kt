@@ -56,6 +56,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val EXTRA_HTTP_PORT = "http_port"
         const val EXTRA_LOCAL_PROXY_IN_VPN = "local_proxy_in_vpn"
         const val EXTRA_STATS_INTERVAL_SECONDS = "stats_interval_seconds"
+        const val EXTRA_PING_INTERVAL_SECONDS = "ping_interval_seconds"
         const val EXTRA_SHOW_NOTIFICATION_SPEED = "show_notification_speed"
         const val EXTRA_SHOW_NOTIFICATION_PING = "show_notification_ping"
         const val EXTRA_STATS_UI_ACTIVE = "stats_ui_active"
@@ -75,7 +76,6 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         private const val NOTIFICATION_ID = 7701
         private const val STOP_REQUEST_CODE = 7702
         private const val NOTIFICATION_MIN_UPDATE_MS = 5_000L
-        private const val PING_INTERVAL_SECONDS = 60L
         private const val PING_INITIAL_DELAY_SECONDS = 5L
         private const val PING_TIMEOUT_MS = 6_000
         private const val DEFAULT_LATENCY_PROBE_URL =
@@ -139,6 +139,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var activeHttpPort = 20809
     private var activeLocalProxyInVpn = true
     private var activeStatsIntervalSeconds = 2
+    private var activePingIntervalSeconds = 60
+    private var lastStatsSampleElapsedMs = 0L
 
     @Volatile
     private var showNotificationSpeed = true
@@ -213,6 +215,17 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     .let { if (it in setOf(1, 2, 5, 10)) it else activeStatsIntervalSeconds }
                 val intervalChanged = nextInterval != activeStatsIntervalSeconds
                 activeStatsIntervalSeconds = nextInterval
+                val nextPingInterval = commandIntent
+                    .getIntExtra(EXTRA_PING_INTERVAL_SECONDS, activePingIntervalSeconds)
+                    .let {
+                        if (it in setOf(15, 30, 60, 120, 300)) {
+                            it
+                        } else {
+                            activePingIntervalSeconds
+                        }
+                    }
+                val pingIntervalChanged = nextPingInterval != activePingIntervalSeconds
+                activePingIntervalSeconds = nextPingInterval
                 showNotificationSpeed = commandIntent.getBooleanExtra(
                     EXTRA_SHOW_NOTIFICATION_SPEED,
                     showNotificationSpeed,
@@ -225,18 +238,21 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 showNotificationPing = nextShowNotificationPing
                 activeStartIntent?.apply {
                     putExtra(EXTRA_STATS_INTERVAL_SECONDS, activeStatsIntervalSeconds)
+                    putExtra(EXTRA_PING_INTERVAL_SECONDS, activePingIntervalSeconds)
                     putExtra(EXTRA_SHOW_NOTIFICATION_SPEED, showNotificationSpeed)
                     putExtra(EXTRA_SHOW_NOTIFICATION_PING, showNotificationPing)
                 }
                 OrexRayStartIntentStore.updateRuntimeSettings(
                     this,
                     activeStatsIntervalSeconds,
+                    activePingIntervalSeconds,
                     showNotificationSpeed,
                     showNotificationPing,
                 )
                 updateStatsLoopState(restart = intervalChanged)
                 updatePingLoopState(
-                    restart = notificationPingChanged && showNotificationPing,
+                    restart = pingIntervalChanged ||
+                        (notificationPingChanged && showNotificationPing),
                 )
                 // A settings change is an explicit notification event. It is
                 // intentionally the only update when speed rendering is off.
@@ -346,6 +362,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 activeStatsIntervalSeconds = commandIntent
                     .getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, 2)
                     .let { if (it in setOf(1, 2, 5, 10)) it else 2 }
+                activePingIntervalSeconds = commandIntent
+                    .getIntExtra(EXTRA_PING_INTERVAL_SECONDS, 60)
+                    .let { if (it in setOf(15, 30, 60, 120, 300)) it else 60 }
                 showNotificationSpeed =
                     commandIntent.getBooleanExtra(EXTRA_SHOW_NOTIFICATION_SPEED, true)
                 showNotificationPing =
@@ -518,6 +537,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             downloadBytesPerSecond = 0
             uploadBytesPerSecond = 0
             startedAtElapsedMs = 0
+            lastStatsSampleElapsedMs = SystemClock.elapsedRealtime()
 
             val tunFd = if (mode == MODE_VPN) {
                 emitConnecting("Создаём Android VPN…", mode)
@@ -744,10 +764,17 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     return@scheduleAtFixedRate
                 }
                 val delta = queryTrafficDelta(controller)
+                val now = SystemClock.elapsedRealtime()
+                val elapsedMs = if (lastStatsSampleElapsedMs > 0L) {
+                    (now - lastStatsSampleElapsedMs).coerceAtLeast(1L)
+                } else {
+                    interval * 1_000L
+                }
+                lastStatsSampleElapsedMs = now
                 downloadBytes += delta.download
                 uploadBytes += delta.upload
-                downloadBytesPerSecond = delta.download / max(1, interval.toInt())
-                uploadBytesPerSecond = delta.upload / max(1, interval.toInt())
+                downloadBytesPerSecond = delta.download * 1_000L / elapsedMs
+                uploadBytesPerSecond = delta.upload * 1_000L / elapsedMs
                 if (statsUiActive) emitConnected()
                 if (notificationSpeedVisible) updateRunningNotification()
             },
@@ -764,8 +791,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private fun statsPollIntervalSeconds(): Int =
         if (statsUiActive) activeStatsIntervalSeconds else max(5, activeStatsIntervalSeconds)
 
-    private fun isNotificationSpeedVisible(): Boolean {
-        if (!showNotificationSpeed) return false
+    private fun isNotificationChannelVisible(): Boolean {
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
             !manager.areNotificationsEnabled()
@@ -779,6 +805,12 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         }
         return true
     }
+
+    private fun isNotificationSpeedVisible(): Boolean =
+        showNotificationSpeed && isNotificationChannelVisible()
+
+    private fun isNotificationPingVisible(): Boolean =
+        showNotificationPing && isNotificationChannelVisible()
 
     private fun queryTrafficDelta(controller: CoreController): TrafficDelta {
         var download = 0L
@@ -924,17 +956,24 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     @Synchronized
     private fun updatePingLoopState(restart: Boolean = false) {
         val controllerRunning = coreController?.isRunning == true && !stopping
-        val wantsRouteHealth = showNotificationPing || statsUiActive
+        val wantsRouteHealth = statsUiActive || isNotificationPingVisible()
         val canProbeRoute = activeMode != MODE_VPN || activeLocalProxyInVpn
         if (!wantsRouteHealth || !controllerRunning || !canProbeRoute) {
             pingTask?.cancel(false)
             pingTask = null
+            if (!wantsRouteHealth && controllerRunning) {
+                // No foreground/UI consumer exists. Clear stale health so a
+                // later UI attach does not flash an old green result before
+                // the first fresh probe completes.
+                activeLatencyMs = null
+                activePingStatus = "unknown"
+            }
             if (wantsRouteHealth && controllerRunning && !canProbeRoute &&
                 activePingStatus != "unavailable"
             ) {
                 activeLatencyMs = null
                 activePingStatus = "unavailable"
-                if (showNotificationPing) updateRunningNotification(force = true)
+                if (isNotificationPingVisible()) updateRunningNotification(force = true)
                 if (statsUiActive) emitConnected()
             }
             return
@@ -942,10 +981,16 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
         if (pingTask != null && !restart) return
         pingTask?.cancel(false)
-        pingTask = pingWorker.scheduleWithFixedDelay(
-            { measureAndPublishRouteLatency() },
+        pingTask = pingWorker.scheduleAtFixedRate(
+            {
+                if (!shouldMeasureRouteLatency()) {
+                    updatePingLoopState()
+                    return@scheduleAtFixedRate
+                }
+                measureAndPublishRouteLatency()
+            },
             PING_INITIAL_DELAY_SECONDS,
-            PING_INTERVAL_SECONDS,
+            activePingIntervalSeconds.toLong(),
             TimeUnit.SECONDS,
         )
     }
@@ -953,7 +998,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private fun shouldMeasureRouteLatency(): Boolean =
         !stopping &&
             coreController?.isRunning == true &&
-            (showNotificationPing || statsUiActive)
+            (statsUiActive || isNotificationPingVisible())
 
     private fun measureAndPublishRouteLatency() {
         if (!shouldMeasureRouteLatency()) return
@@ -961,7 +1006,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         if (!shouldMeasureRouteLatency()) return
         activeLatencyMs = measurement.latencyMs
         activePingStatus = measurement.status
-        if (showNotificationPing) updateRunningNotification(force = true)
+        if (isNotificationPingVisible()) updateRunningNotification(force = true)
         if (statsUiActive) emitConnected()
     }
 
@@ -1047,10 +1092,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         }
         if (showNotificationPing) {
             parts += when (activePingStatus) {
-                "timeout" -> "Таймаут"
-                "unavailable" -> "Недоступен"
                 "success" -> activeLatencyMs?.let { "$it мс" } ?: "—"
-                else -> activeLatencyMs?.let { "$it мс" } ?: "—"
+                else -> "—"
             }
         }
         if (parts.isEmpty()) {

@@ -365,6 +365,27 @@ class TunnelController extends ChangeNotifier {
     );
   }
 
+  Future<void> refreshProfileLatencies(Iterable<String> profileIds) async {
+    await waitForInitialState();
+    if (_closing) return;
+    final ids = profileIds.toSet();
+    if (ids.isEmpty) return;
+    final active = _engineSnapshot.profile;
+    if (_engineSnapshot.isConnected && !_canRefreshSavedDirectLatencies) {
+      if (active != null &&
+          !active.isBalancer &&
+          ids.contains(active.primaryProfile.id)) {
+        await _refreshActiveRouteLatency(expectedTargetId: active.id);
+      }
+      return;
+    }
+    final contextRevision = _latencyContextRevision;
+    await _profiles.refreshLatencies(
+      ids,
+      shouldApply: () => _canApplyDirectLatency(contextRevision),
+    );
+  }
+
   Future<void> refreshAllLatencies() async {
     await waitForInitialState();
     if (_closing) return;
@@ -1040,6 +1061,7 @@ class TunnelController extends ChangeNotifier {
       unawaited(
         (_engine as TunnelRuntimeSettingsSink).updateRuntimeSettings(
           statsIntervalSeconds: _settings.statsIntervalSeconds,
+          pingIntervalSeconds: _settings.pingIntervalSeconds,
           showNotificationSpeed: _settings.showNotificationSpeed,
           showNotificationPing: _settings.showNotificationPing,
         ),

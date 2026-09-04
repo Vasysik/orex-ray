@@ -150,6 +150,7 @@ class AndroidXrayEngine
         'httpPort': _settings.httpPort,
         'localProxyInVpn': _settings.localProxyInVpn,
         'statsIntervalSeconds': _settings.statsIntervalSeconds,
+        'pingIntervalSeconds': _settings.pingIntervalSeconds,
         'showNotificationSpeed': _settings.showNotificationSpeed,
         'showNotificationPing': _settings.showNotificationPing,
         'statsUiActive': _statsUiActive,
@@ -206,6 +207,7 @@ class AndroidXrayEngine
   @override
   Future<void> updateRuntimeSettings({
     required int statsIntervalSeconds,
+    required int pingIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
   }) async {
@@ -214,6 +216,7 @@ class AndroidXrayEngine
       await _channel
           .invokeMethod<void>('updateRuntimeSettings', <String, Object?>{
         'statsIntervalSeconds': statsIntervalSeconds,
+        'pingIntervalSeconds': pingIntervalSeconds,
         'showNotificationSpeed': showNotificationSpeed,
         'showNotificationPing': showNotificationPing,
       });

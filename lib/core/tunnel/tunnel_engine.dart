@@ -57,6 +57,7 @@ abstract interface class TunnelStatsConsumerSink {
 abstract interface class TunnelRuntimeSettingsSink {
   Future<void> updateRuntimeSettings({
     required int statsIntervalSeconds,
+    required int pingIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
   });
