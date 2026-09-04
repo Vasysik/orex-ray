@@ -64,6 +64,7 @@ class TunnelController extends ChangeNotifier {
       }
       _engineSnapshot = value;
       _clearRouteLatencyIfStale();
+      _adoptNativeRouteHealth(value);
       if (!value.isConnected && !value.isBusy) {
         _lastRuntimeMetadataKey = null;
       }
@@ -90,6 +91,7 @@ class TunnelController extends ChangeNotifier {
     _settings.addListener(_onSettingsChanged);
     unawaited(_loadEgressCache());
     if (_engineSnapshot.isConnected) {
+      _adoptNativeRouteHealth(_engineSnapshot);
       _hasConnectedBefore = true;
       _egressRefreshCoordinator.startPeriodic();
       unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.connected));
@@ -188,9 +190,14 @@ class TunnelController extends ChangeNotifier {
   int? effectiveLatencyFor(TunnelTarget? target) {
     if (target == null) return null;
     if (_engineSnapshot.isConnected) {
-      return _isActiveRouteTarget(target.id)
-          ? routeLatencyFor(target.id)?.latencyMs
-          : target.latencyMs;
+      if (_isActiveRouteTarget(target.id)) {
+        final routeLatency = routeLatencyFor(target.id);
+        if (routeLatency != null) return routeLatency.latencyMs;
+        return _engineSnapshot.effectivePingStatus == PingStatus.success
+            ? _engineSnapshot.effectiveLatencyMs
+            : null;
+      }
+      return target.latencyMs;
     }
     final routeLatency = routeLatencyFor(target.id);
     return routeLatency == null ? target.latencyMs : routeLatency.latencyMs;
@@ -203,11 +210,13 @@ class TunnelController extends ChangeNotifier {
   PingStatus effectivePingStatusFor(TunnelTarget? target) {
     if (target == null) return PingStatus.unknown;
     if (_engineSnapshot.isConnected) {
-      return _isActiveRouteTarget(target.id)
-          ? routeLatencyFor(target.id)?.status ?? PingStatus.unknown
-          : _engineSnapshot.mode == ConnectionMode.vpnTun
-              ? PingStatus.unknown
-              : target.pingStatus;
+      if (_isActiveRouteTarget(target.id)) {
+        return routeLatencyFor(target.id)?.status ??
+            _engineSnapshot.effectivePingStatus;
+      }
+      return _engineSnapshot.mode == ConnectionMode.vpnTun
+          ? PingStatus.unknown
+          : target.pingStatus;
     }
     final routeLatency = routeLatencyFor(target.id);
     return routeLatency?.status ?? target.pingStatus;
@@ -921,6 +930,7 @@ class TunnelController extends ChangeNotifier {
     if (next.isConnected) _pendingVpnDirectLatencyTargetId = null;
     _engineSnapshot = next;
     _clearRouteLatencyIfStale();
+    _adoptNativeRouteHealth(next);
     if (!next.isConnected && !next.isBusy) {
       _lastRuntimeMetadataKey = null;
     }
@@ -941,6 +951,35 @@ class TunnelController extends ChangeNotifier {
     }
     _activeRouteLatency = null;
     _activeRouteLatencyTargetId = null;
+  }
+
+  void _adoptNativeRouteHealth(TunnelSnapshot snapshot) {
+    if (!snapshot.isConnected) return;
+    final targetId = snapshot.profile?.id;
+    if (targetId == null || targetId.isEmpty) return;
+
+    final PingStatus status = snapshot.effectivePingStatus;
+    LatencyProbeResult? result;
+    switch (status) {
+      case PingStatus.success:
+        final latencyMs = snapshot.effectiveLatencyMs;
+        if (latencyMs != null && latencyMs > 0) {
+          result = LatencyProbeResult.success(latencyMs);
+        }
+        break;
+      case PingStatus.timeout:
+        result = const LatencyProbeResult.timeout();
+        break;
+      case PingStatus.unavailable:
+        result = const LatencyProbeResult.unavailable();
+        break;
+      case PingStatus.unknown:
+        break;
+    }
+    if (result == null) return;
+
+    _activeRouteLatencyTargetId = targetId;
+    _activeRouteLatency = result;
   }
 
   void _detachDependencies() {
@@ -1039,6 +1078,7 @@ class TunnelController extends ChangeNotifier {
         (_engine as TunnelRuntimeEffectiveLatencySink).updateEffectiveLatency(
           target,
           latencyMs: routeLatency?.latencyMs,
+          pingStatus: routeLatency?.status ?? PingStatus.unknown,
         ),
       );
     } else {

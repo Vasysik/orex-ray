@@ -22,6 +22,11 @@ import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.SocketTimeoutException
+import java.net.URL
 import java.util.ArrayDeque
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -42,6 +47,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val EXTRA_TARGET_ID = "target_id"
         const val EXTRA_TARGET_NAME = "target_name"
         const val EXTRA_LATENCY_MS = "latency_ms"
+        const val EXTRA_PING_STATUS = "ping_status"
+        const val EXTRA_LATENCY_PROBE_URL = "latency_probe_url"
         const val EXTRA_STATS_OUTBOUND_TAGS = "stats_outbound_tags"
         const val EXTRA_MTU = "vpn_mtu"
         const val EXTRA_DNS_SERVERS = "vpn_dns_servers"
@@ -68,6 +75,11 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         private const val NOTIFICATION_ID = 7701
         private const val STOP_REQUEST_CODE = 7702
         private const val NOTIFICATION_MIN_UPDATE_MS = 5_000L
+        private const val PING_INTERVAL_SECONDS = 60L
+        private const val PING_INITIAL_DELAY_SECONDS = 5L
+        private const val PING_TIMEOUT_MS = 6_000
+        private const val DEFAULT_LATENCY_PROBE_URL =
+            "https://cloudflare.com/cdn-cgi/trace"
 
         @Volatile
         private var activeService: OrexRayVpnService? = null
@@ -90,8 +102,10 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     }
 
     private data class TrafficDelta(val download: Long, val upload: Long)
+    private data class PingMeasurement(val latencyMs: Int?, val status: String)
 
     private val worker = Executors.newSingleThreadScheduledExecutor()
+    private val pingWorker = Executors.newSingleThreadScheduledExecutor()
     private val notificationLargeIcon by lazy {
         BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
     }
@@ -100,6 +114,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var statsTask: ScheduledFuture<*>? = null
     private var watchdogTask: ScheduledFuture<*>? = null
+    private var pingTask: ScheduledFuture<*>? = null
     private val watchdogRestarts = ArrayDeque<Long>()
     private var startedAtElapsedMs = 0L
     private var downloadBytes = 0L
@@ -109,7 +124,14 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var activeMode = MODE_VPN
     private var activeTargetId: String? = null
     private var activeTargetName = "OrexRay"
+    @Volatile
     private var activeLatencyMs: Int? = null
+
+    @Volatile
+    private var activePingStatus = "unknown"
+
+    @Volatile
+    private var activeLatencyProbeUrl = DEFAULT_LATENCY_PROBE_URL
     private var activeStatsOutboundTags = listOf("proxy")
     private var activeMtu = 1500
     private var activeDnsServers = emptyList<String>()
@@ -117,8 +139,14 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var activeHttpPort = 20809
     private var activeLocalProxyInVpn = true
     private var activeStatsIntervalSeconds = 2
+
+    @Volatile
     private var showNotificationSpeed = true
+
+    @Volatile
     private var showNotificationPing = true
+
+    @Volatile
     private var statsUiActive = false
     private var restartServiceOnKill = true
     private var activeAppRoutingMode = APP_ROUTING_ALL
@@ -157,11 +185,21 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     stopSelf()
                     return Service.START_NOT_STICKY
                 }
-                statsUiActive = commandIntent.getBooleanExtra(
+                val nextStatsUiActive = commandIntent.getBooleanExtra(
                     EXTRA_STATS_UI_ACTIVE,
                     false,
                 )
-                updateStatsLoopState()
+                val consumerChanged = nextStatsUiActive != statsUiActive
+                statsUiActive = nextStatsUiActive
+                updateStatsLoopState(restart = consumerChanged)
+                updatePingLoopState()
+                if (consumerChanged && statsUiActive) {
+                    // The native ping loop can continue while Flutter is in
+                    // the background. Publish its latest result immediately
+                    // when the UI becomes active instead of waiting for the
+                    // next statistics or ping tick.
+                    emitConnected()
+                }
                 return restartMode()
             }
 
@@ -179,10 +217,12 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     EXTRA_SHOW_NOTIFICATION_SPEED,
                     showNotificationSpeed,
                 )
-                showNotificationPing = commandIntent.getBooleanExtra(
+                val nextShowNotificationPing = commandIntent.getBooleanExtra(
                     EXTRA_SHOW_NOTIFICATION_PING,
                     showNotificationPing,
                 )
+                val notificationPingChanged = nextShowNotificationPing != showNotificationPing
+                showNotificationPing = nextShowNotificationPing
                 activeStartIntent?.apply {
                     putExtra(EXTRA_STATS_INTERVAL_SECONDS, activeStatsIntervalSeconds)
                     putExtra(EXTRA_SHOW_NOTIFICATION_SPEED, showNotificationSpeed)
@@ -195,6 +235,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     showNotificationPing,
                 )
                 updateStatsLoopState(restart = intervalChanged)
+                updatePingLoopState(
+                    restart = notificationPingChanged && showNotificationPing,
+                )
                 // A settings change is an explicit notification event. It is
                 // intentionally the only update when speed rendering is off.
                 updateRunningNotification(force = true)
@@ -212,9 +255,19 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     ?: activeTargetName
                 val nextLatencyMs = commandIntent.getIntExtra(EXTRA_LATENCY_MS, -1)
                     .takeIf { it >= 0 }
+                val nextPingStatus = normalizePingStatus(
+                    commandIntent.getStringExtra(EXTRA_PING_STATUS),
+                    nextLatencyMs,
+                )
+                val nextLatencyProbeUrl = normalizeLatencyProbeUrl(
+                    commandIntent.getStringExtra(EXTRA_LATENCY_PROBE_URL),
+                )
+                val probeChanged = nextLatencyProbeUrl != activeLatencyProbeUrl
                 if (nextTargetId == activeTargetId &&
                     nextTargetName == activeTargetName &&
-                    nextLatencyMs == activeLatencyMs
+                    nextLatencyMs == activeLatencyMs &&
+                    nextPingStatus == activePingStatus &&
+                    !probeChanged
                 ) {
                     return restartMode()
                 }
@@ -222,12 +275,25 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 activeTargetId = nextTargetId
                 activeTargetName = nextTargetName
                 activeLatencyMs = nextLatencyMs
+                activePingStatus = nextPingStatus
+                activeLatencyProbeUrl = nextLatencyProbeUrl
+                activeStartIntent?.apply {
+                    putExtra(EXTRA_TARGET_ID, activeTargetId)
+                    putExtra(EXTRA_TARGET_NAME, activeTargetName)
+                    putExtra(EXTRA_LATENCY_MS, activeLatencyMs ?: -1)
+                    putExtra(EXTRA_PING_STATUS, activePingStatus)
+                    putExtra(EXTRA_LATENCY_PROBE_URL, activeLatencyProbeUrl)
+                }
                 if (restartServiceOnKill) updateRestartMetadata()
                 if (activeMode == MODE_VPN) {
                     updateQuickTileMetadata()
                     OrexRayQuickSettingsTileService.requestRefresh(this)
                 }
-                if (coreController?.isRunning == true) updateRunningNotification(force = true)
+                if (coreController?.isRunning == true) {
+                    updatePingLoopState(restart = probeChanged)
+                    updateRunningNotification(force = true)
+                    if (statsUiActive) emitConnected()
+                }
                 return restartMode()
             }
 
@@ -253,6 +319,13 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     ?: "OrexRay"
                 activeLatencyMs = commandIntent.getIntExtra(EXTRA_LATENCY_MS, -1)
                     .takeIf { it >= 0 }
+                activePingStatus = normalizePingStatus(
+                    commandIntent.getStringExtra(EXTRA_PING_STATUS),
+                    activeLatencyMs,
+                )
+                activeLatencyProbeUrl = normalizeLatencyProbeUrl(
+                    commandIntent.getStringExtra(EXTRA_LATENCY_PROBE_URL),
+                )
                 activeStatsOutboundTags = commandIntent.getStringArrayListExtra(EXTRA_STATS_OUTBOUND_TAGS)
                     ?.map { it.trim() }
                     ?.filter { it == "proxy" || it == "fallback-proxy" || it.matches(Regex("proxy-\\d+")) }
@@ -358,6 +431,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     override fun onDestroy() {
         statsTask?.cancel(true)
         watchdogTask?.cancel(true)
+        pingTask?.cancel(true)
         val controller = coreController
         if (!stopping && controller != null) {
             runCatching { if (controller.isRunning) controller.stopLoop() }
@@ -365,6 +439,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         runCatching { vpnInterface?.close() }
         vpnInterface = null
         worker.shutdownNow()
+        pingWorker.shutdownNow()
         if (activeService === this) activeService = null
         debugInfo("Core service destroyed")
         super.onDestroy()
@@ -399,6 +474,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 downloadBytesPerSecond = downloadBytesPerSecond,
                 uploadBytesPerSecond = uploadBytesPerSecond,
                 durationSeconds = elapsedSeconds(),
+                latencyMs = activeLatencyMs,
+                pingStatus = activePingStatus,
             )
         }
         if (!stopping && activeStartIntent != null) {
@@ -470,6 +547,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             emitConnected()
             updateStatsLoopState()
             startWatchdog()
+            updatePingLoopState()
             updateRunningNotification(force = true)
             debugInfo("Xray started successfully mode=$mode")
         } catch (error: Throwable) {
@@ -531,6 +609,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         watchdogTask = null
         statsTask?.cancel(false)
         statsTask = null
+        pingTask?.cancel(false)
+        pingTask = null
         OrexRayDiagnosticsStore.coreRunning = false
         runCatching { if (coreController?.isRunning == true) coreController?.stopLoop() }
         runCatching { vpnInterface?.close() }
@@ -558,6 +638,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             activeTargetId,
             activeTargetName,
             activeLatencyMs,
+            activePingStatus,
+            activeLatencyProbeUrl,
         )
     }
 
@@ -567,6 +649,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             activeTargetId,
             activeTargetName,
             activeLatencyMs,
+            activePingStatus,
+            activeLatencyProbeUrl,
         )
     }
 
@@ -639,15 +723,19 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
         if (statsTask != null && !restart) return
         statsTask?.cancel(false)
-        val interval = activeStatsIntervalSeconds.toLong()
-        debugInfo("Stats loop started: interval=${interval}s")
+        val interval = statsPollIntervalSeconds().toLong()
+        debugInfo(
+            "Stats loop started: interval=${interval}s, ui=$statsUiActive, " +
+                "notificationSpeed=$showNotificationSpeed",
+        )
         statsTask = worker.scheduleAtFixedRate(
             {
                 val controller = coreController ?: return@scheduleAtFixedRate
                 if (!controller.isRunning || stopping) {
                     return@scheduleAtFixedRate
                 }
-                if (!shouldPollStats()) {
+                val notificationSpeedVisible = isNotificationSpeedVisible()
+                if (!statsUiActive && !notificationSpeedVisible) {
                     // The notification can be disabled in Android settings
                     // while the UI is in the background. Stop the recurring
                     // job on its next scheduled tick instead of keeping an
@@ -658,10 +746,10 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 val delta = queryTrafficDelta(controller)
                 downloadBytes += delta.download
                 uploadBytes += delta.upload
-                downloadBytesPerSecond = delta.download / max(1, activeStatsIntervalSeconds)
-                uploadBytesPerSecond = delta.upload / max(1, activeStatsIntervalSeconds)
-                emitConnected()
-                if (isNotificationSpeedVisible()) updateRunningNotification()
+                downloadBytesPerSecond = delta.download / max(1, interval.toInt())
+                uploadBytesPerSecond = delta.upload / max(1, interval.toInt())
+                if (statsUiActive) emitConnected()
+                if (notificationSpeedVisible) updateRunningNotification()
             },
             interval,
             interval,
@@ -672,6 +760,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private fun shouldPollStats(): Boolean =
         !stopping && coreController?.isRunning == true &&
             (statsUiActive || isNotificationSpeedVisible())
+
+    private fun statsPollIntervalSeconds(): Int =
+        if (statsUiActive) activeStatsIntervalSeconds else max(5, activeStatsIntervalSeconds)
 
     private fun isNotificationSpeedVisible(): Boolean {
         if (!showNotificationSpeed) return false
@@ -739,6 +830,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 downloadBytesPerSecond = downloadBytesPerSecond,
                 uploadBytesPerSecond = uploadBytesPerSecond,
                 durationSeconds = elapsedSeconds(),
+                latencyMs = activeLatencyMs,
+                pingStatus = activePingStatus,
             ),
         )
     }
@@ -771,6 +864,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         statsTask = null
         watchdogTask?.cancel(false)
         watchdogTask = null
+        pingTask?.cancel(false)
+        pingTask = null
         OrexRayDiagnosticsStore.coreRunning = false
         val controller = coreController
         runCatching { if (controller?.isRunning == true) controller.stopLoop() }
@@ -795,6 +890,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         statsTask = null
         watchdogTask?.cancel(false)
         watchdogTask = null
+        pingTask?.cancel(false)
+        pingTask = null
         OrexRayDiagnosticsStore.coreRunning = false
         val controller = coreController
         runCatching { if (controller?.isRunning == true) controller.stopLoop() }
@@ -824,6 +921,107 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         )
     }
 
+    @Synchronized
+    private fun updatePingLoopState(restart: Boolean = false) {
+        val controllerRunning = coreController?.isRunning == true && !stopping
+        val wantsRouteHealth = showNotificationPing || statsUiActive
+        val canProbeRoute = activeMode != MODE_VPN || activeLocalProxyInVpn
+        if (!wantsRouteHealth || !controllerRunning || !canProbeRoute) {
+            pingTask?.cancel(false)
+            pingTask = null
+            if (wantsRouteHealth && controllerRunning && !canProbeRoute &&
+                activePingStatus != "unavailable"
+            ) {
+                activeLatencyMs = null
+                activePingStatus = "unavailable"
+                if (showNotificationPing) updateRunningNotification(force = true)
+                if (statsUiActive) emitConnected()
+            }
+            return
+        }
+
+        if (pingTask != null && !restart) return
+        pingTask?.cancel(false)
+        pingTask = pingWorker.scheduleWithFixedDelay(
+            { measureAndPublishRouteLatency() },
+            PING_INITIAL_DELAY_SECONDS,
+            PING_INTERVAL_SECONDS,
+            TimeUnit.SECONDS,
+        )
+    }
+
+    private fun shouldMeasureRouteLatency(): Boolean =
+        !stopping &&
+            coreController?.isRunning == true &&
+            (showNotificationPing || statsUiActive)
+
+    private fun measureAndPublishRouteLatency() {
+        if (!shouldMeasureRouteLatency()) return
+        val measurement = measureRouteLatency()
+        if (!shouldMeasureRouteLatency()) return
+        activeLatencyMs = measurement.latencyMs
+        activePingStatus = measurement.status
+        if (showNotificationPing) updateRunningNotification(force = true)
+        if (statsUiActive) emitConnected()
+    }
+
+    private fun measureRouteLatency(): PingMeasurement {
+        val proxy = Proxy(
+            Proxy.Type.HTTP,
+            InetSocketAddress("127.0.0.1", activeHttpPort),
+        )
+        val connection = runCatching {
+            URL(activeLatencyProbeUrl).openConnection(proxy) as HttpURLConnection
+        }.getOrElse {
+            return PingMeasurement(null, "unavailable")
+        }
+        connection.connectTimeout = PING_TIMEOUT_MS
+        connection.readTimeout = PING_TIMEOUT_MS
+        connection.instanceFollowRedirects = false
+        connection.requestMethod = "GET"
+        connection.setRequestProperty("Connection", "close")
+        val startedAt = SystemClock.elapsedRealtime()
+        return try {
+            val responseCode = connection.responseCode
+            // Match the Dart route probe: the configured endpoint is healthy
+            // only when it returns a 2xx response. Redirects are deliberately
+            // not followed so a public probe cannot bounce into a local URL.
+            if (responseCode in 200..299) {
+                val elapsed = (SystemClock.elapsedRealtime() - startedAt)
+                    .coerceAtLeast(1L)
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                    .toInt()
+                PingMeasurement(elapsed, "success")
+            } else {
+                PingMeasurement(null, "unavailable")
+            }
+        } catch (_: SocketTimeoutException) {
+            PingMeasurement(null, "timeout")
+        } catch (error: Throwable) {
+            debugInfo("Notification ping failed: ${safeMessage(error)}")
+            PingMeasurement(null, "unavailable")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun normalizeLatencyProbeUrl(value: String?): String {
+        val normalized = value?.trim().orEmpty()
+        return if (normalized.startsWith("https://") || normalized.startsWith("http://")) {
+            normalized
+        } else {
+            DEFAULT_LATENCY_PROBE_URL
+        }
+    }
+
+    private fun normalizePingStatus(value: String?, latencyMs: Int?): String =
+        when (value?.trim()?.lowercase()) {
+            "success" -> if (latencyMs != null) "success" else "unknown"
+            "timeout" -> "timeout"
+            "unavailable" -> "unavailable"
+            else -> if (latencyMs != null) "success" else "unknown"
+        }
+
     private fun safeMessage(error: Throwable): String {
         return error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
     }
@@ -848,9 +1046,12 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             parts += "↑ ${formatSpeed(uploadBytesPerSecond)}"
         }
         if (showNotificationPing) {
-            // A missing value is an actual route timeout/unavailability, not
-            // permission to reuse a saved direct TCP ping from the profile.
-            parts += activeLatencyMs?.let { "$it мс" } ?: "—"
+            parts += when (activePingStatus) {
+                "timeout" -> "Таймаут"
+                "unavailable" -> "Недоступен"
+                "success" -> activeLatencyMs?.let { "$it мс" } ?: "—"
+                else -> activeLatencyMs?.let { "$it мс" } ?: "—"
+            }
         }
         if (parts.isEmpty()) {
             parts += if (activeMode == MODE_VPN) {

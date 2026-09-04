@@ -168,18 +168,63 @@ void main() {
     });
 
     await engine.waitForInitialState();
-    await engine.updateEffectiveLatency(target, latencyMs: 321);
-    await engine.updateEffectiveLatency(target, latencyMs: null);
+    await engine.updateEffectiveLatency(
+      target,
+      latencyMs: 321,
+      pingStatus: PingStatus.success,
+    );
+    await engine.updateEffectiveLatency(
+      target,
+      latencyMs: null,
+      pingStatus: PingStatus.timeout,
+    );
 
     final updates = calls
         .where((call) => call.method == 'updateTargetMetadata')
-        .map(
-          (call) => (call.arguments as Map<Object?, Object?>)['latencyMs'],
-        )
+        .map((call) => Map<Object?, Object?>.from(call.arguments as Map))
         .toList(growable: false);
     expect(updates, hasLength(2));
-    expect(updates.first, 321);
-    expect(updates.last, isNull);
+    expect(updates.first['latencyMs'], 321);
+    expect(updates.first['pingStatus'], 'success');
+    expect(updates.last['latencyMs'], isNull);
+    expect(updates.last['pingStatus'], 'timeout');
+  });
+
+  test('hydrates native timeout state for the active route', () async {
+    final target = TunnelTarget.single(
+      const TunnelProfile(
+        id: 'native-timeout-target',
+        name: 'Native timeout',
+        address: 'timeout.example',
+        port: 443,
+        userId: '11111111-1111-4111-8111-111111111111',
+      ),
+    );
+    await _mockStatus(
+      messenger,
+      targetId: target.id,
+      latencyMs: null,
+      pingStatus: 'timeout',
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final appRouting = await AppRoutingController.load();
+    final engine = AndroidXrayEngine(
+      settings: settings,
+      appRouting: appRouting,
+      targetResolver: (id) => id == target.id ? target : null,
+    );
+    addTearDown(() async {
+      await engine.dispose();
+      appRouting.dispose();
+      settings.dispose();
+    });
+
+    await engine.waitForInitialState();
+
+    expect(engine.current.effectiveLatencyMs, isNull);
+    expect(engine.current.effectivePingStatus, PingStatus.timeout);
   });
 
   test('does not seed a new route with saved direct TCP latency', () async {
@@ -232,6 +277,8 @@ Future<void> _mockStatus(
   TestDefaultBinaryMessenger messenger, {
   required String targetId,
   String status = 'connected',
+  int? latencyMs,
+  String? pingStatus,
   Future<Object?> Function(MethodCall call)? onMethodCall,
 }) async {
   const channel = MethodChannel('ru.orex.ray/tunnel');
@@ -246,6 +293,8 @@ Future<void> _mockStatus(
         'downloadBytesPerSecond': 0,
         'uploadBytesPerSecond': 0,
         'durationSeconds': 0,
+        'latencyMs': latencyMs,
+        'pingStatus': pingStatus,
       };
     }
     return onMethodCall?.call(call);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/profiles/latency_probe.dart';
@@ -97,6 +98,93 @@ void main() {
       profiles.profiles.map((profile) => profile.outboundProtocol).toSet(),
       OutboundProtocol.values.toSet(),
     );
+  });
+
+  test('imports Xray JSON arrays atomically and preserves existing ping', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    final existing = await profiles.importVlessLink(link);
+    await profiles.updateProfile(
+      existing.copyWith(
+        latencyMs: 88,
+        pingStatus: PingStatus.success,
+      ),
+    );
+
+    final result = await profiles.importXrayJson(
+      '''[
+        {
+          "protocol": "vless",
+          "tag": "Renamed",
+          "settings": {
+            "address": "example.com",
+            "port": 443,
+            "id": "11111111-1111-4111-8111-111111111111",
+            "encryption": "none"
+          }
+        },
+        {
+          "protocol": "trojan",
+          "tag": "Trojan JSON",
+          "settings": {
+            "address": "trojan-json.example",
+            "port": 443,
+            "password": "secret"
+          },
+          "streamSettings": {
+            "security": "tls",
+            "tlsSettings": {"serverName": "trojan-json.example"}
+          }
+        }
+      ]
+      ''',
+    );
+
+    expect(result.addedCount, 1);
+    expect(result.updatedCount, 1);
+    expect(profiles.profiles, hasLength(2));
+    final updated = profiles.profiles.singleWhere((item) => item.id == existing.id);
+    expect(updated.name, 'Renamed');
+    expect(updated.latencyMs, 88);
+    expect(updated.pingStatus, PingStatus.success);
+  });
+
+  test('exporting all profiles always returns a JSON array', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    await profiles.importVlessLink(link);
+
+    final exported = profiles.exportXrayJson();
+    final decoded = jsonDecode(exported);
+    expect(decoded, isA<List>());
+    expect(decoded as List, hasLength(1));
+  });
+
+  test('Xray JSON export round-trips through controller', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    await profiles.importVlessLink(link);
+    await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+
+    final exported = profiles.exportXrayJson();
+    expect(exported.trimLeft().startsWith('['), isTrue);
+
+    SharedPreferences.setMockInitialValues({});
+    final restored = await ProfilesController.load();
+    addTearDown(restored.dispose);
+    final result = await restored.importXrayJson(exported);
+
+    expect(result.addedCount, 2);
+    expect(restored.profiles.map((item) => item.name).toSet(), {'Test', 'Second'});
   });
 
   test('in-flight latency result is ignored after controller disposal',

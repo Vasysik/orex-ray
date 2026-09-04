@@ -401,11 +401,19 @@ void main() {
     expect(engine.directMetadata, isEmpty);
     expect(
       engine.effectiveLatencies,
-      contains((targetId: imported.id, latencyMs: 321)),
+      contains((
+        targetId: imported.id,
+        latencyMs: 321,
+        pingStatus: PingStatus.success,
+      )),
     );
     expect(
       engine.effectiveLatencies,
-      isNot(contains((targetId: imported.id, latencyMs: 71))),
+      isNot(contains((
+        targetId: imported.id,
+        latencyMs: 71,
+        pingStatus: PingStatus.success,
+      ))),
     );
 
     routeProbe.result = const LatencyProbeResult.timeout();
@@ -413,8 +421,50 @@ void main() {
 
     expect(
       engine.effectiveLatencies.last,
-      (targetId: imported.id, latencyMs: null),
+      (
+        targetId: imported.id,
+        latencyMs: null,
+        pingStatus: PingStatus.timeout,
+      ),
     );
+  });
+
+  test('restores a native timeout for an already-running active route',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final imported = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@timeout.example:443'
+      '?encryption=none&security=none&type=tcp#Native-timeout',
+    );
+    final engine = _RecordingTunnelEngine();
+    engine._current = TunnelSnapshot(
+      status: TunnelStatus.connected,
+      mode: ConnectionMode.vpnTun,
+      profile: TunnelTarget.single(imported),
+      stats: const TrafficStats(),
+      effectivePingStatus: PingStatus.timeout,
+    );
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    expect(
+      controller.effectivePingStatusFor(controller.snapshot.profile),
+      PingStatus.timeout,
+    );
+    expect(controller.effectiveLatencyFor(controller.snapshot.profile), isNull);
   });
 
   test(
@@ -1037,7 +1087,8 @@ class _RuntimeSettingsEngine extends _RecordingTunnelEngine
 class _EffectiveLatencyRecordingEngine extends _RecordingTunnelEngine
     implements TunnelRuntimeMetadataSink, TunnelRuntimeEffectiveLatencySink {
   final List<({String targetId, int? latencyMs})> directMetadata = [];
-  final List<({String targetId, int? latencyMs})> effectiveLatencies = [];
+  final List<({String targetId, int? latencyMs, PingStatus pingStatus})>
+      effectiveLatencies = [];
 
   @override
   Future<void> updateTargetMetadata(TunnelTarget target) async {
@@ -1048,8 +1099,13 @@ class _EffectiveLatencyRecordingEngine extends _RecordingTunnelEngine
   Future<void> updateEffectiveLatency(
     TunnelTarget target, {
     required int? latencyMs,
+    required PingStatus pingStatus,
   }) async {
-    effectiveLatencies.add((targetId: target.id, latencyMs: latencyMs));
+    effectiveLatencies.add((
+      targetId: target.id,
+      latencyMs: latencyMs,
+      pingStatus: pingStatus,
+    ));
   }
 }
 

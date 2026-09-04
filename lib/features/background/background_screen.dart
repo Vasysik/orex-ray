@@ -85,7 +85,7 @@ class BackgroundScreen extends StatelessWidget {
                   ),
                   title: const Text('Пинг в уведомлении'),
                   subtitle: const Text(
-                    'Показывать текущую задержку активного подключения',
+                    'Текущая задержка активного подключения · обновление раз в минуту',
                   ),
                   value: settings.showNotificationPing,
                   onChanged: settings.setShowNotificationPing,

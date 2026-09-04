@@ -1,9 +1,13 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/egress/egress_identity.dart';
 import '../../core/profiles/profiles_controller.dart';
 import '../../core/profiles/vless_link_parser.dart';
+import '../../core/profiles/xray_json_codec.dart';
+import '../../core/profiles/xray_json_file.dart';
+import '../../core/profiles/xray_json_source.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
@@ -12,7 +16,15 @@ import '../../shared/widgets/orex_choice_sheet.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
 
-enum _ProfileCreateAction { importLink, newProfile, balancer }
+enum _ProfileCreateAction {
+  importLink,
+  importXrayJson,
+  exportXrayJson,
+  newProfile,
+  balancer,
+}
+
+enum _XrayJsonExportAction { copy, saveFile }
 
 class ProfilesScreen extends StatelessWidget {
   const ProfilesScreen({
@@ -41,7 +53,7 @@ class ProfilesScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             if (profiles.profiles.isEmpty)
-              _EmptyProfiles(onImport: () => _showImportDialog(context))
+              _EmptyProfiles(onImport: () => _showProfileMenu(context))
             else ...[
               _SectionTitle(
                 title: 'Серверы',
@@ -61,6 +73,11 @@ class ProfilesScreen extends StatelessWidget {
                         ? () => tunnel.refreshProfileLatency(profile.id)
                         : null,
                     onEdit: () => _showEditProfileDialog(context, profile),
+                    onExport: () => _showXrayJsonExportMenu(
+                      context,
+                      profileId: profile.id,
+                      suggestedBaseName: profile.name,
+                    ),
                     onDelete: () =>
                         _deleteTarget(context, profile.id, profile.name),
                   ),
@@ -109,8 +126,20 @@ class ProfilesScreen extends StatelessWidget {
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.importLink,
           icon: Icons.add_link_rounded,
-          title: 'Импорт',
+          title: 'Импорт ссылки',
           subtitle: 'VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP',
+        ),
+        OrexChoiceSheetOption<_ProfileCreateAction>(
+          value: _ProfileCreateAction.importXrayJson,
+          icon: Icons.data_object_rounded,
+          title: 'Импорт JSON Xray',
+          subtitle: 'Файл, сырой JSON, массив [] или HTTP/HTTPS URL',
+        ),
+        OrexChoiceSheetOption<_ProfileCreateAction>(
+          value: _ProfileCreateAction.exportXrayJson,
+          icon: Icons.file_download_outlined,
+          title: 'Экспорт JSON Xray',
+          subtitle: 'Скопировать массив JSON или сохранить .json',
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.newProfile,
@@ -132,6 +161,12 @@ class ProfilesScreen extends StatelessWidget {
       case _ProfileCreateAction.importLink:
         await _showImportDialog(context);
         break;
+      case _ProfileCreateAction.importXrayJson:
+        await _showXrayJsonImportDialog(context);
+        break;
+      case _ProfileCreateAction.exportXrayJson:
+        await _showXrayJsonExportMenu(context);
+        break;
       case _ProfileCreateAction.newProfile:
         await _showCreateProfileDialog(context);
         break;
@@ -150,6 +185,108 @@ class ProfilesScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Профиль «${profile.name}» импортирован')),
     );
+  }
+
+  Future<void> _showXrayJsonImportDialog(BuildContext context) async {
+    final result = await showDialog<XrayJsonImportResult>(
+      context: context,
+      builder: (context) => _ImportXrayJsonDialog(profiles: profiles),
+    );
+    if (result == null || !context.mounted) return;
+    final parts = <String>[
+      if (result.addedCount > 0) 'добавлено ${result.addedCount}',
+      if (result.updatedCount > 0) 'обновлено ${result.updatedCount}',
+      if (result.skippedUnsupported > 0)
+        'пропущено неподдерживаемых ${result.skippedUnsupported}',
+    ];
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          parts.isEmpty ? 'JSON импортирован' : 'JSON Xray: ${parts.join(', ')}',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showXrayJsonExportMenu(
+    BuildContext context, {
+    String? profileId,
+    String? suggestedBaseName,
+  }) async {
+    if (profileId == null && profiles.profiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Нет профилей для экспорта')),
+      );
+      return;
+    }
+
+    final exportingAll = profileId == null;
+    final action = await showOrexChoiceSheet<_XrayJsonExportAction>(
+      context,
+      title: exportingAll ? 'Экспорт JSON Xray' : 'Экспорт профиля',
+      options: [
+        OrexChoiceSheetOption<_XrayJsonExportAction>(
+          value: _XrayJsonExportAction.copy,
+          icon: Icons.content_copy_rounded,
+          title: exportingAll ? 'Копировать массив JSON' : 'Копировать JSON',
+          subtitle: exportingAll
+              ? 'Все профили как массив полных Xray-конфигов'
+              : 'Полный Xray-конфиг профиля в буфер обмена',
+        ),
+        const OrexChoiceSheetOption<_XrayJsonExportAction>(
+          value: _XrayJsonExportAction.saveFile,
+          icon: Icons.save_alt_rounded,
+          title: 'Сохранить .json',
+          subtitle: 'Выбрать файл через системный диалог',
+        ),
+      ],
+    );
+    if (action == null || !context.mounted) return;
+
+    try {
+      final payload = profiles.exportXrayJson(profileId: profileId);
+      switch (action) {
+        case _XrayJsonExportAction.copy:
+          await Clipboard.setData(ClipboardData(text: payload));
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                exportingAll
+                    ? 'Массив JSON Xray скопирован'
+                    : 'JSON Xray скопирован',
+              ),
+            ),
+          );
+          break;
+        case _XrayJsonExportAction.saveFile:
+          final baseName = _safeFileName(
+            suggestedBaseName ?? 'orexray-xray-${profiles.profiles.length}',
+          );
+          final saved = await const XrayJsonFileExporter().save(
+            content: payload,
+            suggestedName: '$baseName.json',
+          );
+          if (!context.mounted || !saved) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('JSON Xray экспортирован')),
+          );
+          break;
+      }
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось экспортировать JSON: $error')),
+      );
+    }
+  }
+
+  String _safeFileName(String value) {
+    final sanitized = value
+        .trim()
+        .replaceAll(RegExp(r'[\/:*?"<>|]+'), '-')
+        .replaceAll(RegExp(r'\s+'), ' ');
+    return sanitized.isEmpty ? 'orexray-xray' : sanitized;
   }
 
   Future<void> _showCreateProfileDialog(BuildContext context) async {
@@ -366,7 +503,7 @@ class _EmptyProfiles extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
-            'Импортируйте ссылку VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP.',
+            'Импортируйте ссылку или JSON Xray с одним или несколькими профилями.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -391,6 +528,7 @@ class _ProfileCard extends StatelessWidget {
     required this.latencyMs,
     required this.onRefreshPing,
     required this.onEdit,
+    required this.onExport,
     required this.onDelete,
   });
 
@@ -401,6 +539,7 @@ class _ProfileCard extends StatelessWidget {
   final int? latencyMs;
   final VoidCallback? onRefreshPing;
   final VoidCallback onEdit;
+  final VoidCallback onExport;
   final VoidCallback onDelete;
 
   @override
@@ -440,6 +579,7 @@ class _ProfileCard extends StatelessWidget {
           onSelected: (value) {
             if (value == 'edit') onEdit();
             if (value == 'ping') onRefreshPing?.call();
+            if (value == 'export') onExport();
             if (value == 'delete') onDelete();
           },
           itemBuilder: (context) => [
@@ -449,8 +589,12 @@ class _ProfileCard extends StatelessWidget {
               enabled: onRefreshPing != null,
               child: const Text('Проверить пинг'),
             ),
-            PopupMenuDivider(),
-            PopupMenuItem(value: 'delete', child: Text('Удалить')),
+            const PopupMenuItem(
+              value: 'export',
+              child: Text('Экспорт JSON Xray'),
+            ),
+            const PopupMenuDivider(),
+            const PopupMenuItem(value: 'delete', child: Text('Удалить')),
           ],
         ),
       ),
@@ -676,6 +820,183 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Text('Сохранить'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ImportXrayJsonDialog extends StatefulWidget {
+  const _ImportXrayJsonDialog({required this.profiles});
+
+  final ProfilesController profiles;
+
+  @override
+  State<_ImportXrayJsonDialog> createState() => _ImportXrayJsonDialogState();
+}
+
+class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
+  final TextEditingController _controller = TextEditingController();
+  final XrayJsonSource _source = XrayJsonSource();
+  String? _error;
+  bool _importing = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    final text = data?.text?.trim() ?? '';
+    if (text.isEmpty) {
+      setState(() => _error = 'В буфере обмена нет JSON или URL');
+      return;
+    }
+    setState(() {
+      _controller.text = text;
+      _controller.selection = TextSelection.collapsed(offset: text.length);
+      _error = null;
+    });
+  }
+
+  Future<void> _pickFile() async {
+    if (_importing) return;
+    try {
+      final file = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'Xray JSON',
+            extensions: ['json'],
+          ),
+        ],
+      );
+      if (file == null || !mounted) return;
+      setState(() {
+        _importing = true;
+        _error = null;
+      });
+      if (await file.length() > XrayJsonCodec.maxPayloadBytes) {
+        throw const FormatException('JSON Xray больше 5 МБ');
+      }
+      final payload = await file.readAsString();
+      await _importPayload(payload, sourceLabel: file.name);
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_importing) return;
+    final raw = _controller.text.trim();
+    if (raw.isEmpty) {
+      setState(() => _error = 'Вставь JSON, массив [] или URL');
+      return;
+    }
+    setState(() {
+      _importing = true;
+      _error = null;
+    });
+    try {
+      final uri = Uri.tryParse(raw);
+      if (uri != null &&
+          uri.hasAuthority &&
+          (uri.scheme == 'http' || uri.scheme == 'https')) {
+        final payload = await _source.loadUrl(raw);
+        await _importPayload(payload, sourceLabel: raw);
+      } else {
+        await _importPayload(raw);
+      }
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _importPayload(
+    String payload, {
+    String sourceLabel = '',
+  }) async {
+    final result = await widget.profiles.importXrayJson(
+      payload,
+      sourceLabel: sourceLabel,
+    );
+    if (mounted) Navigator.of(context).pop(result);
+  }
+
+  void _showError(Object error) {
+    if (!mounted) return;
+    setState(() {
+      _importing = false;
+      _error = error is FormatException
+          ? error.message.toString()
+          : 'Не удалось импортировать JSON: $error';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Импорт JSON Xray'),
+      content: SizedBox(
+        width: 620,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Поддерживается полный Xray config, один outbound, массив [] '
+              'из нескольких конфигов и HTTP/HTTPS ссылка с JSON.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              minLines: 5,
+              maxLines: 12,
+              autofocus: true,
+              enabled: !_importing,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                hintText: '{ "outbounds": [...] }\nили https://example.com/config.json',
+                errorText: _error,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: _importing ? null : _pickFile,
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: const Text('Выбрать .json'),
+                ),
+                TextButton.icon(
+                  onPressed: _importing ? null : _pasteFromClipboard,
+                  icon: const Icon(Icons.content_paste_rounded),
+                  label: const Text('Из буфера'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _importing ? null : () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _importing ? null : _submit,
+          child: _importing
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Импортировать'),
         ),
       ],
     );

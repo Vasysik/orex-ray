@@ -47,6 +47,7 @@ class HomeScreen extends StatelessWidget {
                         Expanded(
                           flex: 5,
                           child: _ConnectionHero(
+                            tunnel: tunnel,
                             snapshot: snapshot,
                             onTap: tunnel.toggle,
                             showStatusText: true,
@@ -66,6 +67,7 @@ class HomeScreen extends StatelessWidget {
                     _TrafficCard(tunnel: tunnel, snapshot: snapshot),
                   ] else ...[
                     _ConnectionHero(
+                      tunnel: tunnel,
                       snapshot: snapshot,
                       onTap: tunnel.toggle,
                       showStatusText: false,
@@ -273,11 +275,13 @@ class _ModeSelector extends StatelessWidget {
 
 class _ConnectionHero extends StatelessWidget {
   const _ConnectionHero({
+    required this.tunnel,
     required this.snapshot,
     required this.onTap,
     required this.showStatusText,
   });
 
+  final TunnelController tunnel;
   final TunnelSnapshot snapshot;
   final Future<void> Function() onTap;
   final bool showStatusText;
@@ -287,6 +291,8 @@ class _ConnectionHero extends StatelessWidget {
     final profile = snapshot.profile;
     final active = snapshot.isConnected;
     final hasProfile = profile != null;
+    final timedOut = active &&
+        tunnel.effectivePingStatusFor(profile) == PingStatus.timeout;
 
     return GlassPanel(
       borderRadius: 28,
@@ -295,7 +301,7 @@ class _ConnectionHero extends StatelessWidget {
         children: [
           if (showStatusText) ...[
             Text(
-              _statusTitle(snapshot.status),
+              timedOut ? 'Таймаут' : _statusTitle(snapshot.status),
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
@@ -311,6 +317,7 @@ class _ConnectionHero extends StatelessWidget {
           const SizedBox(height: 28),
           _ConnectButton(
             snapshot: snapshot,
+            timedOut: timedOut,
             enabled: hasProfile || snapshot.isConnected,
             onTap: onTap,
           ),
@@ -333,11 +340,13 @@ class _ConnectionHero extends StatelessWidget {
 class _ConnectButton extends StatelessWidget {
   const _ConnectButton({
     required this.snapshot,
+    required this.timedOut,
     required this.enabled,
     required this.onTap,
   });
 
   final TunnelSnapshot snapshot;
+  final bool timedOut;
   final bool enabled;
   final Future<void> Function() onTap;
 
@@ -349,7 +358,11 @@ class _ConnectButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: canTap,
-      label: active ? 'Отключить OrexRay' : 'Подключить OrexRay',
+      label: active
+          ? timedOut
+              ? 'Отключить OrexRay, маршрут не отвечает'
+              : 'Отключить OrexRay'
+          : 'Подключить OrexRay',
       child: GestureDetector(
         onTap: canTap ? () => onTap() : null,
         child: AnimatedOpacity(
@@ -363,15 +376,22 @@ class _ConnectButton extends StatelessWidget {
               shape: BoxShape.circle,
               gradient: OrexColors.copperGradient,
               border: Border.all(
-                color: OrexColors.cream.withValues(alpha: active ? 0.65 : 0.28),
-                width: 2,
+                color: timedOut
+                    ? OrexColors.danger.withValues(alpha: 0.92)
+                    : OrexColors.cream
+                        .withValues(alpha: active ? 0.65 : 0.28),
+                width: timedOut ? 3 : 2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: (active ? OrexColors.online : OrexColors.copper)
-                      .withValues(alpha: 0.32),
-                  blurRadius: active ? 52 : 32,
-                  spreadRadius: active ? 4 : 0,
+                  color: (timedOut
+                          ? OrexColors.danger
+                          : active
+                              ? OrexColors.online
+                              : OrexColors.copper)
+                      .withValues(alpha: timedOut ? 0.5 : 0.32),
+                  blurRadius: timedOut || active ? 52 : 32,
+                  spreadRadius: timedOut || active ? 4 : 0,
                 ),
               ],
             ),
@@ -408,7 +428,7 @@ class _MobileStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ping = tunnel.effectiveLatencyFor(snapshot.profile);
+    final pingLabel = _pingLabel(tunnel, snapshot.profile);
     return GlassPanel(
       borderRadius: 24,
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
@@ -437,7 +457,7 @@ class _MobileStatusCard extends StatelessWidget {
                 child: _CompactMetric(
                   icon: Icons.network_ping_rounded,
                   label: 'Пинг',
-                  value: ping == null ? '—' : '$ping мс',
+                  value: pingLabel,
                   busy: tunnel.refreshingLatency,
                   onTap: snapshot.profile == null
                       ? null
@@ -529,7 +549,7 @@ class _QuickInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final profile = snapshot.profile;
-    final ping = tunnel.effectiveLatencyFor(profile);
+    final pingLabel = _pingLabel(tunnel, profile);
     return Column(
       children: [
         GlassPanel(
@@ -604,7 +624,7 @@ class _QuickInfo extends StatelessWidget {
                     const SizedBox(height: 12),
                     _InfoRow(
                       label: 'Задержка',
-                      value: ping == null ? '—' : '$ping мс',
+                      value: pingLabel,
                     ),
                   ],
                 ),
@@ -686,7 +706,7 @@ class _TrafficCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ping = tunnel.effectiveLatencyFor(snapshot.profile);
+    final pingLabel = _pingLabel(tunnel, snapshot.profile);
     return GlassPanel(
       borderRadius: 24,
       padding: const EdgeInsets.all(20),
@@ -721,7 +741,7 @@ class _TrafficCard extends StatelessWidget {
             child: _Metric(
               icon: Icons.network_ping_rounded,
               label: 'Пинг',
-              value: ping == null ? '—' : '$ping мс',
+              value: pingLabel,
               busy: tunnel.refreshingLatency,
               onTap: snapshot.profile == null
                   ? null
@@ -826,6 +846,14 @@ class _InfoRow extends StatelessWidget {
       ],
     );
   }
+}
+
+String _pingLabel(TunnelController tunnel, TunnelTarget? target) {
+  final status = tunnel.effectivePingStatusFor(target);
+  if (status == PingStatus.timeout) return 'Таймаут';
+  if (status == PingStatus.unavailable) return 'Недоступен';
+  final ping = tunnel.effectiveLatencyFor(target);
+  return ping == null ? '—' : '$ping мс';
 }
 
 String _statusTitle(TunnelStatus status) => switch (status) {

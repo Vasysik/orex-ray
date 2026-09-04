@@ -292,6 +292,46 @@ void main() {
     expect(api['services'], ['StatsService']);
     expect(system['statsInboundUplink'], isTrue);
     expect(system['statsInboundDownlink'], isTrue);
+
+    final tun = jsonDecode(
+      const XrayConfigBuilder().buildWindowsTun(
+        TunnelTarget.single(profile),
+        apiPort: 32124,
+      ),
+    ) as Map<String, dynamic>;
+    final tunPolicy = tun['policy'] as Map<String, dynamic>;
+    final tunSystem = tunPolicy['system'] as Map<String, dynamic>;
+    expect(tunSystem['statsInboundUplink'], isTrue);
+    expect(tunSystem['statsInboundDownlink'], isTrue);
+  });
+
+  test('disables unused inbound stats only for Android configs', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(
+        TunnelTarget.single(profile),
+      ),
+    ) as Map<String, dynamic>;
+    final policy = json['policy'] as Map<String, dynamic>;
+    final system = policy['system'] as Map<String, dynamic>;
+
+    expect(system['statsInboundUplink'], isFalse);
+    expect(system['statsInboundDownlink'], isFalse);
+    expect(system['statsOutboundUplink'], isTrue);
+    expect(system['statsOutboundDownlink'], isTrue);
+  });
+
+  test('can disable inbound stats for Android local-proxy mode', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildLocalProxy(
+        TunnelTarget.single(profile),
+        enableInboundStats: false,
+      ),
+    ) as Map<String, dynamic>;
+    final policy = json['policy'] as Map<String, dynamic>;
+    final system = policy['system'] as Map<String, dynamic>;
+
+    expect(system['statsInboundUplink'], isFalse);
+    expect(system['statsInboundDownlink'], isFalse);
   });
 
   test('builds working Xray outbounds for imported proxy protocols', () {

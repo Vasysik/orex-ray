@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/egress/exit_location_refresh_coordinator.dart';
 import 'package:orex_ray/core/profiles/latency_probe.dart';
@@ -60,6 +62,114 @@ void main() {
 
     expect(find.text('Имя пользователя (необязательно)'), findsOneWidget);
     expect(find.text('Пароль (необязательно)'), findsOneWidget);
+  });
+
+  testWidgets('copies all Xray profiles as a JSON array', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@copy-all.example:443'
+      '?encryption=none&security=none&type=tcp#Copy-all',
+    );
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    String? clipboardText;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboardText = (call.arguments as Map)['text'] as String?;
+      }
+      return null;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Экспорт JSON Xray'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Копировать массив JSON'));
+    await tester.pump();
+
+    expect(clipboardText, isNotNull);
+    final decoded = jsonDecode(clipboardText!);
+    expect(decoded, isA<List>());
+    expect(decoded as List, hasLength(1));
+  });
+
+  testWidgets('copies one profile as a single Xray JSON object', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@copy-one.example:443'
+      '?encryption=none&security=none&type=tcp#Copy-one',
+    );
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    String? clipboardText;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboardText = (call.arguments as Map)['text'] as String?;
+      }
+      return null;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Экспорт JSON Xray'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Копировать JSON'));
+    await tester.pump();
+
+    expect(clipboardText, isNotNull);
+    final decoded = jsonDecode(clipboardText!);
+    expect(decoded, isA<Map>());
+    expect((decoded as Map)['outbounds'], isA<List>());
   });
 
   testWidgets('busy ping check keeps the static icon in profiles',

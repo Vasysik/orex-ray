@@ -47,8 +47,18 @@ internal object OrexRayStartIntentStore {
         targetId: String?,
         targetName: String,
         latencyMs: Int?,
+        pingStatus: String,
+        latencyProbeUrl: String,
     ) {
-        updateMetadata(context, RESTART_STATE_KEY, targetId, targetName, latencyMs)
+        updateMetadata(
+            context,
+            RESTART_STATE_KEY,
+            targetId,
+            targetName,
+            latencyMs,
+            pingStatus,
+            latencyProbeUrl,
+        )
     }
 
     fun updateQuickTileMetadata(
@@ -56,8 +66,18 @@ internal object OrexRayStartIntentStore {
         targetId: String?,
         targetName: String,
         latencyMs: Int?,
+        pingStatus: String,
+        latencyProbeUrl: String,
     ) {
-        updateMetadata(context, QUICK_TILE_STATE_KEY, targetId, targetName, latencyMs)
+        updateMetadata(
+            context,
+            QUICK_TILE_STATE_KEY,
+            targetId,
+            targetName,
+            latencyMs,
+            pingStatus,
+            latencyProbeUrl,
+        )
     }
 
     fun updateRuntimeSettings(
@@ -108,6 +128,14 @@ internal object OrexRayStartIntentStore {
             .put(
                 OrexRayVpnService.EXTRA_LATENCY_MS,
                 intent.getIntExtra(OrexRayVpnService.EXTRA_LATENCY_MS, -1),
+            )
+            .put(
+                OrexRayVpnService.EXTRA_PING_STATUS,
+                intent.getStringExtra(OrexRayVpnService.EXTRA_PING_STATUS) ?: "unknown",
+            )
+            .put(
+                OrexRayVpnService.EXTRA_LATENCY_PROBE_URL,
+                intent.getStringExtra(OrexRayVpnService.EXTRA_LATENCY_PROBE_URL).orEmpty(),
             )
             .put(
                 OrexRayVpnService.EXTRA_MTU,
@@ -200,6 +228,14 @@ internal object OrexRayStartIntentStore {
                     OrexRayVpnService.EXTRA_LATENCY_MS,
                     json.optInt(OrexRayVpnService.EXTRA_LATENCY_MS, -1),
                 )
+                .putExtra(
+                    OrexRayVpnService.EXTRA_PING_STATUS,
+                    json.optString(OrexRayVpnService.EXTRA_PING_STATUS, "unknown"),
+                )
+                .putExtra(
+                    OrexRayVpnService.EXTRA_LATENCY_PROBE_URL,
+                    json.optString(OrexRayVpnService.EXTRA_LATENCY_PROBE_URL, ""),
+                )
                 .putStringArrayListExtra(
                     OrexRayVpnService.EXTRA_STATS_OUTBOUND_TAGS,
                     json.optJSONArray(OrexRayVpnService.EXTRA_STATS_OUTBOUND_TAGS)
@@ -233,11 +269,11 @@ internal object OrexRayStartIntentStore {
                     OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
                     json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED, true),
                 )
-            .putExtra(
-                OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
-                json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING, true),
-            )
-            .putExtra(
+                .putExtra(
+                    OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
+                    json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING, true),
+                )
+                .putExtra(
                     OrexRayVpnService.EXTRA_RESTART_SERVICE,
                     json.optBoolean(OrexRayVpnService.EXTRA_RESTART_SERVICE, true),
                 )
@@ -261,6 +297,8 @@ internal object OrexRayStartIntentStore {
         targetId: String?,
         targetName: String,
         latencyMs: Int?,
+        pingStatus: String,
+        latencyProbeUrl: String,
     ) {
         val secureStore = AndroidSecureStore(context.applicationContext)
         val payload = runCatching { secureStore.read(key) }.getOrNull() ?: return
@@ -269,6 +307,8 @@ internal object OrexRayStartIntentStore {
                 .put(OrexRayVpnService.EXTRA_TARGET_ID, targetId.orEmpty())
                 .put(OrexRayVpnService.EXTRA_TARGET_NAME, targetName)
                 .put(OrexRayVpnService.EXTRA_LATENCY_MS, latencyMs ?: -1)
+                .put(OrexRayVpnService.EXTRA_PING_STATUS, pingStatus)
+                .put(OrexRayVpnService.EXTRA_LATENCY_PROBE_URL, latencyProbeUrl)
             secureStore.write(key, json.toString())
         }.onFailure { Log.w(TAG, "Could not update encrypted start metadata: $key", it) }
     }

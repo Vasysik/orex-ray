@@ -47,6 +47,8 @@ object OrexRayTunnelEvents {
         downloadBytesPerSecond: Long = 0,
         uploadBytesPerSecond: Long = 0,
         durationSeconds: Long = 0,
+        latencyMs: Int? = null,
+        pingStatus: String = "unknown",
     ): Map<String, Any?> = mapOf(
         "status" to status,
         "mode" to mode,
@@ -58,5 +60,7 @@ object OrexRayTunnelEvents {
         "downloadBytesPerSecond" to downloadBytesPerSecond,
         "uploadBytesPerSecond" to uploadBytesPerSecond,
         "durationSeconds" to durationSeconds,
+        "latencyMs" to latencyMs,
+        "pingStatus" to pingStatus,
     )
 }

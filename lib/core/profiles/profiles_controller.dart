@@ -6,6 +6,21 @@ import '../tunnel/tunnel_models.dart';
 import 'latency_probe.dart';
 import 'profile_repository.dart';
 import 'proxy_link_parser.dart';
+import 'xray_json_codec.dart';
+
+class XrayJsonImportResult {
+  const XrayJsonImportResult({
+    required this.addedCount,
+    required this.updatedCount,
+    required this.skippedUnsupported,
+  });
+
+  final int addedCount;
+  final int updatedCount;
+  final int skippedUnsupported;
+
+  int get changedCount => addedCount + updatedCount;
+}
 
 class ProfilesController extends ChangeNotifier {
   ProfilesController._({
@@ -22,6 +37,7 @@ class ProfilesController extends ChangeNotifier {
 
   final ProfileRepository _repository;
   final ProxyLinkParser _parser = const ProxyLinkParser();
+  final XrayJsonCodec _xrayJsonCodec = const XrayJsonCodec();
   final LatencyProbe _latencyProbe;
   final List<TunnelProfile> _profiles;
   final List<BalancerProfile> _balancers;
@@ -145,6 +161,90 @@ class ProfilesController extends ChangeNotifier {
     await _persist();
     _notifyListeners();
     return profile;
+  }
+
+  /// Imports one Xray config, an outbound object, or an array containing either.
+  /// The complete payload is validated before any in-memory changes are applied.
+  Future<XrayJsonImportResult> importXrayJson(
+    String payload, {
+    String sourceLabel = '',
+  }) async {
+    final decoded = _xrayJsonCodec.decode(
+      payload,
+      sourceLabel: sourceLabel,
+    );
+    final working = List<TunnelProfile>.from(_profiles);
+    final added = <TunnelProfile>[];
+    var updatedCount = 0;
+
+    int findSame(List<TunnelProfile> values, TunnelProfile profile) {
+      final exact = values.indexWhere((item) => item.id == profile.id);
+      if (exact >= 0) return exact;
+      return values.indexWhere((item) => _sameConnectionProfile(item, profile));
+    }
+
+    for (var profile in decoded.profiles) {
+      _validateProfileInput(profile);
+      var index = findSame(working, profile);
+      if (index >= 0) {
+        final old = working[index];
+        working[index] = profile.copyWith(
+          id: old.id,
+          latencyMs: old.latencyMs,
+          pingStatus: old.pingStatus,
+        );
+        updatedCount += 1;
+        continue;
+      }
+
+      index = findSame(added, profile);
+      if (index >= 0) {
+        final old = added[index];
+        added[index] = profile.copyWith(id: old.id);
+        updatedCount += 1;
+        continue;
+      }
+      added.add(profile);
+    }
+
+    if (working.length + added.length > _maxProfiles) {
+      throw const FormatException('Можно сохранить не больше 500 профилей');
+    }
+    working.insertAll(0, added);
+
+    final previousSelection = _selectedId;
+    _profiles
+      ..clear()
+      ..addAll(working);
+    if (_profiles.isNotEmpty &&
+        (previousSelection == null || targetById(previousSelection) == null)) {
+      _selectedId = decoded.profiles.first.id;
+      final importedSelection = _profiles.indexWhere(
+        (item) => _sameConnectionProfile(item, decoded.profiles.first),
+      );
+      if (importedSelection >= 0) {
+        _selectedId = _profiles[importedSelection].id;
+      }
+    }
+
+    await _persist();
+    _notifyListeners();
+    return XrayJsonImportResult(
+      addedCount: added.length,
+      updatedCount: updatedCount,
+      skippedUnsupported: decoded.skippedUnsupported,
+    );
+  }
+
+  String exportXrayJson({String? profileId}) {
+    if (profileId == null) {
+      return _xrayJsonCodec.encodeProfiles(_profiles, forceArray: true);
+    }
+    final profile = _profileById(profileId);
+    if (profile == null) {
+      throw const FormatException('Профиль для экспорта не найден');
+    }
+    return _xrayJsonCodec.encodeProfiles([profile]);
   }
 
   /// Legacy public API retained for callers built when VLESS was the only

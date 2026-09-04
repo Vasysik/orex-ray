@@ -26,8 +26,10 @@ class MainActivity : FlutterActivity() {
         private const val METHOD_CHANNEL = "ru.orex.ray/tunnel"
         private const val EVENT_CHANNEL = "ru.orex.ray/tunnel_events"
         private const val SECURE_CHANNEL = "ru.orex.ray/secure_storage"
+        private const val FILE_EXPORT_CHANNEL = "ru.orex.ray/file_export"
         private const val VPN_PERMISSION_REQUEST = 7711
         private const val NOTIFICATION_PERMISSION_REQUEST = 7712
+        private const val FILE_EXPORT_REQUEST = 7713
         private const val MODE_VPN = "vpn_tun"
         private const val MODE_LOCAL_PROXY = "local_proxy"
     }
@@ -38,6 +40,8 @@ class MainActivity : FlutterActivity() {
         val targetId: String?,
         val targetName: String,
         val latencyMs: Int?,
+        val pingStatus: String,
+        val latencyProbeUrl: String,
         val statsOutboundTags: List<String>,
         val mtu: Int,
         val dnsServers: List<String>,
@@ -54,6 +58,8 @@ class MainActivity : FlutterActivity() {
     )
 
     private var pendingStart: StartRequest? = null
+    private var pendingFileExportResult: MethodChannel.Result? = null
+    private var pendingFileExportContent: String? = null
     private val secureStore by lazy { AndroidSecureStore(applicationContext) }
     private val packageWorker = Executors.newFixedThreadPool(2)
 
@@ -94,6 +100,13 @@ class MainActivity : FlutterActivity() {
                                 ?: "OrexRay",
                             latencyMs = call.argument<Int>("latencyMs")
                                 ?.takeIf { it >= 0 },
+                            pingStatus = normalizePingStatus(
+                                call.argument<String>("pingStatus"),
+                                call.argument<Int>("latencyMs")?.takeIf { it >= 0 },
+                            ),
+                            latencyProbeUrl = normalizeLatencyProbeUrl(
+                                call.argument<String>("latencyProbeUrl"),
+                            ),
                             statsOutboundTags = call.argument<List<String>>(
                                 "statsOutboundTags",
                             )
@@ -166,6 +179,8 @@ class MainActivity : FlutterActivity() {
                                 targetId = call.argument<String>("targetId"),
                                 targetName = call.argument<String>("targetName"),
                                 latencyMs = call.argument<Int>("latencyMs"),
+                                pingStatus = call.argument<String>("pingStatus"),
+                                latencyProbeUrl = call.argument<String>("latencyProbeUrl"),
                             )
                         }
                             .onSuccess { result.success(null) }
@@ -291,6 +306,48 @@ class MainActivity : FlutterActivity() {
                     )
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FILE_EXPORT_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "saveJson" -> {
+                        val fileName = call.argument<String>("fileName")
+                            ?.trim()
+                            ?.takeIf { it.isNotEmpty() }
+                            ?: "orexray-xray.json"
+                        val content = call.argument<String>("content")
+                        if (content == null) {
+                            result.error("invalid_content", "JSON content is missing", null)
+                            return@setMethodCallHandler
+                        }
+                        if (pendingFileExportResult != null) {
+                            result.error("export_busy", "Another file export is active", null)
+                            return@setMethodCallHandler
+                        }
+                        pendingFileExportResult = result
+                        pendingFileExportContent = content
+                        runCatching {
+                            startActivityForResult(
+                                Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    type = "application/json"
+                                    putExtra(Intent.EXTRA_TITLE, fileName)
+                                },
+                                FILE_EXPORT_REQUEST,
+                            )
+                        }.onFailure { error ->
+                            pendingFileExportResult = null
+                            pendingFileExportContent = null
+                            result.error(
+                                "export_failed",
+                                error.message ?: error.javaClass.simpleName,
+                                null,
+                            )
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun loadAppsAsync(result: MethodChannel.Result) {
@@ -389,6 +446,13 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         activityDestroyed = true
+        pendingFileExportResult?.error(
+            "activity_destroyed",
+            "Activity was destroyed during file export",
+            null,
+        )
+        pendingFileExportResult = null
+        pendingFileExportContent = null
         packageWorker.shutdownNow()
         super.onDestroy()
     }
@@ -456,9 +520,67 @@ class MainActivity : FlutterActivity() {
         continueStart(request)
     }
 
-    @Deprecated("The platform callback is required for the VPN permission activity")
+    @Deprecated("The platform callback is required for VPN permission and document export")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == FILE_EXPORT_REQUEST) {
+            val callback = pendingFileExportResult ?: return
+            val content = pendingFileExportContent
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                pendingFileExportResult = null
+                pendingFileExportContent = null
+                callback.success(null)
+                return
+            }
+            val uri = data.data!!
+            if (content == null) {
+                pendingFileExportResult = null
+                pendingFileExportContent = null
+                callback.error("export_failed", "JSON content is missing", null)
+                return
+            }
+
+            // Release the potentially large JSON string, but keep the result pending
+            // until the worker finishes. This both prevents overlapping exports and lets
+            // onDestroy() resolve the Dart Future if the Activity disappears mid-write.
+            pendingFileExportContent = null
+            runCatching {
+                packageWorker.execute {
+                    val writeResult = runCatching {
+                        contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                            output.write(content.toByteArray(Charsets.UTF_8))
+                            output.flush()
+                        } ?: error("Could not open selected document")
+                    }
+                    runOnUiThread {
+                        // onDestroy() may already have resolved and cleared this callback.
+                        if (pendingFileExportResult !== callback) return@runOnUiThread
+                        pendingFileExportResult = null
+                        writeResult.onSuccess {
+                            callback.success(uri.toString())
+                        }.onFailure { error ->
+                            Log.e(TAG, "Could not export JSON", error)
+                            callback.error(
+                                "export_failed",
+                                error.message ?: error.javaClass.simpleName,
+                                null,
+                            )
+                        }
+                    }
+                }
+            }.onFailure { error ->
+                if (pendingFileExportResult === callback) {
+                    pendingFileExportResult = null
+                }
+                Log.e(TAG, "Could not schedule JSON export", error)
+                callback.error(
+                    "export_failed",
+                    error.message ?: error.javaClass.simpleName,
+                    null,
+                )
+            }
+            return
+        }
         if (requestCode != VPN_PERMISSION_REQUEST) return
 
         val request = pendingStart
@@ -496,6 +618,11 @@ class MainActivity : FlutterActivity() {
             .putExtra(OrexRayVpnService.EXTRA_TARGET_ID, request.targetId)
             .putExtra(OrexRayVpnService.EXTRA_TARGET_NAME, request.targetName)
             .putExtra(OrexRayVpnService.EXTRA_LATENCY_MS, request.latencyMs ?: -1)
+            .putExtra(OrexRayVpnService.EXTRA_PING_STATUS, request.pingStatus)
+            .putExtra(
+                OrexRayVpnService.EXTRA_LATENCY_PROBE_URL,
+                request.latencyProbeUrl,
+            )
             .putStringArrayListExtra(
                 OrexRayVpnService.EXTRA_STATS_OUTBOUND_TAGS,
                 ArrayList(request.statsOutboundTags),
@@ -552,6 +679,8 @@ class MainActivity : FlutterActivity() {
         targetId: String?,
         targetName: String?,
         latencyMs: Int?,
+        pingStatus: String?,
+        latencyProbeUrl: String?,
     ) {
         val intent = Intent(this, OrexRayVpnService::class.java)
             .setAction(OrexRayVpnService.ACTION_UPDATE_METADATA)
@@ -564,7 +693,32 @@ class MainActivity : FlutterActivity() {
                 targetName?.trim().orEmpty(),
             )
             .putExtra(OrexRayVpnService.EXTRA_LATENCY_MS, latencyMs ?: -1)
+            .putExtra(
+                OrexRayVpnService.EXTRA_PING_STATUS,
+                normalizePingStatus(pingStatus, latencyMs),
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_LATENCY_PROBE_URL,
+                normalizeLatencyProbeUrl(latencyProbeUrl),
+            )
         startService(intent)
+    }
+
+    private fun normalizePingStatus(value: String?, latencyMs: Int?): String =
+        when (value?.trim()?.lowercase()) {
+            "success" -> if (latencyMs != null && latencyMs >= 0) "success" else "unknown"
+            "timeout" -> "timeout"
+            "unavailable" -> "unavailable"
+            else -> if (latencyMs != null && latencyMs >= 0) "success" else "unknown"
+        }
+
+    private fun normalizeLatencyProbeUrl(value: String?): String {
+        val normalized = value?.trim().orEmpty()
+        return if (normalized.startsWith("https://") || normalized.startsWith("http://")) {
+            normalized
+        } else {
+            "https://cloudflare.com/cdn-cgi/trace"
+        }
     }
 
     private fun updateRuntimeSettings(
