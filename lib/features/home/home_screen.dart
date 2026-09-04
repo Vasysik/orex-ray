@@ -429,24 +429,13 @@ class _ConnectButton extends StatelessWidget {
             ),
             child: Center(
               child: busy
-                  ? Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        const SizedBox(
-                          width: 42,
-                          height: 42,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: OrexColors.cream,
-                          ),
-                        ),
-                        if (connecting)
-                          const Icon(
-                            Icons.close_rounded,
-                            color: OrexColors.cream,
-                            size: 24,
-                          ),
-                      ],
+                  ? const SizedBox(
+                      width: 42,
+                      height: 42,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: OrexColors.cream,
+                      ),
                     )
                   : Icon(
                       active

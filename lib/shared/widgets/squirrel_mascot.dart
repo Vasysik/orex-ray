@@ -18,10 +18,6 @@ class SquirrelMascot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(size * 0.24);
-    final decodeWidth = (size * MediaQuery.devicePixelRatioOf(context))
-        .round()
-        .clamp(64, 768)
-        .toInt();
     final mascot = Semantics(
       image: true,
       label: 'Белочка OrexRay в защищённой ореховой скорлупе',
@@ -42,8 +38,7 @@ class SquirrelMascot extends StatelessWidget {
         child: Image.asset(
           'assets/images/orexray_logo.png',
           fit: BoxFit.cover,
-          cacheWidth: decodeWidth,
-          filterQuality: FilterQuality.medium,
+          filterQuality: FilterQuality.high,
         ),
       ),
     );
