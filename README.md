@@ -409,13 +409,10 @@ android/app/src/main/kotlin/ru/orex/ray/
 строит mode-specific конфиг, а `TunnelController` управляет жизненным циклом
 подключения. UI не должен напрямую запускать native core.
 
-## 12. Проверка и сборки
+## 12. Проверка, debug и release
 
-Release-документация разделена по платформам:
-
-- [общая схема](docs/release-builds.md);
-- [Android](docs/release-android.md);
-- [Windows](docs/release-windows.md).
+Сборки теперь устроены одинаково с Orex Messenger: общий builder
+`tool\build_channel.ps1` и две короткие точки входа — debug/release.
 
 Базовый quality gate:
 
@@ -425,26 +422,70 @@ flutter analyze --no-pub
 flutter test --no-pub
 ```
 
-Готовые релизы можно собрать одной командой:
+Настоящая debug-сборка Android + Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool\build_debug.ps1
+```
+
+Release Android + Windows:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tool\build_release.ps1
 ```
 
-Либо отдельно:
+Платформу можно ограничить одинаковым параметром:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File tool\build_debug.ps1 -Platform android
+powershell -ExecutionPolicy Bypass -File tool\build_debug.ps1 -Platform windows
 powershell -ExecutionPolicy Bypass -File tool\build_release.ps1 -Platform android
 powershell -ExecutionPolicy Bypass -File tool\build_release.ps1 -Platform windows
 ```
 
-Скрипты складывают переименованные артефакты и `SHA256SUMS.txt` в `dist\android`
-и `dist\windows`.
+Артефакты имеют одну схему имени и лежат в `dist\<debug|release>\<version>\`:
 
-По умолчанию Dart obfuscation не используется. Release автоматически подписывается
-Gradle через `android/key.properties` или `OREX_ANDROID_*`. Для private beta
-распространяется подписанный APK и его SHA-256; release keystore хранится отдельно
-от репозитория и не пересоздаётся между версиями.
+```text
+OrexRay-<version>-debug-android.apk
+OrexRay-<version>-debug-windows-x64.zip
+OrexRay-<version>-release-android-arm64-v8a.apk
+OrexRay-<version>-release-android-armeabi-v7a.apk
+OrexRay-<version>-release-android-x86_64.apk
+OrexRay-<version>-release-windows-x64-setup.exe
+SHA256SUMS.txt
+```
+
+Debug Android использует отдельный application id `ru.orex.ray.debug` и имя
+`OrexRay Debug`, поэтому может быть установлен рядом с release. Windows debug
+упаковывается целиком вместе с DLL/assets и pinned Xray Core; один `.exe` отдельно
+не является полноценной portable-сборкой.
+
+Для ADB-сценариев есть отдельный сборщик диагностики:
+
+```powershell
+# Собрать debug, установить на подключённый телефон, запустить и начать capture:
+powershell -ExecutionPolicy Bypass -File tool\collect_orexray_android_logs.ps1 `
+  -PrepareDebug -Area vpn-switch
+
+# Проверить отмену зависшего connecting:
+powershell -ExecutionPolicy Bypass -File tool\collect_orexray_android_logs.ps1 `
+  -Area vpn-cancel
+
+# Снять batterystats/power/alarm/jobscheduler:
+powershell -ExecutionPolicy Bypass -File tool\collect_orexray_android_logs.ps1 `
+  -Area battery
+```
+
+Подробности:
+
+- [общая схема сборок](docs/release-builds.md);
+- [Android release](docs/release-android.md);
+- [Windows release](docs/release-windows.md);
+- [Android debug/ADB](docs/android-debugging.md).
+
+Release автоматически подписывается Gradle через `android/key.properties` или
+`OREX_ANDROID_*`. Debug использует обычный Android debug signing. Release keystore
+хранится отдельно от репозитория и не пересоздаётся между версиями.
 
 ## 13. Текущий статус
 
@@ -459,7 +500,7 @@ Gradle через `android/key.properties` или `OREX_ANDROID_*`. Для priva
   health-состояние; зелёный glow означает только подтверждённый успешный ping;
 - импорт Xray JSON поддерживает объект, массив, файл, буфер обмена и HTTP(S) URL;
 - экспорт умеет сохранять `.json` и копировать один объект или массив выбранных;
-- long-press включает множественный выбор; в этом режиме карточки можно переставлять долгим перетаскиванием, а bulk ping/export/delete остаются рядом с обычными действиями;
+- long-press включает множественный выбор; в этом режиме карточки переставляются за отдельный drag-handle, а bulk ping/export/delete остаются рядом с обычными действиями;
 - profile screen не подписан на высокочастотные traffic snapshots, а
   неперекрывающиеся glass-карточки используют grouped backdrop blur;
 - Android Quick Settings tile и restart state работают из отдельного VPN-process;

@@ -29,7 +29,7 @@ keyPassword=<KEY_PASSWORD>
 Рекомендуемая команда:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tool\build_android_release.ps1
+powershell -ExecutionPolicy Bypass -File tool\build_release.ps1 -Platform android
 ```
 
 Скрипт запускает `pub get`, `analyze`, `test`, затем:
@@ -41,10 +41,10 @@ flutter build apk --release --split-per-abi --no-pub
 и собирает готовую папку:
 
 ```text
-dist\android\<x.y.z+n>\
-  OrexRay-<version>-android-arm64-v8a.apk
-  OrexRay-<version>-android-armeabi-v7a.apk
-  OrexRay-<version>-android-x86_64.apk
+dist\release\<x.y.z+n>\
+  OrexRay-<version>-release-android-arm64-v8a.apk
+  OrexRay-<version>-release-android-armeabi-v7a.apk
+  OrexRay-<version>-release-android-x86_64.apk
   SHA256SUMS.txt
 ```
 
@@ -55,7 +55,7 @@ dist\android\<x.y.z+n>\
 ```powershell
 & "$env:LOCALAPPDATA\Android\Sdk\build-tools\<VERSION>\apksigner.bat" `
   verify --verbose --print-certs `
-  "dist\android\<version>\OrexRay-<version>-android-arm64-v8a.apk"
+  "dist\release\<version>\OrexRay-<version>-release-android-arm64-v8a.apk"
 ```
 
 У обновлений должны сохраняться package id и certificate SHA-256, а
@@ -71,8 +71,7 @@ dist\android\<x.y.z+n>\
 копирование/экспорт одного и выбранных профилей
 множественный выбор, массовый ping/delete, drag-and-drop порядка
 VPN connect/disconnect
-отмена подключения во время состояния «подключение» и повторный успешный connect
-быстрая смена профиля при активном VPN несколько раз подряд
+смена профиля при активном VPN
 TCP/UDP через TUN
 локальный SOCKS5/HTTP параллельно VPN
 split tunneling: only/exclude

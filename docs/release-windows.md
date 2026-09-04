@@ -11,7 +11,7 @@ winget install --id JRSoftware.InnoSetup -e `
 ```
 
 Windows bundle также включает закреплённый Xray Core. Сейчас Windows pin
-остаётся на `26.4.13`; `prepare_xray_core.ps1` проверяет SHA-256 архива перед
+остаётся на `26.4.13`; `prepare_xray_core.ps1` принимает Debug/Release configuration и проверяет SHA-256 архива перед
 копированием `xray.exe`, `wintun.dll`, `geoip.dat` и `geosite.dat`.
 
 ## Сборка
@@ -19,7 +19,7 @@ Windows bundle также включает закреплённый Xray Core. �
 Рекомендуемая команда:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tool\build_windows_release.ps1
+powershell -ExecutionPolicy Bypass -File tool\build_release.ps1 -Platform windows
 ```
 
 Скрипт выполняет:
@@ -36,8 +36,8 @@ Inno Setup
 Результат:
 
 ```text
-dist\windows\<x.y.z+n>\
-  OrexRay-Setup-<version>.exe
+dist\release\<x.y.z+n>\
+  OrexRay-<version>-release-windows-x64-setup.exe
   SHA256SUMS.txt
 ```
 

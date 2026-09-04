@@ -1,3 +1,8 @@
+param(
+  [ValidateSet('Debug', 'Release')]
+  [string]$Configuration = 'Release'
+)
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -6,8 +11,8 @@ $ArchiveName = "Xray-windows-64-v$Version.zip"
 $DownloadUrl = "https://github.com/XTLS/Xray-core/releases/download/v$Version/Xray-windows-64.zip"
 $ExpectedSha256 = '8b8bac59966883e97d6b11a91c6db6115e6bbfcea4c94695bb77de6356ef0034'
 $HashFileName = "xray-core.sha256"
-$ReleaseDir = Join-Path $PSScriptRoot '..\..\build\windows\x64\runner\Release'
-$TargetDir = Join-Path $ReleaseDir 'xray-core'
+$RunnerDir = Join-Path $PSScriptRoot "..\..\build\windows\x64\runner\$Configuration"
+$TargetDir = Join-Path $RunnerDir 'xray-core'
 $TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("orexray-xray-" + [guid]::NewGuid().ToString('N'))
 $ArchivePath = Join-Path $TempRoot $ArchiveName
 $ExtractDir = Join-Path $TempRoot 'extracted'
@@ -74,8 +79,9 @@ function Download-FileWithRetry {
 }
 
 try {
-  if (-not (Test-Path $ReleaseDir)) {
-    throw "Windows release build not found: $ReleaseDir. Run flutter build windows --release first."
+  if (-not (Test-Path $RunnerDir)) {
+    $FlutterMode = $Configuration.ToLowerInvariant()
+    throw "Windows $Configuration build not found: $RunnerDir. Run flutter build windows --$FlutterMode first."
   }
 
   New-Item -ItemType Directory -Force -Path $TempRoot, $ExtractDir | Out-Null

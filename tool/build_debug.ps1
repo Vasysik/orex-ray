@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 & (Join-Path $PSScriptRoot 'build_channel.ps1') `
-  -Mode release `
+  -Mode debug `
   -Platform $Platform `
   -SkipChecks:$SkipChecks `
   -ReuseFlutterBuilds:$ReuseFlutterBuilds
