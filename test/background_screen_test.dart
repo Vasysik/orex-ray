@@ -47,7 +47,8 @@ void main() {
         findsOneWidget,
       );
       expect(find.byIcon(Icons.swipe_rounded), findsNothing);
-      expect(find.text('Интервал статистики'), findsOneWidget);
+      expect(find.text('Интервал интерфейса'), findsOneWidget);
+      expect(find.text('Интервал скорости в уведомлении'), findsOneWidget);
       expect(find.text('Интервал пинга'), findsOneWidget);
       expect(find.textContaining('Первый замер примерно через 5 с'), findsOneWidget);
 

@@ -10,12 +10,18 @@ import '../../shared/widgets/status_pill.dart';
 import 'tunnel_controller.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.tunnel});
+  const HomeScreen({
+    super.key,
+    required this.tunnel,
+    this.active = true,
+  });
 
   final TunnelController tunnel;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
+    if (!active) return const SizedBox.shrink();
     return AnimatedBuilder(
       animation: tunnel,
       builder: (context, _) {
@@ -121,10 +127,12 @@ class _Header extends StatelessWidget {
 
     if (!showStatus) return brand;
     final profile = snapshot.profile;
-    final timedOut = snapshot.isConnected &&
-        tunnel.effectivePingStatusFor(profile) == PingStatus.timeout;
-    final label = timedOut
-        ? 'Таймаут'
+    final pingStatus = snapshot.isConnected
+        ? tunnel.effectivePingStatusFor(profile)
+        : PingStatus.unknown;
+    final routeFailed = _routeFailed(pingStatus);
+    final label = routeFailed
+        ? _routeFailureTitle(pingStatus)
         : switch (snapshot.status) {
             TunnelStatus.connected => 'Защищено',
             TunnelStatus.connecting => 'Подключение',
@@ -138,8 +146,8 @@ class _Header extends StatelessWidget {
         const SizedBox(width: 16),
         StatusPill(
           label: label,
-          active: snapshot.isConnected && !timedOut,
-          color: timedOut ? OrexColors.dangerStrong : null,
+          active: snapshot.isConnected && !routeFailed,
+          color: routeFailed ? OrexColors.dangerStrong : null,
         ),
       ],
     );
@@ -294,7 +302,7 @@ class _ConnectionHero extends StatelessWidget {
     final pingStatus = active
         ? tunnel.effectivePingStatusFor(profile)
         : PingStatus.unknown;
-    final timedOut = pingStatus == PingStatus.timeout;
+    final routeFailed = _routeFailed(pingStatus);
 
     return GlassPanel(
       borderRadius: 28,
@@ -303,7 +311,7 @@ class _ConnectionHero extends StatelessWidget {
         children: [
           if (showStatusText) ...[
             Text(
-              timedOut ? 'Таймаут' : _statusTitle(snapshot.status),
+              routeFailed ? _routeFailureTitle(pingStatus) : _statusTitle(snapshot.status),
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
@@ -312,7 +320,7 @@ class _ConnectionHero extends StatelessWidget {
             snapshot.message ??
                 (hasProfile
                     ? 'Готовы подключить ${profile.name}'
-                    : 'Сначала добавьте VLESS-профиль'),
+                    : 'Сначала добавьте профиль'),
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -357,10 +365,10 @@ class _ConnectButton extends StatelessWidget {
     final active = snapshot.isConnected;
     final busy = snapshot.isBusy;
     final canTap = enabled && !busy;
-    final timedOut = active && pingStatus == PingStatus.timeout;
+    final routeFailed = active && _routeFailed(pingStatus);
     final pingConfirmed = active && pingStatus == PingStatus.success;
-    final healthConfirmed = timedOut || pingConfirmed;
-    final glowColor = timedOut
+    final healthConfirmed = routeFailed || pingConfirmed;
+    final glowColor = routeFailed
         ? OrexColors.dangerStrong
         : pingConfirmed
             ? OrexColors.online
@@ -369,7 +377,7 @@ class _ConnectButton extends StatelessWidget {
       button: true,
       enabled: canTap,
       label: active
-          ? timedOut
+          ? routeFailed
               ? 'Отключить OrexRay, маршрут не отвечает'
               : 'Отключить OrexRay'
           : 'Подключить OrexRay',
@@ -402,7 +410,7 @@ class _ConnectButton extends StatelessWidget {
               boxShadow: [
                 BoxShadow(
                   color: glowColor.withValues(
-                    alpha: timedOut
+                    alpha: routeFailed
                         ? 0.58
                         : pingConfirmed
                             ? 0.32
@@ -707,7 +715,7 @@ class _NoProfileCard extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 5),
         Text(
-          'Откройте вкладку «Профили» и импортируйте или создайте VLESS-профиль',
+          'Откройте вкладку «Профили» и импортируйте или создайте профиль',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall,
         ),
@@ -872,6 +880,15 @@ String _pingLabel(TunnelController tunnel, TunnelTarget? target) {
   final ping = tunnel.effectiveLatencyFor(target);
   return ping == null ? '—' : '$ping мс';
 }
+
+bool _routeFailed(PingStatus status) =>
+    status == PingStatus.timeout || status == PingStatus.unavailable;
+
+String _routeFailureTitle(PingStatus status) => switch (status) {
+      PingStatus.timeout => 'Таймаут',
+      PingStatus.unavailable => 'Нет ответа',
+      _ => 'Нет ответа',
+    };
 
 String _statusTitle(TunnelStatus status) => switch (status) {
       TunnelStatus.disconnected => 'Не подключено',

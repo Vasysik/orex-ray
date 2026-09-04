@@ -55,6 +55,7 @@ class MainActivity : FlutterActivity() {
         val httpPort: Int,
         val localProxyInVpn: Boolean,
         val statsIntervalSeconds: Int,
+        val notificationStatsIntervalSeconds: Int,
         val pingIntervalSeconds: Int,
         val showNotificationSpeed: Boolean,
         val showNotificationPing: Boolean,
@@ -139,7 +140,12 @@ class MainActivity : FlutterActivity() {
                                 call.argument<Boolean>("localProxyInVpn") ?: true,
                             statsIntervalSeconds = (
                                 call.argument<Int>("statsIntervalSeconds") ?: 2
-                            ).let { if (it in setOf(1, 2, 5, 10)) it else 2 },
+                            ).let { if (it in setOf(1, 2, 3, 5, 10)) it else 2 },
+                            notificationStatsIntervalSeconds = (
+                                call.argument<Int>("notificationStatsIntervalSeconds") ?: 5
+                            ).let {
+                                if (it in setOf(5, 10, 15, 30, 60)) it else 5
+                            },
                             pingIntervalSeconds = (
                                 call.argument<Int>("pingIntervalSeconds") ?: 60
                             ).let {
@@ -211,6 +217,8 @@ class MainActivity : FlutterActivity() {
                             updateRuntimeSettings(
                                 statsIntervalSeconds = call.argument<Int>("statsIntervalSeconds")
                                     ?: 2,
+                                notificationStatsIntervalSeconds =
+                                    call.argument<Int>("notificationStatsIntervalSeconds") ?: 5,
                                 pingIntervalSeconds = call.argument<Int>("pingIntervalSeconds")
                                     ?: 60,
                                 showNotificationSpeed =
@@ -659,6 +667,10 @@ class MainActivity : FlutterActivity() {
                 request.statsIntervalSeconds,
             )
             .putExtra(
+                OrexRayVpnService.EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                request.notificationStatsIntervalSeconds,
+            )
+            .putExtra(
                 OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,
                 request.pingIntervalSeconds,
             )
@@ -743,6 +755,7 @@ class MainActivity : FlutterActivity() {
 
     private fun updateRuntimeSettings(
         statsIntervalSeconds: Int,
+        notificationStatsIntervalSeconds: Int,
         pingIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
@@ -752,6 +765,10 @@ class MainActivity : FlutterActivity() {
             .putExtra(
                 OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
                 statsIntervalSeconds,
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                notificationStatsIntervalSeconds,
             )
             .putExtra(
                 OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,

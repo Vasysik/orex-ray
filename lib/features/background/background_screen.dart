@@ -35,11 +35,9 @@ class BackgroundScreen extends StatelessWidget {
               ListTile(
                 leading:
                     const Icon(Icons.speed_rounded, color: OrexColors.copper),
-                title: const Text('Интервал статистики'),
-                subtitle: Text(
-                  'Интерфейс: ${settings.statsIntervalSeconds} с · '
-                  'уведомление в фоне: '
-                  '${_backgroundStatsInterval(settings.statsIntervalSeconds)} с',
+                title: const Text('Интервал интерфейса'),
+                subtitle: const Text(
+                  'Как часто обновлять скорость и счётчики, пока OrexRay открыт.',
                 ),
                 trailing: DropdownButton<int>(
                   value: settings.statsIntervalSeconds,
@@ -47,6 +45,7 @@ class BackgroundScreen extends StatelessWidget {
                   items: const [
                     DropdownMenuItem(value: 1, child: Text('1 с')),
                     DropdownMenuItem(value: 2, child: Text('2 с')),
+                    DropdownMenuItem(value: 3, child: Text('3 с')),
                     DropdownMenuItem(value: 5, child: Text('5 с')),
                     DropdownMenuItem(value: 10, child: Text('10 с')),
                   ],
@@ -56,6 +55,60 @@ class BackgroundScreen extends StatelessWidget {
                 ),
               ),
               if (showAndroidNotificationSettings) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(
+                    Icons.notifications_active_outlined,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Интервал скорости в уведомлении'),
+                  subtitle: const Text(
+                    'Работает только в фоне, когда показ скорости включён.',
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: settings.notificationStatsIntervalSeconds,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(value: 5, child: Text('5 с')),
+                      DropdownMenuItem(value: 10, child: Text('10 с')),
+                      DropdownMenuItem(value: 15, child: Text('15 с')),
+                      DropdownMenuItem(value: 30, child: Text('30 с')),
+                      DropdownMenuItem(value: 60, child: Text('1 мин')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        settings.setNotificationStatsIntervalSeconds(value);
+                      }
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(
+                    Icons.timer_outlined,
+                    color: OrexColors.copper,
+                  ),
+                  title: const Text('Интервал пинга'),
+                  subtitle: Text(
+                    'Первый замер примерно через 5 с, затем '
+                    '${_pingIntervalLabel(settings.pingIntervalSeconds)}. '
+                    'В фоне работает только при включённом пинге в уведомлении.',
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: settings.pingIntervalSeconds,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(value: 15, child: Text('15 с')),
+                      DropdownMenuItem(value: 30, child: Text('30 с')),
+                      DropdownMenuItem(value: 60, child: Text('1 мин')),
+                      DropdownMenuItem(value: 120, child: Text('2 мин')),
+                      DropdownMenuItem(value: 300, child: Text('5 мин')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) settings.setPingIntervalSeconds(value);
+                    },
+                  ),
+                ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(
@@ -96,33 +149,6 @@ class BackgroundScreen extends StatelessWidget {
                   ),
                   value: settings.showNotificationPing,
                   onChanged: settings.setShowNotificationPing,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(
-                    Icons.timer_outlined,
-                    color: OrexColors.copper,
-                  ),
-                  title: const Text('Интервал пинга'),
-                  subtitle: Text(
-                    'Первый замер примерно через 5 с, затем '
-                    '${_pingIntervalLabel(settings.pingIntervalSeconds)}. '
-                    'В фоне работает только при включённом пинге в уведомлении.',
-                  ),
-                  trailing: DropdownButton<int>(
-                    value: settings.pingIntervalSeconds,
-                    underline: const SizedBox.shrink(),
-                    items: const [
-                      DropdownMenuItem(value: 15, child: Text('15 с')),
-                      DropdownMenuItem(value: 30, child: Text('30 с')),
-                      DropdownMenuItem(value: 60, child: Text('1 мин')),
-                      DropdownMenuItem(value: 120, child: Text('2 мин')),
-                      DropdownMenuItem(value: 300, child: Text('5 мин')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) settings.setPingIntervalSeconds(value);
-                    },
-                  ),
                 ),
               ],
             ],
@@ -236,8 +262,6 @@ class BackgroundScreen extends StatelessWidget {
     );
   }
 }
-
-int _backgroundStatsInterval(int seconds) => seconds < 5 ? 5 : seconds;
 
 String _pingIntervalLabel(int seconds) => switch (seconds) {
       60 => 'раз в минуту',

@@ -410,7 +410,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([profiles, tunnel, tunnel.egressChanges]),
+      animation: Listenable.merge([profiles, tunnel.egressChanges]),
       builder: (context, _) {
         final currentProfiles = profiles.profiles;
         final validIds = currentProfiles.map((profile) => profile.id).toSet();
@@ -463,65 +463,69 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            if (_selectionMode)
-              _ProfilesSelectionHeader(
-                selectedCount: _selectedProfileIds.length,
-                allSelected: _selectedProfileIds.length == currentProfiles.length,
-                refreshingLatency: tunnel.refreshingLatency,
-                onClose: _clearSelection,
-                onSelectAll: _selectAll,
-                onPing: _pingSelected,
-                onExport: () => _exportSelected(context),
-                onReorder: _startReorder,
-                onDelete: () => _deleteSelected(context),
-              )
-            else
-              _ProfilesHeader(
+            AnimatedBuilder(
+              animation: tunnel.profileUiChanges,
+              builder: (context, _) => _ProfilesHeader(
                 refreshingLatency: tunnel.refreshingLatency,
                 canRefreshLatency: currentProfiles.isNotEmpty,
+                selectionMode: _selectionMode,
+                allSelected:
+                    _selectedProfileIds.length == currentProfiles.length,
                 onOpenProfileMenu: () => widget.owner._showProfileMenu(context),
                 onRefreshLatency: tunnel.refreshAllLatencies,
+                onCloseSelection: _clearSelection,
+                onSelectAll: _selectAll,
+                onPingSelected: _pingSelected,
+                onExportSelected: () => _exportSelected(context),
+                onReorder: _startReorder,
+                onDeleteSelected: () => _deleteSelected(context),
               ),
+            ),
             const SizedBox(height: 20),
             if (currentProfiles.isEmpty)
               _EmptyProfiles(
                 onImport: () => widget.owner._showProfileMenu(context),
               )
             else ...[
-              _SectionTitle(title: 'Серверы', count: currentProfiles.length),
+              _SectionTitle(
+                title: 'Серверы',
+                count: currentProfiles.length,
+                selectedCount:
+                    _selectionMode ? _selectedProfileIds.length : null,
+              ),
               const SizedBox(height: 10),
               for (final profile in currentProfiles)
-                  Padding(
-                    key: ValueKey(profile.id),
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _ProfileCard(
-                      profile: profile,
-                      identity: tunnel.egressIdentityFor(profile.id),
-                      selected: activeTarget?.id == profile.id,
-                      multiSelected: _selectedProfileIds.contains(profile.id),
-                      selectionMode: _selectionMode,
-                      onSelect: () => _selectionMode
-                          ? _toggleSelection(profile.id)
-                          : tunnel.selectTarget(profile.id),
-                      onLongPress: () => _enterSelection(profile.id),
-                      latencyMs: profile.latencyMs,
-                      onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
-                          ? () => tunnel.refreshProfileLatency(profile.id)
-                          : null,
-                      onEdit: () =>
-                          widget.owner._showEditProfileDialog(context, profile),
-                      onExport: () => widget.owner._showXrayJsonExportMenu(
-                        context,
-                        profileId: profile.id,
-                        suggestedBaseName: profile.name,
-                      ),
-                      onDelete: () => widget.owner._deleteTarget(
-                        context,
-                        profile.id,
-                        profile.name,
-                      ),
+                Padding(
+                  key: ValueKey(profile.id),
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _ProfileCard(
+                    profile: profile,
+                    identity: tunnel.egressIdentityFor(profile.id),
+                    selected: activeTarget?.id == profile.id,
+                    multiSelected: _selectedProfileIds.contains(profile.id),
+                    selectionMode: _selectionMode,
+                    onSelect: () => _selectionMode
+                        ? _toggleSelection(profile.id)
+                        : tunnel.selectTarget(profile.id),
+                    onLongPress: () => _enterSelection(profile.id),
+                    latencyMs: profile.latencyMs,
+                    onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
+                        ? () => tunnel.refreshProfileLatency(profile.id)
+                        : null,
+                    onEdit: () =>
+                        widget.owner._showEditProfileDialog(context, profile),
+                    onExport: () => widget.owner._showXrayJsonExportMenu(
+                      context,
+                      profileId: profile.id,
+                      suggestedBaseName: profile.name,
+                    ),
+                    onDelete: () => widget.owner._deleteTarget(
+                      context,
+                      profile.id,
+                      profile.name,
                     ),
                   ),
+                ),
               if (!_selectionMode && profiles.balancers.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 _SectionTitle(
@@ -568,90 +572,6 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
   }
 }
 
-class _ProfilesSelectionHeader extends StatelessWidget {
-  const _ProfilesSelectionHeader({
-    required this.selectedCount,
-    required this.allSelected,
-    required this.refreshingLatency,
-    required this.onClose,
-    required this.onSelectAll,
-    required this.onPing,
-    required this.onExport,
-    required this.onReorder,
-    required this.onDelete,
-  });
-
-  final int selectedCount;
-  final bool allSelected;
-  final bool refreshingLatency;
-  final VoidCallback onClose;
-  final VoidCallback onSelectAll;
-  final Future<void> Function() onPing;
-  final VoidCallback onExport;
-  final VoidCallback onReorder;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassPanel(
-      borderRadius: 22,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: 'Закрыть выбор',
-                onPressed: onClose,
-                icon: const Icon(Icons.close_rounded),
-              ),
-              Expanded(
-                child: Text(
-                  'Выбрано: $selectedCount',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              IconButton(
-                tooltip: allSelected ? 'Выбраны все' : 'Выбрать все',
-                onPressed: allSelected ? null : onSelectAll,
-                icon: const Icon(Icons.select_all_rounded),
-              ),
-            ],
-          ),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 4,
-            children: [
-              IconButton(
-                tooltip: 'Проверить пинг выбранных',
-                onPressed: refreshingLatency ? null : () => onPing(),
-                icon: const Icon(Icons.network_ping_rounded),
-              ),
-              IconButton(
-                tooltip: 'Экспортировать выбранные',
-                onPressed: onExport,
-                icon: const Icon(Icons.ios_share_rounded),
-              ),
-              IconButton(
-                tooltip: 'Изменить порядок',
-                onPressed: onReorder,
-                icon: const Icon(Icons.swap_vert_rounded),
-              ),
-              IconButton(
-                tooltip: 'Удалить выбранные',
-                onPressed: onDelete,
-                color: OrexColors.danger,
-                icon: const Icon(Icons.delete_outline_rounded),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ProfilesReorderHeader extends StatelessWidget {
   const _ProfilesReorderHeader({required this.onDone});
 
@@ -694,14 +614,30 @@ class _ProfilesHeader extends StatelessWidget {
   const _ProfilesHeader({
     required this.refreshingLatency,
     required this.canRefreshLatency,
+    required this.selectionMode,
+    required this.allSelected,
     required this.onOpenProfileMenu,
     required this.onRefreshLatency,
+    required this.onCloseSelection,
+    required this.onSelectAll,
+    required this.onPingSelected,
+    required this.onExportSelected,
+    required this.onReorder,
+    required this.onDeleteSelected,
   });
 
   final bool refreshingLatency;
   final bool canRefreshLatency;
+  final bool selectionMode;
+  final bool allSelected;
   final VoidCallback onOpenProfileMenu;
   final Future<void> Function() onRefreshLatency;
+  final VoidCallback onCloseSelection;
+  final VoidCallback onSelectAll;
+  final Future<void> Function() onPingSelected;
+  final VoidCallback onExportSelected;
+  final VoidCallback onReorder;
+  final VoidCallback onDeleteSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -717,30 +653,70 @@ class _ProfilesHeader extends StatelessWidget {
       ],
     );
 
-    final actions = Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        OutlinedButton.icon(
-          onPressed: onOpenProfileMenu,
-          icon: const Icon(Icons.add_rounded),
-          label: const Row(
-            mainAxisSize: MainAxisSize.min,
+    final actions = selectionMode
+        ? Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text('Профиль'),
-              SizedBox(width: 4),
-              Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+              IconButton(
+                tooltip: 'Закрыть выбор',
+                onPressed: onCloseSelection,
+                icon: const Icon(Icons.close_rounded),
+              ),
+              IconButton(
+                tooltip: allSelected ? 'Выбраны все' : 'Выбрать все',
+                onPressed: allSelected ? null : onSelectAll,
+                icon: const Icon(Icons.select_all_rounded),
+              ),
+              IconButton(
+                tooltip: 'Проверить пинг выбранных',
+                onPressed: refreshingLatency ? null : () => onPingSelected(),
+                icon: const Icon(Icons.network_ping_rounded),
+              ),
+              IconButton(
+                tooltip: 'Экспортировать выбранные',
+                onPressed: onExportSelected,
+                icon: const Icon(Icons.ios_share_rounded),
+              ),
+              IconButton(
+                tooltip: 'Изменить порядок',
+                onPressed: onReorder,
+                icon: const Icon(Icons.swap_vert_rounded),
+              ),
+              IconButton(
+                tooltip: 'Удалить выбранные',
+                onPressed: onDeleteSelected,
+                color: OrexColors.danger,
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
             ],
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed:
-              refreshingLatency || !canRefreshLatency ? null : onRefreshLatency,
-          icon: const Icon(Icons.network_ping_rounded),
-          label: const Text('Проверить пинг'),
-        ),
-      ],
-    );
+          )
+        : Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: onOpenProfileMenu,
+                icon: const Icon(Icons.add_rounded),
+                label: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Профиль'),
+                    SizedBox(width: 4),
+                    Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: refreshingLatency || !canRefreshLatency
+                    ? null
+                    : onRefreshLatency,
+                icon: const Icon(Icons.network_ping_rounded),
+                label: const Text('Проверить пинг'),
+              ),
+            ],
+          );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -768,10 +744,15 @@ class _ProfilesHeader extends StatelessWidget {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, required this.count});
+  const _SectionTitle({
+    required this.title,
+    required this.count,
+    this.selectedCount,
+  });
 
   final String title;
   final int count;
+  final int? selectedCount;
 
   @override
   Widget build(BuildContext context) {
@@ -785,6 +766,17 @@ class _SectionTitle extends StatelessWidget {
                 )),
         const SizedBox(width: 8),
         Text('$count', style: Theme.of(context).textTheme.bodySmall),
+        if (selectedCount case final selected?) ...[
+          const SizedBox(width: 10),
+          Text(
+            '· ВЫДЕЛЕНО $selected',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: OrexColors.copper,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.7,
+                ),
+          ),
+        ],
       ],
     );
   }
@@ -857,83 +849,88 @@ class _ProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassPanel(
-      borderRadius: 22,
-      tint: multiSelected || selected ? OrexColors.copper : null,
-      opacity: multiSelected
-          ? 0.24
-          : selected
-              ? 0.16
-              : 0.50,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        onTap: onSelect,
-        onLongPress: onLongPress,
-        leading: EgressAvatar(
-          identity: identity,
-          selected: selected || multiSelected,
-        ),
-        title: Row(
-          children: [
-            Expanded(
-                child: Text(profile.name,
-                    maxLines: 1, overflow: TextOverflow.ellipsis)),
-            _PingBadge(
-              latencyMs: latencyMs,
-              onTap: onRefreshPing,
-            ),
-          ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 5),
-          child: Text(
-            '${profile.endpoint}\n${profile.protocol} · ${profile.transportLabel}',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+    return RepaintBoundary(
+      child: GlassPanel(
+        borderRadius: 22,
+        tint: multiSelected ? OrexColors.copper : null,
+        opacity: multiSelected ? 0.24 : 0.50,
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
           ),
-        ),
-        isThreeLine: true,
-        trailing: reorderIndex != null
-            ? ReorderableDragStartListener(
-                index: reorderIndex!,
-                child: const Padding(
-                  padding: EdgeInsets.all(10),
-                  child: Icon(Icons.drag_handle_rounded),
+          onTap: onSelect,
+          onLongPress: onLongPress,
+          leading: EgressAvatar(
+            identity: identity,
+            selected: selected || multiSelected,
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  profile.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              )
-            : selectionMode
-                ? Checkbox(
-                    value: multiSelected,
-                    onChanged: (_) => onSelect(),
-                  )
-                : PopupMenuButton<String>(
-                    onSelected: (value) {
-                      if (value == 'edit') onEdit();
-                      if (value == 'ping') onRefreshPing?.call();
-                      if (value == 'export') onExport();
-                      if (value == 'delete') onDelete();
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: Text('Редактировать'),
-                      ),
-                      PopupMenuItem(
-                        value: 'ping',
-                        enabled: onRefreshPing != null,
-                        child: const Text('Проверить пинг'),
-                      ),
-                      const PopupMenuItem(
-                        value: 'export',
-                        child: Text('Экспорт JSON Xray'),
-                      ),
-                      const PopupMenuDivider(),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Удалить'),
-                      ),
-                    ],
+              ),
+              _PingBadge(
+                latencyMs: latencyMs,
+                onTap: onRefreshPing,
+              ),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child: Text(
+              '${profile.endpoint}\n${profile.protocol} · ${profile.transportLabel}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          isThreeLine: true,
+          trailing: reorderIndex != null
+              ? ReorderableDragStartListener(
+                  index: reorderIndex!,
+                  child: const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Icon(Icons.drag_handle_rounded),
                   ),
+                )
+              : selectionMode
+                  ? Checkbox(
+                      value: multiSelected,
+                      onChanged: (_) => onSelect(),
+                    )
+                  : PopupMenuButton<String>(
+                      onSelected: (value) {
+                        if (value == 'edit') onEdit();
+                        if (value == 'ping') onRefreshPing?.call();
+                        if (value == 'export') onExport();
+                        if (value == 'delete') onDelete();
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Text('Редактировать'),
+                        ),
+                        PopupMenuItem(
+                          value: 'ping',
+                          enabled: onRefreshPing != null,
+                          child: const Text('Проверить пинг'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'export',
+                          child: Text('Экспорт JSON Xray'),
+                        ),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Удалить'),
+                        ),
+                      ],
+                    ),
+        ),
       ),
     );
   }
@@ -1004,8 +1001,7 @@ class _BalancerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassPanel(
       borderRadius: 22,
-      tint: selected ? OrexColors.copper : null,
-      opacity: selected ? 0.16 : 0.50,
+      opacity: 0.50,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         onTap: onSelect,
@@ -1667,14 +1663,6 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                   _field(_password, 'REALITY public key / password'),
                   _field(_shortId, 'Short ID'),
                 ],
-                if (_security == 'tls')
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Allow insecure'),
-                    value: _allowInsecure,
-                    onChanged: (value) =>
-                        setState(() => _allowInsecure = value),
-                  ),
                 if (_transport == 'websocket' ||
                     _transport == 'xhttp' ||
                     _transport == 'httpupgrade') ...[

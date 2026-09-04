@@ -112,6 +112,7 @@ void main() {
     await engine.waitForInitialState();
     await engine.updateRuntimeSettings(
       statsIntervalSeconds: 2,
+      notificationStatsIntervalSeconds: 30,
       pingIntervalSeconds: 120,
       showNotificationSpeed: false,
       showNotificationPing: false,
@@ -119,6 +120,11 @@ void main() {
 
     final runtimeSettings = calls.singleWhere(
       (call) => call.method == 'updateRuntimeSettings',
+    );
+    expect(
+      (runtimeSettings.arguments
+          as Map<Object?, Object?>)['notificationStatsIntervalSeconds'],
+      30,
     );
     expect(
       (runtimeSettings.arguments

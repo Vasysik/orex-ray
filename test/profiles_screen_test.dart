@@ -107,7 +107,7 @@ void main() {
 
     await tester.longPress(find.text('Copy-all'));
     await tester.pumpAndSettle();
-    expect(find.text('Выбрано: 1'), findsOneWidget);
+    expect(find.textContaining('ВЫДЕЛЕНО 1'), findsOneWidget);
     await tester.tap(find.byTooltip('Экспортировать выбранные'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Копировать массив JSON'));
@@ -153,7 +153,7 @@ void main() {
 
     await tester.longPress(find.text('Bulk-actions'));
     await tester.pumpAndSettle();
-    expect(find.text('Выбрано: 1'), findsOneWidget);
+    expect(find.textContaining('ВЫДЕЛЕНО 1'), findsOneWidget);
     expect(find.byTooltip('Проверить пинг выбранных'), findsOneWidget);
     expect(find.byTooltip('Экспортировать выбранные'), findsOneWidget);
     expect(find.byTooltip('Удалить выбранные'), findsOneWidget);

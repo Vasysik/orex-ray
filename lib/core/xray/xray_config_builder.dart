@@ -409,7 +409,6 @@ class XrayConfigBuilder {
         if (profile.serverName.isNotEmpty) 'serverName': profile.serverName,
         'fingerprint': profile.fingerprint,
         if (profile.alpn.isNotEmpty) 'alpn': profile.alpn,
-        if (profile.allowInsecure) 'allowInsecure': true,
       };
     }
 

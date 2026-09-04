@@ -100,6 +100,25 @@ void main() {
     expect(rules, hasLength(1));
   });
 
+  test('does not emit removed allowInsecure for legacy profiles', () {
+    final legacyTarget = TunnelTarget.single(
+      profile.copyWith(
+        security: 'tls',
+        serverName: 'example.com',
+        allowInsecure: true,
+      ),
+    );
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildLocalProxy(legacyTarget),
+    ) as Map<String, dynamic>;
+    final outbound =
+        (json['outbounds'] as List).first as Map<String, dynamic>;
+    final stream = outbound['streamSettings'] as Map<String, dynamic>;
+    final tls = stream['tlsSettings'] as Map<String, dynamic>;
+
+    expect(tls.containsKey('allowInsecure'), isFalse);
+  });
+
   test('keeps local SOCKS and HTTP proxy available next to VPN TUN', () {
     final json = jsonDecode(
       const XrayConfigBuilder().buildAndroidTun(target),

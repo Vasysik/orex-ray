@@ -60,6 +60,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val EXTRA_HTTP_PORT = "http_port"
         const val EXTRA_LOCAL_PROXY_IN_VPN = "local_proxy_in_vpn"
         const val EXTRA_STATS_INTERVAL_SECONDS = "stats_interval_seconds"
+        const val EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS =
+            "notification_stats_interval_seconds"
         const val EXTRA_PING_INTERVAL_SECONDS = "ping_interval_seconds"
         const val EXTRA_SHOW_NOTIFICATION_SPEED = "show_notification_speed"
         const val EXTRA_SHOW_NOTIFICATION_PING = "show_notification_ping"
@@ -148,6 +150,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private var activeHttpPort = 20809
     private var activeLocalProxyInVpn = true
     private var activeStatsIntervalSeconds = 2
+    private var activeNotificationStatsIntervalSeconds = 5
     private var activePingIntervalSeconds = 60
     private var lastStatsSampleElapsedMs = 0L
 
@@ -231,6 +234,13 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                                 commandIntent.getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, 2),
                             )
                             restored.putExtra(
+                                EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                                commandIntent.getIntExtra(
+                                    EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                                    5,
+                                ),
+                            )
+                            restored.putExtra(
                                 EXTRA_PING_INTERVAL_SECONDS,
                                 commandIntent.getIntExtra(EXTRA_PING_INTERVAL_SECONDS, 60),
                             )
@@ -251,9 +261,26 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 }
                 val nextInterval = commandIntent
                     .getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, activeStatsIntervalSeconds)
-                    .let { if (it in setOf(1, 2, 5, 10)) it else activeStatsIntervalSeconds }
+                    .let {
+                        if (it in setOf(1, 2, 3, 5, 10)) it else activeStatsIntervalSeconds
+                    }
                 val intervalChanged = nextInterval != activeStatsIntervalSeconds
                 activeStatsIntervalSeconds = nextInterval
+                val nextNotificationStatsInterval = commandIntent
+                    .getIntExtra(
+                        EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                        activeNotificationStatsIntervalSeconds,
+                    )
+                    .let {
+                        if (it in setOf(5, 10, 15, 30, 60)) {
+                            it
+                        } else {
+                            activeNotificationStatsIntervalSeconds
+                        }
+                    }
+                val notificationStatsIntervalChanged =
+                    nextNotificationStatsInterval != activeNotificationStatsIntervalSeconds
+                activeNotificationStatsIntervalSeconds = nextNotificationStatsInterval
                 val nextPingInterval = commandIntent
                     .getIntExtra(EXTRA_PING_INTERVAL_SECONDS, activePingIntervalSeconds)
                     .let {
@@ -277,6 +304,10 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 showNotificationPing = nextShowNotificationPing
                 activeStartIntent?.apply {
                     putExtra(EXTRA_STATS_INTERVAL_SECONDS, activeStatsIntervalSeconds)
+                    putExtra(
+                        EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                        activeNotificationStatsIntervalSeconds,
+                    )
                     putExtra(EXTRA_PING_INTERVAL_SECONDS, activePingIntervalSeconds)
                     putExtra(EXTRA_SHOW_NOTIFICATION_SPEED, showNotificationSpeed)
                     putExtra(EXTRA_SHOW_NOTIFICATION_PING, showNotificationPing)
@@ -284,11 +315,14 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 OrexRayStartIntentStore.updateRuntimeSettings(
                     this,
                     activeStatsIntervalSeconds,
+                    activeNotificationStatsIntervalSeconds,
                     activePingIntervalSeconds,
                     showNotificationSpeed,
                     showNotificationPing,
                 )
-                updateStatsLoopState(restart = intervalChanged)
+                updateStatsLoopState(
+                    restart = intervalChanged || notificationStatsIntervalChanged,
+                )
                 updatePingLoopState(
                     restart = pingIntervalChanged ||
                         (notificationPingChanged && showNotificationPing),
@@ -400,7 +434,10 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     commandIntent.getBooleanExtra(EXTRA_LOCAL_PROXY_IN_VPN, true)
                 activeStatsIntervalSeconds = commandIntent
                     .getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, 2)
-                    .let { if (it in setOf(1, 2, 5, 10)) it else 2 }
+                    .let { if (it in setOf(1, 2, 3, 5, 10)) it else 2 }
+                activeNotificationStatsIntervalSeconds = commandIntent
+                    .getIntExtra(EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS, 5)
+                    .let { if (it in setOf(5, 10, 15, 30, 60)) it else 5 }
                 activePingIntervalSeconds = commandIntent
                     .getIntExtra(EXTRA_PING_INTERVAL_SECONDS, 60)
                     .let { if (it in setOf(15, 30, 60, 120, 300)) it else 60 }
@@ -918,7 +955,11 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             (statsUiActive || isNotificationSpeedVisible())
 
     private fun statsPollIntervalSeconds(): Int =
-        if (statsUiActive) activeStatsIntervalSeconds else max(5, activeStatsIntervalSeconds)
+        if (statsUiActive) {
+            activeStatsIntervalSeconds
+        } else {
+            activeNotificationStatsIntervalSeconds
+        }
 
     private fun isNotificationChannelVisible(): Boolean {
         val manager = getSystemService(NotificationManager::class.java)

@@ -50,6 +50,7 @@ class TunnelController extends ChangeNotifier {
         return;
       }
       final previous = _engineSnapshot;
+      final profileUiChanged = _profileUiStateChanged(previous, value);
       final becameConnected = value.isConnected && !previous.isConnected;
       if (_latencyContextChanged(previous, value)) {
         _latencyContextRevision++;
@@ -82,6 +83,7 @@ class TunnelController extends ChangeNotifier {
       if (disconnectedVpnTargetId != null) {
         _schedulePendingVpnDirectLatency(disconnectedVpnTargetId);
       }
+      if (profileUiChanged) _profileUiRevision.value++;
       notifyListeners();
     });
     _lastSelectedTargetId = _profiles.selectedTarget?.id;
@@ -129,6 +131,7 @@ class TunnelController extends ChangeNotifier {
   ];
   final Map<String, EgressIdentity> _egressIdentities = {};
   final ValueNotifier<int> _egressRevision = ValueNotifier<int>(0);
+  final ValueNotifier<int> _profileUiRevision = ValueNotifier<int>(0);
   late final ExitLocationRefreshCoordinator _egressRefreshCoordinator;
   LatencyProbeResult? _activeRouteLatency;
   String? _activeRouteLatencyTargetId;
@@ -223,6 +226,11 @@ class TunnelController extends ChangeNotifier {
   }
 
   Listenable get egressChanges => _egressRevision;
+
+  /// Low-frequency presentation changes used by profile/connection screens.
+  /// Traffic stats intentionally do not bump this notifier, otherwise hidden
+  /// glass-heavy pages rebuild on every 1-2 second sample.
+  Listenable get profileUiChanges => _profileUiRevision;
 
   List<TunnelTarget> get targets => _profiles.targets;
 
@@ -432,6 +440,7 @@ class TunnelController extends ChangeNotifier {
         status: TunnelStatus.error,
         errorMessage: 'Сначала выбери профиль или балансировщик.',
       );
+      _profileUiRevision.value++;
       notifyListeners();
       return;
     }
@@ -589,6 +598,7 @@ class TunnelController extends ChangeNotifier {
     }
 
     _routeLatencyRefreshCount++;
+    _profileUiRevision.value++;
     notifyListeners();
     try {
       // Android reports the connection immediately after Xray starts. Give the
@@ -632,7 +642,10 @@ class TunnelController extends ChangeNotifier {
       );
     } finally {
       _routeLatencyRefreshCount--;
-      if (!_closing) notifyListeners();
+      if (!_closing) {
+        _profileUiRevision.value++;
+        notifyListeners();
+      }
     }
   }
 
@@ -939,6 +952,7 @@ class TunnelController extends ChangeNotifier {
   void _syncFromEngine() {
     final next = _engine.current;
     final previous = _engineSnapshot;
+    final profileUiChanged = _profileUiStateChanged(previous, next);
     final becameConnected = next.isConnected && !previous.isConnected;
     if (_latencyContextChanged(previous, next)) {
       _latencyContextRevision++;
@@ -962,8 +976,19 @@ class TunnelController extends ChangeNotifier {
       final targetId = _pendingVpnDirectLatencyTargetId;
       if (targetId != null) _schedulePendingVpnDirectLatency(targetId);
     }
-    if (!_closing) notifyListeners();
+    if (!_closing) {
+      if (profileUiChanged) _profileUiRevision.value++;
+      notifyListeners();
+    }
   }
+
+  static bool _profileUiStateChanged(
+    TunnelSnapshot previous,
+    TunnelSnapshot next,
+  ) =>
+      previous.status != next.status ||
+      previous.mode != next.mode ||
+      previous.profile?.id != next.profile?.id;
 
   void _clearRouteLatencyIfStale() {
     if (_engineSnapshot.isConnected &&
@@ -1041,6 +1066,7 @@ class TunnelController extends ChangeNotifier {
     if (_lastConfiguredMode != configuredMode) {
       _lastConfiguredMode = configuredMode;
       _latencyContextRevision++;
+      _profileUiRevision.value++;
     }
     final routeProbeUri = _settings.latencyProbeUri;
     if (_lastRouteProbeUri != routeProbeUri) {
@@ -1061,6 +1087,8 @@ class TunnelController extends ChangeNotifier {
       unawaited(
         (_engine as TunnelRuntimeSettingsSink).updateRuntimeSettings(
           statsIntervalSeconds: _settings.statsIntervalSeconds,
+          notificationStatsIntervalSeconds:
+              _settings.notificationStatsIntervalSeconds,
           pingIntervalSeconds: _settings.pingIntervalSeconds,
           showNotificationSpeed: _settings.showNotificationSpeed,
           showNotificationPing: _settings.showNotificationPing,
@@ -1131,6 +1159,7 @@ class TunnelController extends ChangeNotifier {
     _egressRefreshCoordinator.dispose();
     _detachDependencies();
     _egressRevision.dispose();
+    _profileUiRevision.dispose();
     unawaited(_shutdownFuture ??= _disposeWithoutStopping());
     super.dispose();
   }

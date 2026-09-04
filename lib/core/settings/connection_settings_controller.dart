@@ -94,6 +94,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     required String geoProxyRules,
     required String geoBlockRules,
     required int statsIntervalSeconds,
+    required int notificationStatsIntervalSeconds,
     required int pingIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
@@ -122,6 +123,7 @@ class ConnectionSettingsController extends ChangeNotifier {
         _geoProxyRules = geoProxyRules,
         _geoBlockRules = geoBlockRules,
         _statsIntervalSeconds = statsIntervalSeconds,
+        _notificationStatsIntervalSeconds = notificationStatsIntervalSeconds,
         _pingIntervalSeconds = pingIntervalSeconds,
         _showNotificationSpeed = showNotificationSpeed,
         _showNotificationPing = showNotificationPing,
@@ -150,6 +152,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   static const _geoProxyRulesKey = 'orex_ray_geo_proxy_rules_v1';
   static const _geoBlockRulesKey = 'orex_ray_geo_block_rules_v1';
   static const _statsIntervalKey = 'orex_ray_stats_interval_v1';
+  static const _notificationStatsIntervalKey =
+      'orex_ray_notification_stats_interval_v1';
   static const _pingIntervalKey = 'orex_ray_ping_interval_v1';
   static const _notificationSpeedKey = 'orex_ray_notification_speed_v1';
   static const _notificationPingKey = 'orex_ray_notification_ping_v1';
@@ -185,6 +189,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   String _geoProxyRules;
   String _geoBlockRules;
   int _statsIntervalSeconds;
+  int _notificationStatsIntervalSeconds;
   int _pingIntervalSeconds;
   bool _showNotificationSpeed;
   bool _showNotificationPing;
@@ -243,6 +248,10 @@ class ConnectionSettingsController extends ChangeNotifier {
       geoBlockRules: preferences.getString(_geoBlockRulesKey)?.trim() ?? '',
       statsIntervalSeconds:
           _validStatsInterval(preferences.getInt(_statsIntervalKey)) ?? 2,
+      notificationStatsIntervalSeconds: _validNotificationStatsInterval(
+            preferences.getInt(_notificationStatsIntervalKey),
+          ) ??
+          5,
       pingIntervalSeconds:
           _validPingInterval(preferences.getInt(_pingIntervalKey)) ?? 60,
       showNotificationSpeed: preferences.getBool(_notificationSpeedKey) ?? true,
@@ -283,6 +292,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   String get geoProxyRulesText => _geoProxyRules;
   String get geoBlockRulesText => _geoBlockRules;
   int get statsIntervalSeconds => _statsIntervalSeconds;
+  int get notificationStatsIntervalSeconds => _notificationStatsIntervalSeconds;
   int get pingIntervalSeconds => _pingIntervalSeconds;
   bool get showNotificationSpeed => _showNotificationSpeed;
   bool get showNotificationPing => _showNotificationPing;
@@ -496,11 +506,26 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setStatsIntervalSeconds(int value) async {
     final normalized = _validStatsInterval(value);
     if (normalized == null) {
-      throw const FormatException('Интервал должен быть 1, 2, 5 или 10 секунд');
+      throw const FormatException(
+        'Интервал интерфейса должен быть 1, 2, 3, 5 или 10 секунд',
+      );
     }
     if (_statsIntervalSeconds == normalized) return;
     _statsIntervalSeconds = normalized;
     await _preferences.setInt(_statsIntervalKey, normalized);
+    notifyListeners();
+  }
+
+  Future<void> setNotificationStatsIntervalSeconds(int value) async {
+    final normalized = _validNotificationStatsInterval(value);
+    if (normalized == null) {
+      throw const FormatException(
+        'Интервал уведомления должен быть 5, 10, 15, 30 или 60 секунд',
+      );
+    }
+    if (_notificationStatsIntervalSeconds == normalized) return;
+    _notificationStatsIntervalSeconds = normalized;
+    await _preferences.setInt(_notificationStatsIntervalKey, normalized);
     notifyListeners();
   }
 
@@ -594,7 +619,10 @@ class ConnectionSettingsController extends ChangeNotifier {
       value != null && value >= 1280 && value <= 9000 ? value : null;
 
   static int? _validStatsInterval(int? value) =>
-      const {1, 2, 5, 10}.contains(value) ? value : null;
+      const {1, 2, 3, 5, 10}.contains(value) ? value : null;
+
+  static int? _validNotificationStatsInterval(int? value) =>
+      const {5, 10, 15, 30, 60}.contains(value) ? value : null;
 
   static int? _validPingInterval(int? value) =>
       const {15, 30, 60, 120, 300}.contains(value) ? value : null;
