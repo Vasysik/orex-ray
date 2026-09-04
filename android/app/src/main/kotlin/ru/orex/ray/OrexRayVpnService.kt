@@ -191,9 +191,13 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             ACTION_QUERY_DIAGNOSTICS -> return handleDiagnosticsQuery(commandIntent, startId)
 
             ACTION_STOP -> {
+                debugInfo(
+                    "ACTION_STOP startId=$startId targetId=${activeTargetId ?: "-"} " +
+                        "running=${coreController?.isRunning == true} stopping=$stopping",
+                )
                 restartServiceOnKill = false
                 clearRestartState()
-                worker.execute { stopTunnel() }
+                worker.execute { stopTunnel(stopStartId = startId) }
                 return Service.START_NOT_STICKY
             }
 
@@ -392,6 +396,11 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 OrexRayDiagnosticsStore.lastError = null
                 val config = commandIntent.getStringExtra(EXTRA_CONFIG)
                 val mode = commandIntent.getStringExtra(EXTRA_MODE) ?: MODE_VPN
+                debugInfo(
+                    "ACTION_START startId=$startId mode=$mode " +
+                        "targetId=${commandIntent.getStringExtra(EXTRA_TARGET_ID) ?: "-"} " +
+                        "running=${coreController?.isRunning == true} stopping=$stopping",
+                )
                 // A stale Activity must not replace metadata for a live core.
                 // Dart waits for runtime hydration too, but keep the service
                 // safe against any duplicate ACTION_START intent.
@@ -1038,8 +1047,15 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         )
     }
 
-    private fun stopTunnel() {
-        if (stopping) return
+    private fun stopTunnel(stopStartId: Int? = null) {
+        if (stopping) {
+            debugInfo("stopTunnel ignored: already stopping")
+            return
+        }
+        debugInfo(
+            "stopTunnel begin stopStartId=${stopStartId ?: -1} " +
+                "targetId=${activeTargetId ?: "-"} running=${coreController?.isRunning == true}",
+        )
         stopping = true
         activeStartIntent = null
         clearRestartState()
@@ -1083,7 +1099,20 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             ),
         )
         debugInfo("Xray stopped mode=$activeMode")
-        stopSelf()
+        if (stopStartId == null) {
+            stopSelf()
+        } else {
+            // During an in-app profile switch a new ACTION_START can arrive
+            // immediately after the disconnected event above. A plain
+            // stopSelf() from the old STOP command can then kill that newer
+            // start and leave Dart stuck in "connecting". stopSelfResult()
+            // only stops this service when no newer start command exists.
+            val stopped = stopSelfResult(stopStartId)
+            debugInfo(
+                "stopSelfResult($stopStartId)=$stopped; " +
+                    "a newer ACTION_START keeps the service alive when false",
+            )
+        }
     }
 
     private fun cleanupAfterFailure() {

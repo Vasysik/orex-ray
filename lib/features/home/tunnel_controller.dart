@@ -457,7 +457,14 @@ class TunnelController extends ChangeNotifier {
     await waitForInitialState();
     if (_closing) return;
     final current = snapshot;
-    if (current.isBusy) return;
+    if (current.status == TunnelStatus.connecting) {
+      // A start can wait on Android VPN permission or on the native core.
+      // Treat a second press as an explicit cancellation instead of trapping
+      // the user behind a disabled button.
+      await disconnect();
+      return;
+    }
+    if (current.status == TunnelStatus.disconnecting) return;
     if (current.isConnected) {
       await disconnect();
       return;

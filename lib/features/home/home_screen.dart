@@ -363,8 +363,10 @@ class _ConnectButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final active = snapshot.isConnected;
-    final busy = snapshot.isBusy;
-    final canTap = enabled && !busy;
+    final connecting = snapshot.status == TunnelStatus.connecting;
+    final disconnecting = snapshot.status == TunnelStatus.disconnecting;
+    final busy = connecting || disconnecting;
+    final canTap = enabled && !disconnecting;
     final routeFailed = active && _routeFailed(pingStatus);
     final pingConfirmed = active && pingStatus == PingStatus.success;
     final healthConfirmed = routeFailed || pingConfirmed;
@@ -376,11 +378,15 @@ class _ConnectButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: canTap,
-      label: active
-          ? routeFailed
-              ? 'Отключить OrexRay, маршрут не отвечает'
-              : 'Отключить OrexRay'
-          : 'Подключить OrexRay',
+      label: connecting
+          ? 'Отменить подключение OrexRay'
+          : active
+              ? routeFailed
+                  ? 'Отключить OrexRay, маршрут не отвечает'
+                  : 'Отключить OrexRay'
+              : disconnecting
+                  ? 'OrexRay отключается'
+                  : 'Подключить OrexRay',
       child: GestureDetector(
         onTap: canTap ? () => onTap() : null,
         child: AnimatedOpacity(
@@ -423,13 +429,24 @@ class _ConnectButton extends StatelessWidget {
             ),
             child: Center(
               child: busy
-                  ? const SizedBox(
-                      width: 38,
-                      height: 38,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        color: OrexColors.cream,
-                      ),
+                  ? Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        const SizedBox(
+                          width: 42,
+                          height: 42,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: OrexColors.cream,
+                          ),
+                        ),
+                        if (connecting)
+                          const Icon(
+                            Icons.close_rounded,
+                            color: OrexColors.cream,
+                            size: 24,
+                          ),
+                      ],
                     )
                   : Icon(
                       active

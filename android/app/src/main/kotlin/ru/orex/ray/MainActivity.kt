@@ -167,6 +167,10 @@ class MainActivity : FlutterActivity() {
                                 .orEmpty(),
                         )
 
+                        debugInfo(
+                            "Start requested mode=${request.mode} " +
+                                "targetId=${request.targetId ?: "-"}",
+                        )
                         runCatching { startRequestedMode(request) }
                             .onSuccess { result.success(null) }
                             .onFailure { error ->
@@ -180,6 +184,7 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "stop" -> {
+                        debugInfo("Stop requested from Flutter")
                         runCatching { stopCoreService() }
                             .onSuccess { result.success(null) }
                             .onFailure { error ->
@@ -609,7 +614,18 @@ class MainActivity : FlutterActivity() {
 
         val request = pendingStart
         pendingStart = null
-        if (resultCode == Activity.RESULT_OK && request != null) {
+        if (request == null) {
+            // Flutter may have cancelled while the system VPN permission
+            // activity was on top. Never turn that deliberate cancellation
+            // into a misleading permission error or revive the old request.
+            debugInfo("VPN permission result ignored: start was cancelled")
+            OrexRayTunnelEvents.emitTransient(
+                this,
+                OrexRayTunnelEvents.event(status = "disconnected", mode = MODE_VPN),
+            )
+            return
+        }
+        if (resultCode == Activity.RESULT_OK) {
             runCatching { startCoreService(request) }
                 .onFailure { error ->
                     Log.e(TAG, "Could not start VPN service after permission", error)
@@ -627,7 +643,7 @@ class MainActivity : FlutterActivity() {
                 this,
                 OrexRayTunnelEvents.event(
                     status = "error",
-                    mode = request?.mode ?: MODE_VPN,
+                    mode = request.mode,
                     errorMessage = "Разрешение VPN не выдано",
                 ),
             )

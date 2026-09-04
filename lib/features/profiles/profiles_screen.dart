@@ -314,6 +314,7 @@ class _ProfilesBody extends StatefulWidget {
 
 class _ProfilesBodyState extends State<_ProfilesBody> {
   final Set<String> _selectedProfileIds = <String>{};
+  String? _draggingProfileId;
 
   ProfilesController get profiles => widget.owner.profiles;
   TunnelController get tunnel => widget.owner.tunnel;
@@ -400,8 +401,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'При активном VPN меняй профиль на главной. Здесь переключение '
-            'доступно после отключения.',
+            'Сменить профиль при активном VPN можно на главном экране. '
+            'На этой странице переключение доступно после отключения VPN.',
           ),
         ),
       );
@@ -526,10 +527,39 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
           header: header,
           footer: footer,
           itemCount: currentProfiles.length,
+          onReorderStart: (index) {
+            if (!mounted || index < 0 || index >= currentProfiles.length) return;
+            setState(() => _draggingProfileId = currentProfiles[index].id);
+          },
+          onReorderEnd: (_) {
+            if (mounted && _draggingProfileId != null) {
+              setState(() => _draggingProfileId = null);
+            }
+          },
+          proxyDecorator: (child, index, animation) {
+            return AnimatedBuilder(
+              animation: animation,
+              child: child,
+              builder: (context, child) {
+                final scale = Tween<double>(
+                  begin: 1,
+                  end: 1.015,
+                ).evaluate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                    reverseCurve: Curves.easeInCubic,
+                  ),
+                );
+                return Transform.scale(scale: scale, child: child);
+              },
+            );
+          },
           onReorderItem: profiles.reorderProfiles,
           itemBuilder: (context, index) {
             final profile = currentProfiles[index];
-            final card = Padding(
+            return Padding(
+              key: ValueKey(profile.id),
               padding: const EdgeInsets.only(bottom: 12),
               child: _ProfileCard(
                 profile: profile,
@@ -537,6 +567,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                 selected: activeTarget?.id == profile.id,
                 multiSelected: _selectedProfileIds.contains(profile.id),
                 selectionMode: _selectionMode,
+                reorderIndex: index,
+                dragging: _draggingProfileId == profile.id,
                 onSelect: () => _selectionMode
                     ? _toggleSelection(profile.id)
                     : _selectFromProfiles(context, profile.id),
@@ -559,12 +591,6 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                   profile.name,
                 ),
               ),
-            );
-            return ReorderableDelayedDragStartListener(
-              key: ValueKey(profile.id),
-              index: index,
-              enabled: _selectionMode,
-              child: card,
             );
           },
         );
@@ -783,6 +809,8 @@ class _ProfileCard extends StatelessWidget {
     required this.selected,
     required this.multiSelected,
     required this.selectionMode,
+    required this.reorderIndex,
+    required this.dragging,
     required this.onSelect,
     required this.onLongPress,
     required this.latencyMs,
@@ -797,6 +825,8 @@ class _ProfileCard extends StatelessWidget {
   final bool selected;
   final bool multiSelected;
   final bool selectionMode;
+  final int reorderIndex;
+  final bool dragging;
   final VoidCallback onSelect;
   final VoidCallback? onLongPress;
   final int? latencyMs;
@@ -810,8 +840,13 @@ class _ProfileCard extends StatelessWidget {
     return RepaintBoundary(
       child: GlassPanel(
         borderRadius: 22,
+        blur: dragging ? 0 : 18,
         tint: multiSelected ? OrexColors.copper : null,
-        opacity: multiSelected ? 0.24 : 0.50,
+        opacity: dragging
+            ? 0.88
+            : multiSelected
+                ? 0.24
+                : 0.50,
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
@@ -848,9 +883,28 @@ class _ProfileCard extends StatelessWidget {
           ),
           isThreeLine: true,
           trailing: selectionMode
-              ? Checkbox(
-                  value: multiSelected,
-                  onChanged: (_) => onSelect(),
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value: multiSelected,
+                      onChanged: (_) => onSelect(),
+                    ),
+                    const SizedBox(width: 2),
+                    Tooltip(
+                      message: 'Перетащить профиль',
+                      child: ReorderableDragStartListener(
+                        index: reorderIndex,
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.grab,
+                          child: const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(Icons.drag_indicator_rounded),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 )
               : PopupMenuButton<String>(
                       onSelected: (value) {

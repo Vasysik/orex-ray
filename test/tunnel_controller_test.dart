@@ -47,6 +47,38 @@ void main() {
     expect(controller.snapshot.status, TunnelStatus.disconnected);
   });
 
+  test('second toggle cancels an in-progress connection', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Cancelable',
+    );
+    final engine = _ConnectingTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      operatingSystem: 'android',
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.toggle();
+    expect(controller.snapshot.status, TunnelStatus.connecting);
+
+    await controller.toggle();
+
+    expect(engine.stopCalls, 1);
+    expect(controller.snapshot.status, TunnelStatus.disconnected);
+  });
+
   test('Android defaults to VPN and supports local proxy', () async {
     SharedPreferences.setMockInitialValues({});
     final settings = await ConnectionSettingsController.load(
@@ -1117,6 +1149,53 @@ class _RecordingTunnelEngine implements TunnelEngine {
   Future<void> dispose() async {
     disposeCalls += 1;
   }
+}
+
+class _ConnectingTunnelEngine implements TunnelEngine {
+  final StreamController<TunnelSnapshot> _snapshots =
+      StreamController<TunnelSnapshot>.broadcast();
+  TunnelSnapshot _current = const TunnelSnapshot(
+    status: TunnelStatus.disconnected,
+    stats: TrafficStats(),
+  );
+  int stopCalls = 0;
+
+  @override
+  TunnelSnapshot get current => _current;
+
+  @override
+  Stream<TunnelSnapshot> get snapshots => _snapshots.stream;
+
+  @override
+  Set<ConnectionMode> get supportedModes => const {
+        ConnectionMode.vpnTun,
+        ConnectionMode.localProxy,
+      };
+
+  @override
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    _current = TunnelSnapshot(
+      status: TunnelStatus.connecting,
+      mode: mode,
+      profile: profile,
+      stats: const TrafficStats(),
+      message: 'Создаём подключение…',
+    );
+    _snapshots.add(_current);
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+    _current = _current.copyWith(
+      status: TunnelStatus.disconnected,
+      clearMessage: true,
+    );
+    _snapshots.add(_current);
+  }
+
+  @override
+  Future<void> dispose() => _snapshots.close();
 }
 
 class _DelayedStopTunnelEngine implements TunnelEngine {

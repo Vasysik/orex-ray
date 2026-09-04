@@ -160,8 +160,9 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, 'Экспорт'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Удалить'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Готово'), findsOneWidget);
-    expect(find.byType(ReorderableDelayedDragStartListener), findsOneWidget);
-    expect(find.byIcon(Icons.swap_vert_rounded), findsNothing);
+    expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
+    expect(find.byType(ReorderableDragStartListener), findsOneWidget);
+    expect(find.byIcon(Icons.drag_indicator_rounded), findsOneWidget);
   });
 
   testWidgets('profile tab does not switch target while VPN is active',
@@ -219,7 +220,7 @@ void main() {
 
     expect(profiles.selectedTarget?.id, first.id);
     expect(
-      find.textContaining('При активном VPN меняй профиль на главной'),
+      find.textContaining('Сменить профиль при активном VPN можно на главном экране'),
       findsOneWidget,
     );
   });
