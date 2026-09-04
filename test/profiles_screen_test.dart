@@ -107,8 +107,9 @@ void main() {
 
     await tester.longPress(find.text('Copy-all'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('ВЫДЕЛЕНО 1'), findsOneWidget);
-    await tester.tap(find.byTooltip('Экспортировать выбранные'));
+    expect(find.text('ВЫДЕЛЕНО'), findsOneWidget);
+    expect(find.text('1'), findsWidgets);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Экспорт'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Копировать массив JSON'));
     await tester.pump();
@@ -119,7 +120,7 @@ void main() {
     expect(decoded as List, hasLength(1));
   });
 
-  testWidgets('long press selection exposes bulk actions and reorder mode',
+  testWidgets('long press selection exposes bulk actions and direct drag',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();
@@ -153,15 +154,74 @@ void main() {
 
     await tester.longPress(find.text('Bulk-actions'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('ВЫДЕЛЕНО 1'), findsOneWidget);
-    expect(find.byTooltip('Проверить пинг выбранных'), findsOneWidget);
-    expect(find.byTooltip('Экспортировать выбранные'), findsOneWidget);
-    expect(find.byTooltip('Удалить выбранные'), findsOneWidget);
+    expect(find.text('ВЫДЕЛЕНО'), findsOneWidget);
+    expect(find.text('1'), findsWidgets);
+    expect(find.widgetWithText(OutlinedButton, 'Пинг'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Экспорт'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Удалить'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Готово'), findsOneWidget);
+    expect(find.byType(ReorderableDelayedDragStartListener), findsOneWidget);
+    expect(find.byIcon(Icons.swap_vert_rounded), findsNothing);
+  });
 
-    await tester.tap(find.byTooltip('Изменить порядок'));
+  testWidgets('profile tab does not switch target while VPN is active',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final first = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@first.example:443'
+      '?encryption=none&security=none&type=tcp#First-active',
+    );
+    final second = await profiles.createProfile(
+      TunnelProfile(
+        id: 'second-active',
+        name: 'Second-active',
+        address: 'second.example',
+        port: 443,
+        userId: '22222222-2222-4222-8222-222222222222',
+      ),
+    );
+    await profiles.select(first.id);
+    final engine = _MutableProfilesTestTunnelEngine();
+    final tunnel = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      egressRefreshPolicy: const ExitLocationRefreshPolicy.disabled(),
+      routeLatencyProbe: _FixedProfilesRouteLatencyProbe(
+        const LatencyProbeResult.unavailable(),
+      ),
+      routeProbeStartupDelay: Duration.zero,
+      operatingSystem: 'android',
+    );
+    await tunnel.connect();
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('Порядок серверов'), findsOneWidget);
-    expect(find.text('Готово'), findsOneWidget);
+
+    await tester.tap(find.text(second.name));
+    await tester.pump();
+
+    expect(profiles.selectedTarget?.id, first.id);
+    expect(
+      find.textContaining('При активном VPN меняй профиль на главной'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('create menu no longer contains profile export', (tester) async {
@@ -335,6 +395,7 @@ void main() {
         const LatencyProbeResult.success(123),
       ),
       routeProbeStartupDelay: Duration.zero,
+      operatingSystem: 'windows',
     );
     addTearDown(() {
       tunnel.dispose();
@@ -372,6 +433,11 @@ void main() {
 
     await tunnel.refreshProfileLatency(inactive.id);
     expect(directProbe.calls, 1);
+
+    // Cancel the Windows desktop ping timer before flutter_test checks for
+    // leaked fake timers at the end of the widget test.
+    await tunnel.disconnect();
+    await tester.pump();
   });
 }
 

@@ -691,6 +691,13 @@ class _QuickInfo extends StatelessWidget {
           OrexChoiceSheetOption<String>(
             value: target.id,
             icon: target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
+            leading: EgressAvatar(
+              identity: tunnel.egressIdentityFor(target.id),
+              fallbackIcon:
+                  target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
+              selected: selectedId == target.id,
+              size: 38,
+            ),
             title: target.name,
             subtitle: '${target.endpoint} · '
                 '${tunnel.effectiveLatencyFor(target) == null ? 'Пинг —' : '${tunnel.effectiveLatencyFor(target)} мс'}',

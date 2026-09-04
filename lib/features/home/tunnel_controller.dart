@@ -22,16 +22,17 @@ class TunnelController extends ChangeNotifier {
     ExitLocationRefreshPolicy? egressRefreshPolicy,
     TunnelRouteLatencyProbe? routeLatencyProbe,
     Duration routeProbeStartupDelay = const Duration(milliseconds: 350),
+    String? operatingSystem,
   })  : _engine = engine,
         _profiles = profiles,
         _settings = settings,
         _routeLatencyProbe = routeLatencyProbe ?? TunnelRouteLatencyProbe(),
         _routeProbeStartupDelay = routeProbeStartupDelay,
+        _operatingSystem = operatingSystem ?? Platform.operatingSystem,
         _engineSnapshot = engine.current {
     _egressRefreshCoordinator = ExitLocationRefreshCoordinator(
       policy: egressRefreshPolicy ??
-          ExitLocationRefreshPolicy.forOperatingSystem(
-              Platform.operatingSystem),
+          ExitLocationRefreshPolicy.forOperatingSystem(_operatingSystem),
       activeTargetId: () =>
           _engineSnapshot.isConnected ? _engineSnapshot.profile?.id : null,
       canRefresh: _canRefreshEgressTarget,
@@ -74,6 +75,7 @@ class TunnelController extends ChangeNotifier {
       } else {
         _egressRefreshCoordinator.stopPeriodic();
       }
+      _syncDesktopPingTimer();
       if (becameConnected) {
         _handleBecameConnected(value);
       }
@@ -98,6 +100,7 @@ class TunnelController extends ChangeNotifier {
       _egressRefreshCoordinator.startPeriodic();
       unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.connected));
     }
+    _syncDesktopPingTimer();
   }
 
   final TunnelEngine _engine;
@@ -105,6 +108,7 @@ class TunnelController extends ChangeNotifier {
   final ConnectionSettingsController _settings;
   final TunnelRouteLatencyProbe _routeLatencyProbe;
   final Duration _routeProbeStartupDelay;
+  final String _operatingSystem;
   late final StreamSubscription<TunnelSnapshot> _engineSubscription;
   TunnelSnapshot _engineSnapshot;
   Future<void>? _shutdownFuture;
@@ -119,6 +123,8 @@ class TunnelController extends ChangeNotifier {
   ConnectionMode? _lastConfiguredMode;
   String? _pendingVpnDirectLatencyTargetId;
   Future<void>? _automaticRouteLatencyFuture;
+  Timer? _desktopPingTimer;
+  int? _desktopPingTimerSeconds;
   int? _automaticRouteLatencyContextRevision;
   int? _automaticRouteLatencyProbeConfigurationRevision;
   String? _lastRuntimeMetadataKey;
@@ -304,8 +310,8 @@ class TunnelController extends ChangeNotifier {
     final reconnect = _engineSnapshot.isConnected;
     final activeMode = _engineSnapshot.mode;
     if (reconnect) {
-      await _engine.stop();
-      _syncFromEngine();
+      final stopped = await _stopForTargetSwitch();
+      if (!stopped) return;
     }
 
     await _profiles.select(id);
@@ -316,6 +322,37 @@ class TunnelController extends ChangeNotifier {
         await _engine.start(selected, activeMode);
         _syncFromEngine();
       }
+    }
+  }
+
+  Future<bool> _stopForTargetSwitch() async {
+    if (!_engineSnapshot.isConnected && !_engineSnapshot.isBusy) return true;
+
+    final settled = Completer<void>();
+    late final StreamSubscription<TunnelSnapshot> subscription;
+    subscription = _engine.snapshots.listen((snapshot) {
+      if (!settled.isCompleted &&
+          (snapshot.status == TunnelStatus.disconnected ||
+              snapshot.status == TunnelStatus.error)) {
+        settled.complete();
+      }
+    });
+    try {
+      await _engine.stop();
+      _syncFromEngine();
+      if (_engine.current.status != TunnelStatus.disconnected &&
+          _engine.current.status != TunnelStatus.error) {
+        try {
+          await settled.future.timeout(const Duration(seconds: 12));
+        } on TimeoutException {
+          _syncFromEngine();
+          return false;
+        }
+      }
+      _syncFromEngine();
+      return _engine.current.status == TunnelStatus.disconnected;
+    } finally {
+      await subscription.cancel();
     }
   }
 
@@ -809,6 +846,33 @@ class TunnelController extends ChangeNotifier {
     );
   }
 
+  void _syncDesktopPingTimer() {
+    if (_operatingSystem != 'windows' ||
+        _closing ||
+        !_engineSnapshot.isConnected) {
+      _desktopPingTimer?.cancel();
+      _desktopPingTimer = null;
+      _desktopPingTimerSeconds = null;
+      return;
+    }
+
+    final seconds = _settings.pingIntervalSeconds;
+    if (_desktopPingTimer != null && _desktopPingTimerSeconds == seconds) {
+      return;
+    }
+    _desktopPingTimer?.cancel();
+    _desktopPingTimerSeconds = seconds;
+    _desktopPingTimer = Timer.periodic(Duration(seconds: seconds), (_) {
+      if (_closing || !_engineSnapshot.isConnected) return;
+      unawaited(
+        _refreshRouteLatencyForLifecycle(
+          expectedTargetId: _engineSnapshot.profile?.id,
+          waitForProxy: false,
+        ),
+      );
+    });
+  }
+
   Future<void> _waitForEgressProxy({int attempts = 8}) async {
     Object? lastError;
     for (var attempt = 1; attempt <= attempts; attempt++) {
@@ -921,6 +985,8 @@ class TunnelController extends ChangeNotifier {
 
   Future<void> _shutdown() async {
     _closing = true;
+    _desktopPingTimer?.cancel();
+    _desktopPingTimer = null;
     _egressRefreshCoordinator.dispose();
     _detachDependencies();
     await _cancelEngineSubscription();
@@ -933,6 +999,8 @@ class TunnelController extends ChangeNotifier {
 
   Future<void> _disposeWithoutStopping() async {
     _closing = true;
+    _desktopPingTimer?.cancel();
+    _desktopPingTimer = null;
     _egressRefreshCoordinator.dispose();
     _detachDependencies();
     await _cancelEngineSubscription();
@@ -969,6 +1037,7 @@ class TunnelController extends ChangeNotifier {
     if (!next.isConnected && !next.isBusy) {
       _lastRuntimeMetadataKey = null;
     }
+    _syncDesktopPingTimer();
     if (becameConnected) {
       _handleBecameConnected(next);
     }
@@ -1095,6 +1164,7 @@ class TunnelController extends ChangeNotifier {
         ),
       );
     }
+    _syncDesktopPingTimer();
     notifyListeners();
   }
 
@@ -1156,6 +1226,8 @@ class TunnelController extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     _closing = true;
+    _desktopPingTimer?.cancel();
+    _desktopPingTimer = null;
     _egressRefreshCoordinator.dispose();
     _detachDependencies();
     _egressRevision.dispose();

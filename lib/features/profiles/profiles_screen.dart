@@ -314,7 +314,6 @@ class _ProfilesBody extends StatefulWidget {
 
 class _ProfilesBodyState extends State<_ProfilesBody> {
   final Set<String> _selectedProfileIds = <String>{};
-  bool _reorderMode = false;
 
   ProfilesController get profiles => widget.owner.profiles;
   TunnelController get tunnel => widget.owner.tunnel;
@@ -395,16 +394,20 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     );
   }
 
-  void _startReorder() {
-    setState(() {
-      _selectedProfileIds.clear();
-      _reorderMode = true;
-    });
-  }
-
-  void _finishReorder() {
-    if (!_reorderMode) return;
-    setState(() => _reorderMode = false);
+  Future<void> _selectFromProfiles(BuildContext context, String id) async {
+    final snapshot = tunnel.snapshot;
+    if (snapshot.isConnected || snapshot.isBusy) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'При активном VPN меняй профиль на главной. Здесь переключение '
+            'доступно после отключения.',
+          ),
+        ),
+      );
+      return;
+    }
+    await tunnel.selectTarget(id);
   }
 
   @override
@@ -417,51 +420,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
         _selectedProfileIds.removeWhere((id) => !validIds.contains(id));
         final activeTarget = profiles.selectedTarget;
 
-        if (_reorderMode) {
-          return ReorderableListView.builder(
-            padding: const EdgeInsets.all(20),
-            buildDefaultDragHandles: false,
-            header: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _ProfilesReorderHeader(onDone: _finishReorder),
-                const SizedBox(height: 20),
-                _SectionTitle(
-                  title: 'Серверы',
-                  count: currentProfiles.length,
-                ),
-                const SizedBox(height: 10),
-              ],
-            ),
-            itemCount: currentProfiles.length,
-            onReorderItem: profiles.reorderProfiles,
-            itemBuilder: (context, index) {
-              final profile = currentProfiles[index];
-              return Padding(
-                key: ValueKey(profile.id),
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _ProfileCard(
-                  profile: profile,
-                  identity: tunnel.egressIdentityFor(profile.id),
-                  selected: activeTarget?.id == profile.id,
-                  multiSelected: false,
-                  selectionMode: false,
-                  reorderIndex: index,
-                  onSelect: () {},
-                  onLongPress: null,
-                  latencyMs: profile.latencyMs,
-                  onRefreshPing: null,
-                  onEdit: () {},
-                  onExport: () {},
-                  onDelete: () {},
-                ),
-              );
-            },
-          );
-        }
-
-        return ListView(
-          padding: const EdgeInsets.all(20),
+        final header = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AnimatedBuilder(
               animation: tunnel.profileUiChanges,
@@ -477,135 +437,138 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                 onSelectAll: _selectAll,
                 onPingSelected: _pingSelected,
                 onExportSelected: () => _exportSelected(context),
-                onReorder: _startReorder,
                 onDeleteSelected: () => _deleteSelected(context),
               ),
             ),
             const SizedBox(height: 20),
-            if (currentProfiles.isEmpty)
-              _EmptyProfiles(
-                onImport: () => widget.owner._showProfileMenu(context),
-              )
-            else ...[
-              _SectionTitle(
-                title: 'Серверы',
-                count: currentProfiles.length,
-                selectedCount:
-                    _selectionMode ? _selectedProfileIds.length : null,
-              ),
-              const SizedBox(height: 10),
-              for (final profile in currentProfiles)
-                Padding(
-                  key: ValueKey(profile.id),
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _ProfileCard(
-                    profile: profile,
-                    identity: tunnel.egressIdentityFor(profile.id),
-                    selected: activeTarget?.id == profile.id,
-                    multiSelected: _selectedProfileIds.contains(profile.id),
-                    selectionMode: _selectionMode,
-                    onSelect: () => _selectionMode
-                        ? _toggleSelection(profile.id)
-                        : tunnel.selectTarget(profile.id),
-                    onLongPress: () => _enterSelection(profile.id),
-                    latencyMs: profile.latencyMs,
-                    onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
-                        ? () => tunnel.refreshProfileLatency(profile.id)
-                        : null,
-                    onEdit: () =>
-                        widget.owner._showEditProfileDialog(context, profile),
-                    onExport: () => widget.owner._showXrayJsonExportMenu(
-                      context,
-                      profileId: profile.id,
-                      suggestedBaseName: profile.name,
-                    ),
-                    onDelete: () => widget.owner._deleteTarget(
-                      context,
-                      profile.id,
-                      profile.name,
-                    ),
-                  ),
-                ),
-              if (!_selectionMode && profiles.balancers.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                _SectionTitle(
-                  title: 'Балансировщики',
-                  count: profiles.balancers.length,
-                ),
-                const SizedBox(height: 10),
-                for (final balancer in profiles.balancers)
-                  Padding(
-                    key: ValueKey(balancer.id),
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _BalancerCard(
-                      balancer: balancer,
-                      identity: tunnel.egressIdentityFor(balancer.id),
-                      members: [
-                        for (final id in balancer.memberIds)
-                          ...currentProfiles.where((item) => item.id == id),
-                      ],
-                      selected: activeTarget?.id == balancer.id,
-                      latencyMs: profiles.targetById(balancer.id)?.latencyMs,
-                      onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
-                          ? () => tunnel.refreshTargetLatency(balancer.id)
-                          : null,
-                      onSelect: _selectionMode
-                          ? () {}
-                          : () => tunnel.selectTarget(balancer.id),
-                      onEdit: () => widget.owner._showBalancerDialog(
-                        context,
-                        existing: balancer,
-                      ),
-                      onDelete: () => widget.owner._deleteTarget(
-                        context,
-                        balancer.id,
-                        balancer.name,
-                      ),
-                    ),
-                  ),
-              ],
-            ],
+            _SectionTitle(
+              title: 'Серверы',
+              count: currentProfiles.length,
+              selectedCount: _selectionMode ? _selectedProfileIds.length : null,
+            ),
+            const SizedBox(height: 10),
           ],
         );
-      },
-    );
-  }
-}
 
-class _ProfilesReorderHeader extends StatelessWidget {
-  const _ProfilesReorderHeader({required this.onDone});
+        final footer = !_selectionMode && profiles.balancers.isNotEmpty
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 10),
+                  _SectionTitle(
+                    title: 'Балансировщики',
+                    count: profiles.balancers.length,
+                  ),
+                  const SizedBox(height: 10),
+                  for (final balancer in profiles.balancers)
+                    Padding(
+                      key: ValueKey(balancer.id),
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _BalancerCard(
+                        balancer: balancer,
+                        identity: tunnel.egressIdentityFor(balancer.id),
+                        members: [
+                          for (final id in balancer.memberIds)
+                            ...currentProfiles.where((item) => item.id == id),
+                        ],
+                        selected: activeTarget?.id == balancer.id,
+                        latencyMs: profiles.targetById(balancer.id)?.latencyMs,
+                        onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
+                            ? () => tunnel.refreshTargetLatency(balancer.id)
+                            : null,
+                        onSelect: () => _selectFromProfiles(context, balancer.id),
+                        onEdit: () => widget.owner._showBalancerDialog(
+                          context,
+                          existing: balancer,
+                        ),
+                        onDelete: () => widget.owner._deleteTarget(
+                          context,
+                          balancer.id,
+                          balancer.name,
+                        ),
+                      ),
+                    ),
+                ],
+              )
+            : null;
 
-  final VoidCallback onDone;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassPanel(
-      borderRadius: 22,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Row(
-        children: [
-          const Icon(Icons.drag_indicator_rounded, color: OrexColors.copper),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Порядок серверов',
-                    style: Theme.of(context).textTheme.titleMedium),
-                Text(
-                  'Перетаскивай карточки за ручку справа',
-                  style: Theme.of(context).textTheme.bodySmall,
+        if (currentProfiles.isEmpty) {
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              AnimatedBuilder(
+                animation: tunnel.profileUiChanges,
+                builder: (context, _) => _ProfilesHeader(
+                  refreshingLatency: tunnel.refreshingLatency,
+                  canRefreshLatency: false,
+                  selectionMode: false,
+                  allSelected: false,
+                  onOpenProfileMenu: () => widget.owner._showProfileMenu(context),
+                  onRefreshLatency: tunnel.refreshAllLatencies,
+                  onCloseSelection: _clearSelection,
+                  onSelectAll: _selectAll,
+                  onPingSelected: _pingSelected,
+                  onExportSelected: () => _exportSelected(context),
+                  onDeleteSelected: () => _deleteSelected(context),
                 ),
-              ],
-            ),
-          ),
-          FilledButton.icon(
-            onPressed: onDone,
-            icon: const Icon(Icons.check_rounded),
-            label: const Text('Готово'),
-          ),
-        ],
-      ),
+              ),
+              const SizedBox(height: 20),
+              _EmptyProfiles(
+                onImport: () => widget.owner._showProfileMenu(context),
+              ),
+            ],
+          );
+        }
+
+        return ReorderableListView.builder(
+          padding: const EdgeInsets.all(20),
+          buildDefaultDragHandles: false,
+          header: header,
+          footer: footer,
+          itemCount: currentProfiles.length,
+          onReorderItem: profiles.reorderProfiles,
+          itemBuilder: (context, index) {
+            final profile = currentProfiles[index];
+            final card = Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _ProfileCard(
+                profile: profile,
+                identity: tunnel.egressIdentityFor(profile.id),
+                selected: activeTarget?.id == profile.id,
+                multiSelected: _selectedProfileIds.contains(profile.id),
+                selectionMode: _selectionMode,
+                onSelect: () => _selectionMode
+                    ? _toggleSelection(profile.id)
+                    : _selectFromProfiles(context, profile.id),
+                onLongPress:
+                    _selectionMode ? null : () => _enterSelection(profile.id),
+                latencyMs: profile.latencyMs,
+                onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
+                    ? () => tunnel.refreshProfileLatency(profile.id)
+                    : null,
+                onEdit: () =>
+                    widget.owner._showEditProfileDialog(context, profile),
+                onExport: () => widget.owner._showXrayJsonExportMenu(
+                  context,
+                  profileId: profile.id,
+                  suggestedBaseName: profile.name,
+                ),
+                onDelete: () => widget.owner._deleteTarget(
+                  context,
+                  profile.id,
+                  profile.name,
+                ),
+              ),
+            );
+            return ReorderableDelayedDragStartListener(
+              key: ValueKey(profile.id),
+              index: index,
+              enabled: _selectionMode,
+              child: card,
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -622,7 +585,6 @@ class _ProfilesHeader extends StatelessWidget {
     required this.onSelectAll,
     required this.onPingSelected,
     required this.onExportSelected,
-    required this.onReorder,
     required this.onDeleteSelected,
   });
 
@@ -636,7 +598,6 @@ class _ProfilesHeader extends StatelessWidget {
   final VoidCallback onSelectAll;
   final Future<void> Function() onPingSelected;
   final VoidCallback onExportSelected;
-  final VoidCallback onReorder;
   final VoidCallback onDeleteSelected;
 
   @override
@@ -655,40 +616,36 @@ class _ProfilesHeader extends StatelessWidget {
 
     final actions = selectionMode
         ? Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 10,
             children: [
-              IconButton(
-                tooltip: 'Закрыть выбор',
+              OutlinedButton.icon(
                 onPressed: onCloseSelection,
                 icon: const Icon(Icons.close_rounded),
+                label: const Text('Готово'),
               ),
-              IconButton(
-                tooltip: allSelected ? 'Выбраны все' : 'Выбрать все',
+              OutlinedButton.icon(
                 onPressed: allSelected ? null : onSelectAll,
                 icon: const Icon(Icons.select_all_rounded),
+                label: const Text('Все'),
               ),
-              IconButton(
-                tooltip: 'Проверить пинг выбранных',
+              OutlinedButton.icon(
                 onPressed: refreshingLatency ? null : () => onPingSelected(),
                 icon: const Icon(Icons.network_ping_rounded),
+                label: const Text('Пинг'),
               ),
-              IconButton(
-                tooltip: 'Экспортировать выбранные',
+              OutlinedButton.icon(
                 onPressed: onExportSelected,
                 icon: const Icon(Icons.ios_share_rounded),
+                label: const Text('Экспорт'),
               ),
-              IconButton(
-                tooltip: 'Изменить порядок',
-                onPressed: onReorder,
-                icon: const Icon(Icons.swap_vert_rounded),
-              ),
-              IconButton(
-                tooltip: 'Удалить выбранные',
+              OutlinedButton.icon(
                 onPressed: onDeleteSelected,
-                color: OrexColors.danger,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: OrexColors.danger,
+                ),
                 icon: const Icon(Icons.delete_outline_rounded),
+                label: const Text('Удалить'),
               ),
             ],
           )
@@ -720,7 +677,8 @@ class _ProfilesHeader extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= 700) {
+        final rowBreakpoint = selectionMode ? 920.0 : 700.0;
+        if (constraints.maxWidth >= rowBreakpoint) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -767,15 +725,17 @@ class _SectionTitle extends StatelessWidget {
         const SizedBox(width: 8),
         Text('$count', style: Theme.of(context).textTheme.bodySmall),
         if (selectedCount case final selected?) ...[
-          const SizedBox(width: 10),
+          const SizedBox(width: 14),
           Text(
-            '· ВЫДЕЛЕНО $selected',
+            'ВЫДЕЛЕНО',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: OrexColors.copper,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.7,
                 ),
           ),
+          const SizedBox(width: 8),
+          Text('$selected', style: Theme.of(context).textTheme.bodySmall),
         ],
       ],
     );
@@ -830,7 +790,6 @@ class _ProfileCard extends StatelessWidget {
     required this.onEdit,
     required this.onExport,
     required this.onDelete,
-    this.reorderIndex,
   });
 
   final TunnelProfile profile;
@@ -845,7 +804,6 @@ class _ProfileCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onExport;
   final VoidCallback onDelete;
-  final int? reorderIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -863,7 +821,7 @@ class _ProfileCard extends StatelessWidget {
           onLongPress: onLongPress,
           leading: EgressAvatar(
             identity: identity,
-            selected: selected || multiSelected,
+            selected: selected,
           ),
           title: Row(
             children: [
@@ -889,20 +847,12 @@ class _ProfileCard extends StatelessWidget {
             ),
           ),
           isThreeLine: true,
-          trailing: reorderIndex != null
-              ? ReorderableDragStartListener(
-                  index: reorderIndex!,
-                  child: const Padding(
-                    padding: EdgeInsets.all(10),
-                    child: Icon(Icons.drag_handle_rounded),
-                  ),
+          trailing: selectionMode
+              ? Checkbox(
+                  value: multiSelected,
+                  onChanged: (_) => onSelect(),
                 )
-              : selectionMode
-                  ? Checkbox(
-                      value: multiSelected,
-                      onChanged: (_) => onSelect(),
-                    )
-                  : PopupMenuButton<String>(
+              : PopupMenuButton<String>(
                       onSelected: (value) {
                         if (value == 'edit') onEdit();
                         if (value == 'ping') onRefreshPing?.call();

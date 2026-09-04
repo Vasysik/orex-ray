@@ -262,7 +262,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 val nextInterval = commandIntent
                     .getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, activeStatsIntervalSeconds)
                     .let {
-                        if (it in setOf(1, 2, 3, 5, 10)) it else activeStatsIntervalSeconds
+                        if (it in setOf(1, 2, 3, 5, 10, 15, 30)) it else activeStatsIntervalSeconds
                     }
                 val intervalChanged = nextInterval != activeStatsIntervalSeconds
                 activeStatsIntervalSeconds = nextInterval
@@ -434,7 +434,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     commandIntent.getBooleanExtra(EXTRA_LOCAL_PROXY_IN_VPN, true)
                 activeStatsIntervalSeconds = commandIntent
                     .getIntExtra(EXTRA_STATS_INTERVAL_SECONDS, 2)
-                    .let { if (it in setOf(1, 2, 3, 5, 10)) it else 2 }
+                    .let { if (it in setOf(1, 2, 3, 5, 10, 15, 30)) it else 2 }
                 activeNotificationStatsIntervalSeconds = commandIntent
                     .getIntExtra(EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS, 5)
                     .let { if (it in setOf(5, 10, 15, 30, 60)) it else 5 }

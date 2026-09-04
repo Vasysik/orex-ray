@@ -13,14 +13,14 @@ void main() {
     expect(settings.statsIntervalSeconds, 2);
     expect(settings.notificationStatsIntervalSeconds, 5);
 
-    await settings.setStatsIntervalSeconds(3);
+    await settings.setStatsIntervalSeconds(15);
     await settings.setNotificationStatsIntervalSeconds(30);
 
     final reloaded = await ConnectionSettingsController.load(
       operatingSystem: 'android',
     );
     addTearDown(reloaded.dispose);
-    expect(reloaded.statsIntervalSeconds, 3);
+    expect(reloaded.statsIntervalSeconds, 15);
     expect(reloaded.notificationStatsIntervalSeconds, 30);
 
     await expectLater(

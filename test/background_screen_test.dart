@@ -48,13 +48,43 @@ void main() {
       );
       expect(find.byIcon(Icons.swipe_rounded), findsNothing);
       expect(find.text('Интервал интерфейса'), findsOneWidget);
-      expect(find.text('Интервал скорости в уведомлении'), findsOneWidget);
+      expect(find.text('Интервал уведомления'), findsOneWidget);
       expect(find.text('Интервал пинга'), findsOneWidget);
-      expect(find.textContaining('Первый замер примерно через 5 с'), findsOneWidget);
+      expect(
+        find.textContaining('Как часто проверять активный маршрут'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Показывать уведомления'));
       await tester.pump();
       expect(openedSystemSettings, isTrue);
+    },
+  );
+  testWidgets(
+    'ping interval is visible on Windows without notification controls',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = await ConnectionSettingsController.load(
+        operatingSystem: 'windows',
+      );
+      addTearDown(settings.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: OrexTheme.dark,
+          home: BackgroundScreen(settings: settings, isAndroid: false),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Интервал интерфейса'), findsOneWidget);
+      expect(find.text('Интервал пинга'), findsOneWidget);
+      expect(find.text('Интервал уведомления'), findsNothing);
+      expect(find.text('Показывать уведомления'), findsNothing);
+      expect(
+        find.text('Как часто проверять активный маршрут во время подключения.'),
+        findsOneWidget,
+      );
     },
   );
 }

@@ -10,7 +10,6 @@ void main() {
 
     expect(identity, isNotNull);
     expect(identity!.countryCode, 'NL');
-    expect(identity.flagEmoji, '🇳🇱');
     expect(identity.warp, isTrue);
     expect(identity.toJson().containsKey('ip'), isFalse);
   });

@@ -507,7 +507,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     final normalized = _validStatsInterval(value);
     if (normalized == null) {
       throw const FormatException(
-        'Интервал интерфейса должен быть 1, 2, 3, 5 или 10 секунд',
+        'Интервал интерфейса должен быть 1, 2, 3, 5, 10, 15 или 30 секунд',
       );
     }
     if (_statsIntervalSeconds == normalized) return;
@@ -619,7 +619,7 @@ class ConnectionSettingsController extends ChangeNotifier {
       value != null && value >= 1280 && value <= 9000 ? value : null;
 
   static int? _validStatsInterval(int? value) =>
-      const {1, 2, 3, 5, 10}.contains(value) ? value : null;
+      const {1, 2, 3, 5, 10, 15, 30}.contains(value) ? value : null;
 
   static int? _validNotificationStatsInterval(int? value) =>
       const {5, 10, 15, 30, 60}.contains(value) ? value : null;

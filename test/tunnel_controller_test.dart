@@ -290,6 +290,55 @@ void main() {
     expect(controller.snapshot.mode, ConnectionMode.vpnTun);
   });
 
+  test('profile switch waits for asynchronous Android stop before restart',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final first = await profiles.importVlessLink(
+      'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@first.example:443'
+      '?encryption=none&security=none&type=tcp#Async-first',
+    );
+    final second = await profiles.createProfile(
+      TunnelProfile(
+        id: 'async-second',
+        name: 'Async-second',
+        address: 'second.example',
+        port: 443,
+        userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      ),
+    );
+    final engine = _DelayedStopTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.toggle();
+    expect(controller.snapshot.profile?.id, first.id);
+
+    final switching = controller.selectTarget(second.id);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(engine.current.status, TunnelStatus.disconnecting);
+    expect(engine.startedTargets, [first.id]);
+
+    engine.completeStop();
+    await switching;
+
+    expect(engine.startedTargets, [first.id, second.id]);
+    expect(controller.snapshot.isConnected, isTrue);
+    expect(controller.snapshot.profile?.id, second.id);
+  });
+
   test('VPN ping uses the active route and never a direct profile socket',
       () async {
     SharedPreferences.setMockInitialValues({});
@@ -1068,6 +1117,54 @@ class _RecordingTunnelEngine implements TunnelEngine {
   Future<void> dispose() async {
     disposeCalls += 1;
   }
+}
+
+class _DelayedStopTunnelEngine implements TunnelEngine {
+  final StreamController<TunnelSnapshot> _snapshots =
+      StreamController<TunnelSnapshot>.broadcast();
+  final List<String> startedTargets = [];
+  TunnelSnapshot _current = const TunnelSnapshot(
+    status: TunnelStatus.disconnected,
+    stats: TrafficStats(),
+  );
+
+  @override
+  TunnelSnapshot get current => _current;
+
+  @override
+  Stream<TunnelSnapshot> get snapshots => _snapshots.stream;
+
+  @override
+  Set<ConnectionMode> get supportedModes => const {
+        ConnectionMode.vpnTun,
+        ConnectionMode.localProxy,
+      };
+
+  @override
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    startedTargets.add(profile.id);
+    _current = TunnelSnapshot(
+      status: TunnelStatus.connected,
+      mode: mode,
+      profile: profile,
+      stats: const TrafficStats(),
+    );
+    _snapshots.add(_current);
+  }
+
+  @override
+  Future<void> stop() async {
+    _current = _current.copyWith(status: TunnelStatus.disconnecting);
+    _snapshots.add(_current);
+  }
+
+  void completeStop() {
+    _current = _current.copyWith(status: TunnelStatus.disconnected);
+    _snapshots.add(_current);
+  }
+
+  @override
+  Future<void> dispose() => _snapshots.close();
 }
 
 class _RuntimeSettingsEngine extends _RecordingTunnelEngine

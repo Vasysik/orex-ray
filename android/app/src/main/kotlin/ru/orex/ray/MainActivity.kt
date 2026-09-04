@@ -140,7 +140,7 @@ class MainActivity : FlutterActivity() {
                                 call.argument<Boolean>("localProxyInVpn") ?: true,
                             statsIntervalSeconds = (
                                 call.argument<Int>("statsIntervalSeconds") ?: 2
-                            ).let { if (it in setOf(1, 2, 3, 5, 10)) it else 2 },
+                            ).let { if (it in setOf(1, 2, 3, 5, 10, 15, 30)) it else 2 },
                             notificationStatsIntervalSeconds = (
                                 call.argument<Int>("notificationStatsIntervalSeconds") ?: 5
                             ).let {
