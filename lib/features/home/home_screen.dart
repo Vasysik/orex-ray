@@ -129,7 +129,7 @@ class _Header extends StatelessWidget {
     final routeFailed = _routeFailed(pingStatus);
     final routeConfirmed = pingStatus == PingStatus.success;
     final label = routeFailed
-        ? _routeFailureTitle(pingStatus)
+        ? 'Нет ответа'
         : switch (snapshot.status) {
             TunnelStatus.connected when routeConfirmed => 'Защищено',
             TunnelStatus.connected => 'Проверка',
@@ -347,7 +347,7 @@ class _ConnectionHero extends StatelessWidget {
             : 'Сначала добавьте профиль');
     final secondaryText = !showStatusText && active
         ? routeFailed
-            ? _routeFailureTitle(pingStatus)
+            ? 'Ошибка соединения'
             : pingStatus != PingStatus.success
                 ? 'Проверяем маршрут…'
                 : fallbackMessage
@@ -361,7 +361,7 @@ class _ConnectionHero extends StatelessWidget {
           if (showStatusText) ...[
             Text(
               routeFailed
-                  ? _routeFailureTitle(pingStatus)
+                  ? 'Ошибка соединения'
                   : snapshot.status == TunnelStatus.connected &&
                           pingStatus != PingStatus.success
                       ? 'Проверяем маршрут…'
@@ -955,12 +955,6 @@ String _pingLabel(TunnelController tunnel, TunnelTarget? target) {
 
 bool _routeFailed(PingStatus status) =>
     status == PingStatus.timeout || status == PingStatus.unavailable;
-
-String _routeFailureTitle(PingStatus status) => switch (status) {
-      PingStatus.timeout => 'Таймаут',
-      PingStatus.unavailable => 'Нет ответа',
-      _ => 'Нет ответа',
-    };
 
 String _statusTitle(TunnelStatus status) => switch (status) {
       TunnelStatus.disconnected => 'Не подключено',

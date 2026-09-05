@@ -153,7 +153,7 @@ void main() {
       tunnel.effectivePingStatusFor(tunnel.snapshot.profile),
       PingStatus.timeout,
     );
-    expect(find.text('Таймаут'), findsOneWidget);
+    expect(find.text('Ошибка соединения'), findsOneWidget);
   });
 }
 
