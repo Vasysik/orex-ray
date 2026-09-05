@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/profiles/profile_repository.dart';
+import 'package:orex_ray/core/profiles/proxy_subscription.dart';
 import 'package:orex_ray/core/profiles/vless_link_parser.dart';
 import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -46,6 +47,27 @@ void main() {
       profile.realityPassword,
     );
     expect(reloaded.readSelectedId(), profile.id);
+  });
+
+  test('persists subscription URL and owned profile ids', () async {
+    SharedPreferences.setMockInitialValues({});
+    final repository = await ProfileRepository.load();
+    const subscription = ProxySubscription(
+      id: 'sub-test',
+      url: 'https://example.com/sub?token=secret',
+      name: 'Example',
+      profileIds: ['one', 'two'],
+      updateIntervalHours: 12,
+      userInfo: 'download=1; total=2',
+    );
+
+    await repository.saveSubscriptions([subscription]);
+    final reloaded = await ProfileRepository.load();
+    final restored = reloaded.readSubscriptions().single;
+
+    expect(restored.url, subscription.url);
+    expect(restored.profileIds, ['one', 'two']);
+    expect(restored.updateIntervalHours, 12);
   });
 
   test('migrates VLESS JSON written before outbound protocol support', () {

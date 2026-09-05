@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/profiles/latency_probe.dart';
 import 'package:orex_ray/core/profiles/profiles_controller.dart';
+import 'package:orex_ray/core/profiles/subscription_source.dart';
 import 'package:orex_ray/core/profiles/vless_link_parser.dart';
 import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -149,6 +150,95 @@ void main() {
     expect(updated.name, 'Renamed');
     expect(updated.latencyMs, 88);
     expect(updated.pingStatus, PingStatus.success);
+  });
+
+  test('subscription refresh replaces only nodes owned by that source', () async {
+    SharedPreferences.setMockInitialValues({});
+    const first =
+        'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
+        '?encryption=none&security=none&type=tcp#One';
+    const second =
+        'vless://bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb@two.example:443'
+        '?encryption=none&security=none&type=tcp#Two';
+    const third =
+        'vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@three.example:443'
+        '?encryption=none&security=none&type=tcp#Three';
+    final source = _SequenceSubscriptionSource([
+      SubscriptionFetchResult(
+        body: '$first\n$second',
+        profileTitle: 'Demo subscription',
+      ),
+      SubscriptionFetchResult(
+        body: '$second\n$third',
+        profileTitle: 'Demo subscription',
+      ),
+    ]);
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+    await profiles.importVlessLink(link);
+
+    final imported = await profiles.importSubscription('https://sub.example/user');
+    expect(imported.addedCount, 2);
+    expect(profiles.subscriptions.single.name, 'Demo subscription');
+    expect(profiles.profiles.map((profile) => profile.name).toSet(), {
+      'Test',
+      'One',
+      'Two',
+    });
+
+    final refreshed = await profiles.refreshSubscription(
+      profiles.subscriptions.single.id,
+    );
+    expect(refreshed.addedCount, 1);
+    expect(refreshed.updatedCount, 1);
+    expect(refreshed.removedCount, 1);
+    expect(profiles.profiles.map((profile) => profile.name).toSet(), {
+      'Test',
+      'Two',
+      'Three',
+    });
+    expect(profiles.subscriptions.single.profileIds, hasLength(2));
+  });
+
+  test('subscription retries once with a v2rayN-compatible user agent', () async {
+    SharedPreferences.setMockInitialValues({});
+    const subscribed =
+        'vless://eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee@sub.example:443'
+        '?encryption=none&security=none&type=tcp#Fallback';
+    final source = _SequenceSubscriptionSource([
+      const SubscriptionFetchResult(body: '<html>browser page</html>'),
+      const SubscriptionFetchResult(body: subscribed),
+    ]);
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+
+    await profiles.importSubscription('https://sub.example/fallback');
+
+    expect(source.userAgents, hasLength(2));
+    expect(source.userAgents.first, 'OrexRay/Subscription');
+    expect(source.userAgents.last, startsWith('v2rayN/'));
+    expect(profiles.profiles.single.name, 'Fallback');
+  });
+
+  test('deleting a subscription keeps manually imported profiles', () async {
+    SharedPreferences.setMockInitialValues({});
+    const subscribed =
+        'vless://dddddddd-dddd-4ddd-8ddd-dddddddddddd@sub.example:443'
+        '?encryption=none&security=none&type=tcp#Subscribed';
+    final profiles = await ProfilesController.load(
+      subscriptionSource: _SequenceSubscriptionSource([
+        SubscriptionFetchResult(body: subscribed),
+      ]),
+    );
+    addTearDown(profiles.dispose);
+    final manual = await profiles.importVlessLink(link);
+    await profiles.importSubscription('https://sub.example/list');
+
+    await profiles.deleteSubscription(profiles.subscriptions.single.id);
+
+    expect(profiles.subscriptions, isEmpty);
+    expect(profiles.profiles, hasLength(1));
+    expect(profiles.profiles.single.id, manual.id);
   });
 
   test('exporting all profiles always returns a JSON array', () async {
@@ -476,6 +566,26 @@ void main() {
 
     expect(balancer.probeIntervalSeconds, 30);
   });
+}
+
+class _SequenceSubscriptionSource extends SubscriptionSource {
+  _SequenceSubscriptionSource(this.responses);
+
+  final List<SubscriptionFetchResult> responses;
+  final List<String> userAgents = <String>[];
+  int _index = 0;
+
+  @override
+  Future<SubscriptionFetchResult> loadUrl(
+    String value, {
+    String userAgent = 'OrexRay/Subscription',
+  }) async {
+    userAgents.add(userAgent);
+    if (_index >= responses.length) {
+      throw StateError('No subscription response left for $value');
+    }
+    return responses[_index++];
+  }
 }
 
 class _CountingLatencyProbe extends LatencyProbe {

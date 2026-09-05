@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/egress/egress_identity.dart';
 import '../../core/profiles/profiles_controller.dart';
+import '../../core/profiles/proxy_subscription.dart';
 import '../../core/profiles/vless_link_parser.dart';
 import '../../core/profiles/xray_json_codec.dart';
 import '../../core/profiles/xray_json_file.dart';
@@ -18,6 +19,7 @@ import '../home/tunnel_controller.dart';
 
 enum _ProfileCreateAction {
   importLink,
+  subscription,
   importXrayJson,
   newProfile,
   balancer,
@@ -49,6 +51,12 @@ class ProfilesScreen extends StatelessWidget {
           subtitle: 'VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP',
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
+          value: _ProfileCreateAction.subscription,
+          icon: Icons.sync_rounded,
+          title: 'Подписка',
+          subtitle: 'Happ/V2Ray: URL со списком серверов',
+        ),
+        OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.importXrayJson,
           icon: Icons.data_object_rounded,
           title: 'Импорт JSON Xray',
@@ -74,6 +82,9 @@ class ProfilesScreen extends StatelessWidget {
       case _ProfileCreateAction.importLink:
         await _showImportDialog(context);
         break;
+      case _ProfileCreateAction.subscription:
+        await _showSubscriptionDialog(context);
+        break;
       case _ProfileCreateAction.importXrayJson:
         await _showXrayJsonImportDialog(context);
         break;
@@ -95,6 +106,85 @@ class ProfilesScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Профиль «${profile.name}» импортирован')),
     );
+  }
+
+  Future<void> _showSubscriptionDialog(BuildContext context) async {
+    final result = await showDialog<SubscriptionSyncResult>(
+      context: context,
+      builder: (context) => _ImportSubscriptionDialog(profiles: profiles),
+    );
+    if (result == null || !context.mounted) return;
+    final parts = <String>[
+      if (result.addedCount > 0) 'добавлено ${result.addedCount}',
+      if (result.updatedCount > 0) 'обновлено ${result.updatedCount}',
+      if (result.removedCount > 0) 'удалено ${result.removedCount}',
+      if (result.skippedUnsupported > 0)
+        'пропущено ${result.skippedUnsupported}',
+    ];
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          parts.isEmpty
+              ? 'Подписка «${result.subscription.name}» обновлена'
+              : 'Подписка «${result.subscription.name}»: ${parts.join(', ')}',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _refreshSubscription(
+    BuildContext context,
+    ProxySubscription subscription,
+  ) async {
+    try {
+      final result = await profiles.refreshSubscription(subscription.id);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '«${result.subscription.name}» обновлена: '
+            '${result.subscription.profileIds.length} серверов',
+          ),
+        ),
+      );
+    } on FormatException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message.toString())),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось обновить подписку: $error')),
+      );
+    }
+  }
+
+  Future<void> _deleteSubscription(
+    BuildContext context,
+    ProxySubscription subscription,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить подписку?'),
+        content: Text(
+          '«${subscription.name}» и ${subscription.profileIds.length} '
+          'серверов этой подписки будут удалены.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await profiles.deleteSubscription(subscription.id);
   }
 
   Future<void> _showXrayJsonImportDialog(BuildContext context) async {
@@ -427,6 +517,31 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                 onDeleteSelected: () => _deleteSelected(context),
               ),
             ),
+            if (!_selectionMode && profiles.subscriptions.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _SectionTitle(
+                title: 'Подписки',
+                count: profiles.subscriptions.length,
+              ),
+              const SizedBox(height: 10),
+              for (final subscription in profiles.subscriptions)
+                Padding(
+                  key: ValueKey(subscription.id),
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _SubscriptionCard(
+                    subscription: subscription,
+                    refreshing: profiles.subscriptionRefreshing(subscription.id),
+                    onRefresh: () => widget.owner._refreshSubscription(
+                      context,
+                      subscription,
+                    ),
+                    onDelete: () => widget.owner._deleteSubscription(
+                      context,
+                      subscription,
+                    ),
+                  ),
+                ),
+            ],
             const SizedBox(height: 20),
             _SectionTitle(
               title: 'Серверы',
@@ -499,6 +614,30 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                   onDeleteSelected: () => _deleteSelected(context),
                 ),
               ),
+              if (profiles.subscriptions.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _SectionTitle(
+                  title: 'Подписки',
+                  count: profiles.subscriptions.length,
+                ),
+                const SizedBox(height: 10),
+                for (final subscription in profiles.subscriptions)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _SubscriptionCard(
+                      subscription: subscription,
+                      refreshing: profiles.subscriptionRefreshing(subscription.id),
+                      onRefresh: () => widget.owner._refreshSubscription(
+                        context,
+                        subscription,
+                      ),
+                      onDelete: () => widget.owner._deleteSubscription(
+                        context,
+                        subscription,
+                      ),
+                    ),
+                  ),
+              ],
               const SizedBox(height: 20),
               _EmptyProfiles(
                 onImport: () => widget.owner._showProfileMenu(context),
@@ -807,7 +946,7 @@ class _EmptyProfiles extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
-            'Импортируйте ссылку или JSON Xray с одним или несколькими профилями.',
+            'Импортируйте ссылку, подписку или JSON Xray с одним или несколькими профилями.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -818,6 +957,166 @@ class _EmptyProfiles extends StatelessWidget {
             label: const Text('Импортировать профиль'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ImportSubscriptionDialog extends StatefulWidget {
+  const _ImportSubscriptionDialog({required this.profiles});
+
+  final ProfilesController profiles;
+
+  @override
+  State<_ImportSubscriptionDialog> createState() =>
+      _ImportSubscriptionDialogState();
+}
+
+class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
+  final TextEditingController _controller = TextEditingController();
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_loading) return;
+    final value = _controller.text.trim();
+    if (value.isEmpty) {
+      setState(() => _error = 'Вставь URL подписки');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.profiles.importSubscription(value);
+      if (!mounted) return;
+      Navigator.of(context).pop(result);
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message.toString());
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = 'Не удалось добавить подписку: $error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Добавить подписку'),
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Поддерживаются обычные HTTP/HTTPS подписки Happ/V2Ray: '
+              'список ссылок, Base64-список и JSON Xray.',
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _controller,
+              enabled: !_loading,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                labelText: 'URL подписки',
+                errorText: _error,
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _loading ? null : _submit,
+          child: _loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Добавить'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SubscriptionCard extends StatelessWidget {
+  const _SubscriptionCard({
+    required this.subscription,
+    required this.refreshing,
+    required this.onRefresh,
+    required this.onDelete,
+  });
+
+  final ProxySubscription subscription;
+  final bool refreshing;
+  final VoidCallback onRefresh;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final uri = Uri.tryParse(subscription.url);
+    final host = uri?.host ?? subscription.url;
+    final details = <String>[
+      '${subscription.profileIds.length} серверов',
+      host,
+    ];
+    return GlassPanel(
+      borderRadius: 18,
+      blur: 16,
+      opacity: 0.42,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: const Icon(Icons.sync_rounded),
+        title: Text(
+          subscription.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          details.join(' · '),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Обновить подписку',
+              onPressed: refreshing ? null : onRefresh,
+              icon: refreshing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+            ),
+            IconButton(
+              tooltip: 'Удалить подписку',
+              onPressed: refreshing ? null : onDelete,
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1285,7 +1584,8 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
           children: [
             Text(
               'Поддерживается полный Xray config, один outbound, массив [] '
-              'из нескольких конфигов и HTTP/HTTPS ссылка с JSON.',
+              'из нескольких конфигов и HTTP/HTTPS ссылка с JSON. '
+              'Для обновляемого списка серверов используйте «Подписка».',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
