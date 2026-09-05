@@ -646,27 +646,21 @@ class _ProfilesHeader extends StatelessWidget {
                 icon: const Icon(Icons.ios_share_rounded),
                 label: const Text('Экспорт'),
               ),
-              Tooltip(
-                message: 'Удалить',
-                child: IconButton.outlined(
-                  onPressed: onDeleteSelected,
-                  color: OrexColors.danger,
-                  icon: const Icon(Icons.delete_outline_rounded),
-                ),
+              _HeaderIconActionButton(
+                tooltip: 'Удалить',
+                onPressed: onDeleteSelected,
+                color: OrexColors.danger,
+                icon: Icons.delete_outline_rounded,
               ),
-              Tooltip(
-                message: 'Выбрать все',
-                child: IconButton.outlined(
-                  onPressed: allSelected ? null : onSelectAll,
-                  icon: const Icon(Icons.select_all_rounded),
-                ),
+              _HeaderIconActionButton(
+                tooltip: 'Выбрать все',
+                onPressed: allSelected ? null : onSelectAll,
+                icon: Icons.select_all_rounded,
               ),
-              Tooltip(
-                message: 'Готово',
-                child: IconButton.outlined(
-                  onPressed: onCloseSelection,
-                  icon: const Icon(Icons.check_rounded),
-                ),
+              _HeaderIconActionButton(
+                tooltip: 'Готово',
+                onPressed: onCloseSelection,
+                icon: Icons.check_rounded,
               ),
             ],
           )
@@ -718,6 +712,38 @@ class _ProfilesHeader extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _HeaderIconActionButton extends StatelessWidget {
+  const _HeaderIconActionButton({
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+    this.color,
+  });
+
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final IconData icon;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: color,
+          shape: const StadiumBorder(),
+        ),
+        child: Icon(icon),
+      ),
     );
   }
 }
