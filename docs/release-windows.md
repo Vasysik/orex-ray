@@ -37,7 +37,7 @@ Inno Setup
 
 ```text
 dist\release\<x.y.z+n>\
-  OrexRay-<version>-release-x64-setup.exe
+  OrexRay-<version>-x64-setup.exe
   SHA256SUMS.txt
 ```
 
@@ -54,7 +54,7 @@ TUN при включённом запуске с правами админис�
 SOCKS5/HTTP
 проверка ping и интервала UI statistics
 импорт/экспорт JSON
-восстановление Xray Core из Диагностики
+восстановление Xray Core из О приложении → Движок
 удаление/повторная установка без потери пользовательских app-data настроек
 ```
 

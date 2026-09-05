@@ -99,7 +99,12 @@ class _AppShellState extends State<AppShell> {
           appVersion: widget.appVersion,
         ),
       ),
-      BackdropGroup(child: AboutScreen(appVersion: widget.appVersion)),
+      BackdropGroup(
+        child: AboutScreen(
+          appVersion: widget.appVersion,
+          tunnel: widget.tunnel,
+        ),
+      ),
       BackdropGroup(
         child: MoreScreen(
           showApps: !Platform.isWindows,

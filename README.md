@@ -144,11 +144,11 @@ watchdog остаются видимыми в отчёте.
 Кнопка **Скопировать отчёт** повторно редактирует UUID, `vless://` ссылки и типичные
 secret-поля. Отчёт предназначен для bug report без публикации конфигурации доступа.
 
-На Windows здесь же доступна кнопка **Переустановить Xray Core**. Она работает
-только при отключённом туннеле, восстанавливает закреплённую версию Core и
-проверяет архив по встроенному SHA-256. Для установки в Program Files нужны права
-администратора; portable/debug-сборки ремонтируются в своём каталоге без
-переустановки всего OrexRay.
+На Windows обслуживание движка вынесено в **О приложении → Движок**. Кнопка
+**Переустановить Xray Core** работает только при отключённом туннеле,
+восстанавливает закреплённую версию Core и проверяет архив по встроенному SHA-256.
+Для установки в Program Files нужны права администратора; portable/debug-сборки
+ремонтируются в своём каталоге без переустановки всего OrexRay.
 
 ## Флаги выхода и WARP
 
@@ -448,10 +448,10 @@ powershell -ExecutionPolicy Bypass -File tool\build_release.ps1 -Platform window
 ```text
 OrexRay-<version>-debug.apk
 OrexRay-<version>-debug-x64.zip
-OrexRay-<version>-release-arm64-v8a.apk
-OrexRay-<version>-release-armeabi-v7a.apk
-OrexRay-<version>-release-x86_64.apk
-OrexRay-<version>-release-x64-setup.exe
+OrexRay-<version>-arm64-v8a.apk
+OrexRay-<version>-armeabi-v7a.apk
+OrexRay-<version>-x86_64.apk
+OrexRay-<version>-x64-setup.exe
 SHA256SUMS.txt
 ```
 

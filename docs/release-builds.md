@@ -58,10 +58,10 @@ dist\debug\<x.y.z+n>\
   SHA256SUMS.txt
 
 dist\release\<x.y.z+n>\
-  OrexRay-<version>-release-arm64-v8a.apk
-  OrexRay-<version>-release-armeabi-v7a.apk
-  OrexRay-<version>-release-x86_64.apk
-  OrexRay-<version>-release-x64-setup.exe
+  OrexRay-<version>-arm64-v8a.apk
+  OrexRay-<version>-armeabi-v7a.apk
+  OrexRay-<version>-x86_64.apk
+  OrexRay-<version>-x64-setup.exe
   SHA256SUMS.txt
 ```
 

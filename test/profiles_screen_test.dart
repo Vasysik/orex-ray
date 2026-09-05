@@ -161,7 +161,6 @@ void main() {
       tester.getCenter(find.text('Bulk-actions')),
       kind: PointerDeviceKind.mouse,
     );
-    await hold.moveBy(const Offset(48, 4));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await hold.up();
     await tester.pumpAndSettle();
@@ -172,11 +171,19 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, 'Удалить'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Готово'), findsOneWidget);
     expect(find.byIcon(Icons.drag_indicator_rounded), findsNothing);
+    expect(
+      find.descendant(
+        of: find.widgetWithText(OutlinedButton, 'Готово'),
+        matching: find.byIcon(Icons.check_rounded),
+      ),
+      findsOneWidget,
+    );
 
     final drag = await tester.startGesture(
       tester.getCenter(find.text('Bulk-actions')),
       kind: PointerDeviceKind.mouse,
     );
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await drag.moveBy(const Offset(0, 150));
     await tester.pump(const Duration(milliseconds: 32));
     await drag.moveBy(const Offset(0, 80));

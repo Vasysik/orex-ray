@@ -1125,8 +1125,8 @@ class WindowsXrayEngine implements
       };
 
   String _connectedMessage(ConnectionMode mode) => switch (mode) {
-        ConnectionMode.vpnTun => 'VPN-туннель активен',
-        ConnectionMode.systemProxy => 'Системный прокси Windows активен',
+        ConnectionMode.vpnTun => 'VPN активен',
+        ConnectionMode.systemProxy => 'Системный прокси активен',
         ConnectionMode.localProxy =>
           'SOCKS5 :${_settings.socksPort} · HTTP :${_settings.httpPort}',
       };

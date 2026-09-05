@@ -92,7 +92,11 @@ try {
   if ($Platform -in @('all', 'android')) {
     Write-Host ''
     Write-Host "=== Android $Mode ==="
-    Remove-ArtifactPattern -Pattern "OrexRay-$Release-$Mode*.apk"
+    if ($Mode -eq 'debug') {
+      Remove-ArtifactPattern -Pattern "OrexRay-$Release-debug*.apk"
+    } else {
+      Remove-ArtifactPattern -Pattern "OrexRay-$Release-*.apk"
+    }
 
     if (-not $ReuseFlutterBuilds) {
       if ($Mode -eq 'debug') {
@@ -121,7 +125,7 @@ try {
         $Source = Join-Path $RepoRoot "build\app\outputs\flutter-apk\$($Artifact.Source)"
         Publish-Artifact `
           -Source $Source `
-          -Name "OrexRay-$Release-release-$($Artifact.Abi).apk" | Out-Null
+          -Name "OrexRay-$Release-$($Artifact.Abi).apk" | Out-Null
       }
     }
   }
@@ -129,7 +133,11 @@ try {
   if ($Platform -in @('all', 'windows')) {
     Write-Host ''
     Write-Host "=== Windows $Mode ==="
-    Remove-ArtifactPattern -Pattern "OrexRay-$Release-$Mode-x64*"
+    if ($Mode -eq 'debug') {
+      Remove-ArtifactPattern -Pattern "OrexRay-$Release-debug-x64*"
+    } else {
+      Remove-ArtifactPattern -Pattern "OrexRay-$Release-*-setup.exe"
+    }
 
     $Configuration = if ($Mode -eq 'debug') { 'Debug' } else { 'Release' }
     $WindowsRunnerDir = Join-Path $RepoRoot "build\windows\x64\runner\$Configuration"
@@ -174,7 +182,7 @@ try {
       $Installer = Join-Path $RepoRoot "build\windows\x64\installer\OrexRay-Setup-$Release.exe"
       Publish-Artifact `
         -Source $Installer `
-        -Name "OrexRay-$Release-release-x64-setup.exe" | Out-Null
+        -Name "OrexRay-$Release-x64-setup.exe" | Out-Null
     }
   }
 

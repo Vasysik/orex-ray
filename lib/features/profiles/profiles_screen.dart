@@ -1,7 +1,4 @@
-import 'dart:async';
-
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -591,7 +588,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
               key: ValueKey(profile.id),
               padding: const EdgeInsets.only(bottom: 12),
               child: _selectionMode
-                  ? _AdaptiveReorderableDragStartListener(
+                  ? ReorderableDelayedDragStartListener(
                       index: index,
                       child: card,
                     )
@@ -675,7 +672,7 @@ class _ProfilesHeader extends StatelessWidget {
               ),
               OutlinedButton.icon(
                 onPressed: onCloseSelection,
-                icon: const Icon(Icons.close_rounded),
+                icon: const Icon(Icons.check_rounded),
                 label: const Text('Готово'),
               ),
             ],
@@ -921,116 +918,7 @@ class _ProfileCard extends StatelessWidget {
         ),
       ),
     );
-    if (onLongPress == null) return card;
-    return _MouseHoldRegion(
-      onHold: onLongPress!,
-      child: card,
-    );
-  }
-}
-
-class _MouseHoldRegion extends StatefulWidget {
-  const _MouseHoldRegion({required this.onHold, required this.child});
-
-  final VoidCallback onHold;
-  final Widget child;
-
-  @override
-  State<_MouseHoldRegion> createState() => _MouseHoldRegionState();
-}
-
-class _MouseHoldRegionState extends State<_MouseHoldRegion> {
-  Timer? _timer;
-  int? _pointer;
-
-  void _handlePointerDown(PointerDownEvent event) {
-    if (event.kind != PointerDeviceKind.mouse ||
-        event.buttons != kPrimaryMouseButton) {
-      return;
-    }
-    _cancel();
-    _pointer = event.pointer;
-    _timer = Timer(kLongPressTimeout, () {
-      _timer = null;
-      if (!mounted || _pointer != event.pointer) return;
-      widget.onHold();
-    });
-  }
-
-  void _handlePointerUp(PointerEvent event) {
-    if (event.pointer == _pointer) _cancel();
-  }
-
-  void _cancel() {
-    _timer?.cancel();
-    _timer = null;
-    _pointer = null;
-  }
-
-  @override
-  void dispose() {
-    _cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: _handlePointerDown,
-      onPointerUp: _handlePointerUp,
-      onPointerCancel: _handlePointerUp,
-      child: widget.child,
-    );
-  }
-}
-
-class _AdaptiveReorderableDragStartListener extends StatelessWidget {
-  const _AdaptiveReorderableDragStartListener({
-    required this.index,
-    required this.child,
-  });
-
-  final int index;
-  final Widget child;
-
-  void _startDrag(BuildContext context, PointerDownEvent event) {
-    final MultiDragGestureRecognizer recognizer;
-    switch (event.kind) {
-      case PointerDeviceKind.mouse:
-      case PointerDeviceKind.trackpad:
-        // Desktop: moving the pointer while the button is held must not
-        // invalidate the drag. The reorder starts as soon as actual movement
-        // wins the gesture arena.
-        recognizer = ImmediateMultiDragGestureRecognizer(debugOwner: this);
-        break;
-      case PointerDeviceKind.touch:
-      case PointerDeviceKind.stylus:
-      case PointerDeviceKind.invertedStylus:
-        // Touch keeps the familiar long-press-to-reorder behavior so normal
-        // scrolling is not stolen by the selected card.
-        recognizer = DelayedMultiDragGestureRecognizer(debugOwner: this);
-        break;
-      case PointerDeviceKind.unknown:
-        recognizer = ImmediateMultiDragGestureRecognizer(debugOwner: this);
-        break;
-    }
-    SliverReorderableList.of(context).startItemDragReorder(
-      index: index,
-      event: event,
-      recognizer: recognizer,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.grab,
-      child: Listener(
-        onPointerDown: (event) => _startDrag(context, event),
-        child: child,
-      ),
-    );
+    return card;
   }
 }
 
@@ -1063,7 +951,7 @@ class _PingBadge extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
-          latency == null ? 'Пинг —' : '$latency мс',
+          latency == null ? '- мс' : '$latency мс',
           style: TextStyle(
               color: color, fontSize: 12, fontWeight: FontWeight.w600),
         ),
@@ -1989,7 +1877,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                   title: Text(profile.name),
                   subtitle: Text(
                     '${profile.endpoint} · '
-                    '${profile.latencyMs == null ? 'Пинг —' : '${profile.latencyMs} мс'}',
+                    '${profile.latencyMs == null ? '- мс' : '${profile.latencyMs} мс'}',
                   ),
                 ),
             ],

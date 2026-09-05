@@ -136,7 +136,7 @@ class _Header extends StatelessWidget {
         ? _routeFailureTitle(pingStatus)
         : switch (snapshot.status) {
             TunnelStatus.connected when routeConfirmed => 'Защищено',
-            TunnelStatus.connected => 'Проверяем маршрут…',
+            TunnelStatus.connected => 'Проверка',
             TunnelStatus.connecting => 'Подключение',
             TunnelStatus.disconnecting => 'Отключение',
             TunnelStatus.error => 'Ошибка',
@@ -424,13 +424,21 @@ class _ConnectButton extends StatelessWidget {
                 BoxShadow(
                   color: glowColor.withValues(
                     alpha: routeFailed
-                        ? 0.34
+                        ? 0.48
                         : pingConfirmed
                             ? 0.32
                             : 0.22,
                   ),
-                  blurRadius: healthConfirmed ? 52 : 30,
-                  spreadRadius: healthConfirmed ? 4 : 0,
+                  blurRadius: routeFailed
+                      ? 58
+                      : healthConfirmed
+                          ? 52
+                          : 30,
+                  spreadRadius: routeFailed
+                      ? 6
+                      : healthConfirmed
+                          ? 4
+                          : 0,
                 ),
               ],
             ),
@@ -713,7 +721,7 @@ class _QuickInfo extends StatelessWidget {
             ),
             title: target.name,
             subtitle: '${target.endpoint} · '
-                '${tunnel.effectiveLatencyFor(target) == null ? 'Пинг —' : '${tunnel.effectiveLatencyFor(target)} мс'}',
+                '${tunnel.effectiveLatencyFor(target) == null ? '- мс' : '${tunnel.effectiveLatencyFor(target)} мс'}',
             selected: selectedId == target.id,
           ),
       ],
