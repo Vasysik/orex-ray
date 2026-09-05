@@ -37,7 +37,6 @@ class HomeScreen extends StatelessWidget {
                   _Header(
                     tunnel: tunnel,
                     snapshot: snapshot,
-                    showStatus: wide,
                   ),
                   const SizedBox(height: 20),
                   if (snapshot.errorMessage != null) ...[
@@ -97,12 +96,10 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.tunnel,
     required this.snapshot,
-    required this.showStatus,
   });
 
   final TunnelController tunnel;
   final TunnelSnapshot snapshot;
-  final bool showStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +122,6 @@ class _Header extends StatelessWidget {
       ],
     );
 
-    if (!showStatus) return brand;
     final profile = snapshot.profile;
     final pingStatus = snapshot.isConnected
         ? tunnel.effectivePingStatusFor(profile)
@@ -142,16 +138,56 @@ class _Header extends StatelessWidget {
             TunnelStatus.error => 'Ошибка',
             TunnelStatus.disconnected => 'Не подключено',
           };
-    return Row(
-      children: [
-        Expanded(child: brand),
-        const SizedBox(width: 16),
-        StatusPill(
-          label: label,
-          active: snapshot.isConnected && routeConfirmed,
-          color: routeFailed ? OrexColors.danger : null,
-        ),
-      ],
+
+    double textWidth(String value, TextStyle? style) {
+      final painter = TextPainter(
+        text: TextSpan(text: value, style: style),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      return painter.width;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final titleWidth = textWidth(
+          'OrexRay',
+          Theme.of(context).textTheme.headlineSmall,
+        );
+        final subtitleWidth = textWidth(
+          'Xray-клиент с характером Orex',
+          Theme.of(context).textTheme.bodySmall,
+        );
+        final brandTextWidth =
+            titleWidth > subtitleWidth ? titleWidth : subtitleWidth;
+        final brandNaturalWidth = 50 + 14 + brandTextWidth;
+        final pillTextWidth = textWidth(
+          label,
+          Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+        );
+        // StatusPill: 24 px horizontal padding + 7 px dot + 8 px gap,
+        // plus a tiny allowance for the border/rounding. Hide it only when
+        // the brand and the actual current label cannot coexist naturally.
+        final pillNaturalWidth = 24 + 7 + 8 + pillTextWidth + 2;
+        final fitsStatus = constraints.maxWidth >=
+            brandNaturalWidth + 16 + pillNaturalWidth;
+
+        if (!fitsStatus) return brand;
+        return Row(
+          children: [
+            Expanded(child: brand),
+            const SizedBox(width: 16),
+            StatusPill(
+              label: label,
+              active: snapshot.isConnected && routeConfirmed,
+              color: routeFailed ? OrexColors.danger : null,
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -305,6 +341,17 @@ class _ConnectionHero extends StatelessWidget {
         ? tunnel.effectivePingStatusFor(profile)
         : PingStatus.unknown;
     final routeFailed = _routeFailed(pingStatus);
+    final fallbackMessage = snapshot.message ??
+        (hasProfile
+            ? 'Готовы подключить ${profile.name}'
+            : 'Сначала добавьте профиль');
+    final secondaryText = !showStatusText && active
+        ? routeFailed
+            ? _routeFailureTitle(pingStatus)
+            : pingStatus != PingStatus.success
+                ? 'Проверяем маршрут…'
+                : fallbackMessage
+        : fallbackMessage;
 
     return GlassPanel(
       borderRadius: 28,
@@ -324,10 +371,7 @@ class _ConnectionHero extends StatelessWidget {
             const SizedBox(height: 6),
           ],
           Text(
-            snapshot.message ??
-                (hasProfile
-                    ? 'Готовы подключить ${profile.name}'
-                    : 'Сначала добавьте профиль'),
+            secondaryText,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),

@@ -109,8 +109,8 @@ class _CountryFlag extends StatelessWidget {
     return CountryFlag.fromCountryCode(
       normalized,
       theme: ImageTheme(
-        width: size * 0.68,
-        height: size * 0.46,
+        width: size * 0.75,
+        height: size * 0.51,
         shape: RoundedRectangle(size * 0.075),
       ),
     );

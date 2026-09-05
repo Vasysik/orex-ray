@@ -117,6 +117,7 @@ class TunnelController extends ChangeNotifier {
   bool _dependenciesDetached = false;
   bool _closing = false;
   bool _disposed = false;
+  final Completer<void> _closingSignal = Completer<void>();
   bool _hasConnectedBefore = false;
   int _latencyContextRevision = 0;
   String? _lastSelectedTargetId;
@@ -243,7 +244,10 @@ class TunnelController extends ChangeNotifier {
   bool get refreshingLatency =>
       _profiles.refreshingLatency || _routeLatencyRefreshCount > 0;
 
-  bool get canChangeTarget => !_engineSnapshot.isBusy;
+  bool _targetSwitchInFlight = false;
+
+  bool get canChangeTarget =>
+      !_engineSnapshot.isBusy && !_targetSwitchInFlight;
 
   /// Waits for a native runtime that may have survived the Flutter activity,
   /// then adopts its current snapshot before latency or connection decisions.
@@ -297,30 +301,81 @@ class TunnelController extends ChangeNotifier {
   }
 
   Future<void> selectTarget(String id) async {
-    if (!canChangeTarget) return;
+    if (_closing || !canChangeTarget) return;
     final next = _profiles.targetById(id);
     if (next == null) return;
 
     final activeId = _engineSnapshot.profile?.id;
-    final selectedId = _profiles.selectedTarget?.id;
-    if (selectedId == id && (!_engineSnapshot.isConnected || activeId == id)) {
+    final previousSelected = _profiles.selectedTarget;
+    final previousSelectedId = previousSelected?.id;
+    if (previousSelectedId == id &&
+        (!_engineSnapshot.isConnected || activeId == id)) {
       return;
     }
 
     final reconnect = _engineSnapshot.isConnected;
     final activeMode = _engineSnapshot.mode;
-    if (reconnect) {
-      final stopped = await _stopForTargetSwitch();
-      if (!stopped) return;
+    _targetSwitchInFlight = reconnect;
+    if (reconnect && !_closing) {
+      _profileUiRevision.value++;
+      notifyListeners();
     }
 
-    await _profiles.select(id);
+    try {
+      // Calling select() updates in-memory presentation synchronously before
+      // it reaches SharedPreferences I/O. Keep that persistence in flight while
+      // the old tunnel starts stopping, so reconnect latency never depends on
+      // storage latency.
+      final selectionFuture = _profiles.select(id);
+      if (!reconnect) {
+        await selectionFuture;
+        return;
+      }
 
-    if (reconnect) {
+      // Yield once so Flutter can paint the newly selected tile before native
+      // stop work begins.
+      await Future<void>.delayed(Duration.zero);
+      if (_closing) return;
+
+      final stopFuture = _stopForTargetSwitch();
+      try {
+        await selectionFuture;
+      } catch (_) {
+        final stopped = await stopFuture;
+        if (stopped && !_closing && previousSelected != null) {
+          await _engine.start(previousSelected, activeMode);
+          if (!_closing) _syncFromEngine();
+        }
+        rethrow;
+      }
+
+      final stopped = await stopFuture;
+      if (_closing) return;
+      if (!stopped) {
+        if (previousSelectedId != null &&
+            _profiles.selectedTarget?.id == id) {
+          await _profiles.select(previousSelectedId);
+        }
+        return;
+      }
+
       final selected = _profiles.selectedTarget;
       if (selected != null) {
+        // Give the disconnected frame a chance to render before building the
+        // next platform config. This avoids a visibly frozen profile screen on
+        // slower phones and Windows machines.
+        await Future<void>.delayed(Duration.zero);
+        if (_closing) return;
         await _engine.start(selected, activeMode);
-        _syncFromEngine();
+        if (!_closing) _syncFromEngine();
+      }
+    } finally {
+      if (reconnect) {
+        _targetSwitchInFlight = false;
+        if (!_closing && !_disposed) {
+          _profileUiRevision.value++;
+          notifyListeners();
+        }
       }
     }
   }
@@ -343,12 +398,16 @@ class TunnelController extends ChangeNotifier {
       if (_engine.current.status != TunnelStatus.disconnected &&
           _engine.current.status != TunnelStatus.error) {
         try {
-          await settled.future.timeout(const Duration(seconds: 12));
+          await Future.any<void>([
+            settled.future,
+            _closingSignal.future,
+          ]).timeout(const Duration(seconds: 12));
         } on TimeoutException {
-          _syncFromEngine();
+          if (!_closing) _syncFromEngine();
           return false;
         }
       }
+      if (_closing) return false;
       _syncFromEngine();
       return _engine.current.status == TunnelStatus.disconnected;
     } finally {
@@ -988,10 +1047,15 @@ class TunnelController extends ChangeNotifier {
     );
   }
 
+  void _markClosing() {
+    _closing = true;
+    if (!_closingSignal.isCompleted) _closingSignal.complete();
+  }
+
   Future<void> shutdown() => _shutdownFuture ??= _shutdown();
 
   Future<void> _shutdown() async {
-    _closing = true;
+    _markClosing();
     _desktopPingTimer?.cancel();
     _desktopPingTimer = null;
     _egressRefreshCoordinator.dispose();
@@ -1005,7 +1069,7 @@ class TunnelController extends ChangeNotifier {
   }
 
   Future<void> _disposeWithoutStopping() async {
-    _closing = true;
+    _markClosing();
     _desktopPingTimer?.cancel();
     _desktopPingTimer = null;
     _egressRefreshCoordinator.dispose();
@@ -1232,7 +1296,7 @@ class TunnelController extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    _closing = true;
+    _markClosing();
     _desktopPingTimer?.cancel();
     _desktopPingTimer = null;
     _egressRefreshCoordinator.dispose();

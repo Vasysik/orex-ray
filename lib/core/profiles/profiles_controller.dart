@@ -373,9 +373,22 @@ class ProfilesController extends ChangeNotifier {
     if (_selectedId == id || !targets.any((target) => target.id == id)) {
       return;
     }
+    final previousId = _selectedId;
     _selectedId = id;
-    await _repository.saveSelectedId(id);
+    // Selection is presentation state first: repaint immediately instead of
+    // making the user wait for SharedPreferences I/O before the tile reacts.
     _notifyListeners();
+    try {
+      await _repository.saveSelectedId(id);
+    } catch (_) {
+      // Do not leave an in-memory selection that was not persisted. Only
+      // roll back if no newer selection superseded this request.
+      if (_selectedId == id) {
+        _selectedId = previousId;
+        _notifyListeners();
+      }
+      rethrow;
+    }
   }
 
   Future<void> delete(String id) async {

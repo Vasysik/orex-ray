@@ -392,19 +392,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     );
   }
 
-  Future<void> _selectFromProfiles(BuildContext context, String id) async {
-    final snapshot = tunnel.snapshot;
-    if (snapshot.isConnected || snapshot.isBusy) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Сменить профиль при активном VPN можно на главном экране. '
-            'На этой странице переключение доступно после отключения VPN.',
-          ),
-        ),
-      );
-      return;
-    }
+  Future<void> _selectFromProfiles(String id) async {
+    if (!tunnel.canChangeTarget) return;
     await tunnel.selectTarget(id);
   }
 
@@ -474,7 +463,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                         onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
                             ? () => tunnel.refreshTargetLatency(balancer.id)
                             : null,
-                        onSelect: () => _selectFromProfiles(context, balancer.id),
+                        onSelect: () => _selectFromProfiles(balancer.id),
                         onEdit: () => widget.owner._showBalancerDialog(
                           context,
                           existing: balancer,
@@ -564,7 +553,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
               dragging: _draggingProfileId == profile.id,
               onSelect: () => _selectionMode
                   ? _toggleSelection(profile.id)
-                  : _selectFromProfiles(context, profile.id),
+                  : _selectFromProfiles(profile.id),
               onLongPress:
                   _selectionMode ? null : () => _enterSelection(profile.id),
               latencyMs: profile.latencyMs,
@@ -648,11 +637,6 @@ class _ProfilesHeader extends StatelessWidget {
             runSpacing: 10,
             children: [
               OutlinedButton.icon(
-                onPressed: allSelected ? null : onSelectAll,
-                icon: const Icon(Icons.select_all_rounded),
-                label: const Text('Все'),
-              ),
-              OutlinedButton.icon(
                 onPressed: refreshingLatency ? null : () => onPingSelected(),
                 icon: const Icon(Icons.network_ping_rounded),
                 label: const Text('Пинг'),
@@ -662,18 +646,27 @@ class _ProfilesHeader extends StatelessWidget {
                 icon: const Icon(Icons.ios_share_rounded),
                 label: const Text('Экспорт'),
               ),
-              OutlinedButton.icon(
-                onPressed: onDeleteSelected,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: OrexColors.danger,
+              Tooltip(
+                message: 'Удалить',
+                child: IconButton.outlined(
+                  onPressed: onDeleteSelected,
+                  color: OrexColors.danger,
+                  icon: const Icon(Icons.delete_outline_rounded),
                 ),
-                icon: const Icon(Icons.delete_outline_rounded),
-                label: const Text('Удалить'),
               ),
-              OutlinedButton.icon(
-                onPressed: onCloseSelection,
-                icon: const Icon(Icons.check_rounded),
-                label: const Text('Готово'),
+              Tooltip(
+                message: 'Выбрать все',
+                child: IconButton.outlined(
+                  onPressed: allSelected ? null : onSelectAll,
+                  icon: const Icon(Icons.select_all_rounded),
+                ),
+              ),
+              Tooltip(
+                message: 'Готово',
+                child: IconButton.outlined(
+                  onPressed: onCloseSelection,
+                  icon: const Icon(Icons.check_rounded),
+                ),
               ),
             ],
           )

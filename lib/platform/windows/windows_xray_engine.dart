@@ -193,6 +193,8 @@ class WindowsXrayEngine implements
       message: 'Подготавливаем Xray Core…',
       stats: const TrafficStats(),
     );
+    // Paint the connecting state before core verification/config generation.
+    await Future<void>.delayed(Duration.zero);
 
     try {
       await _proxyRecovery;

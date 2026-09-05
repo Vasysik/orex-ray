@@ -93,6 +93,9 @@ class AndroidXrayEngine
             : 'Запускаем локальный прокси…',
       ),
     );
+    // Let Flutter present the connecting frame before synchronous config
+    // generation. This matters most during in-app profile reconnects.
+    await Future<void>.delayed(Duration.zero);
 
     try {
       final config = mode == ConnectionMode.vpnTun

@@ -168,12 +168,13 @@ void main() {
     expect(find.text('1'), findsWidgets);
     expect(find.widgetWithText(OutlinedButton, 'Пинг'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Экспорт'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Удалить'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Готово'), findsOneWidget);
+    expect(find.byTooltip('Удалить'), findsOneWidget);
+    expect(find.byTooltip('Выбрать все'), findsOneWidget);
+    expect(find.byTooltip('Готово'), findsOneWidget);
     expect(find.byIcon(Icons.drag_indicator_rounded), findsNothing);
     expect(
       find.descendant(
-        of: find.widgetWithText(OutlinedButton, 'Готово'),
+        of: find.byTooltip('Готово'),
         matching: find.byIcon(Icons.check_rounded),
       ),
       findsOneWidget,
@@ -192,15 +193,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(profiles.profiles.last.name, 'Bulk-actions');
 
-    final deleteButton = find.widgetWithText(OutlinedButton, 'Удалить');
-    final doneButton = find.widgetWithText(OutlinedButton, 'Готово');
+    final selectAllButton = find.byTooltip('Выбрать все');
+    final doneButton = find.byTooltip('Готово');
     expect(
       tester.getTopLeft(doneButton).dx,
-      greaterThan(tester.getTopLeft(deleteButton).dx),
+      greaterThan(tester.getTopLeft(selectAllButton).dx),
     );
   });
 
-  testWidgets('profile tab does not switch target while VPN is active',
+  testWidgets('profile tab switches target while VPN is active',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();
@@ -252,11 +253,19 @@ void main() {
 
     await tester.tap(find.text(second.name));
     await tester.pump();
+    await tester.pump(Duration.zero);
 
-    expect(profiles.selectedTarget?.id, first.id);
+    // The screen owns the gesture/optimistic-selection contract. The full
+    // asynchronous STOP -> persistence -> START transaction is covered by
+    // tunnel_controller_test.dart where selectTarget() can be awaited
+    // directly. A widget onTap callback intentionally does not expose that
+    // Future to WidgetTester, so waiting for the whole native transaction
+    // here makes this test dependent on fake-async/plugin scheduling.
+    expect(profiles.selectedTarget?.id, second.id);
+    expect(engine.stopCalls, 1);
     expect(
       find.textContaining('Сменить профиль при активном VPN можно на главном экране'),
-      findsOneWidget,
+      findsNothing,
     );
   });
 
@@ -538,6 +547,9 @@ class _ProfilesTestTunnelEngine implements TunnelEngine {
 }
 
 class _MutableProfilesTestTunnelEngine implements TunnelEngine {
+  int stopCalls = 0;
+  final List<String> startedTargets = <String>[];
+
   TunnelSnapshot _current = const TunnelSnapshot(
     status: TunnelStatus.disconnected,
     stats: TrafficStats(),
@@ -558,6 +570,7 @@ class _MutableProfilesTestTunnelEngine implements TunnelEngine {
 
   @override
   Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    startedTargets.add(profile.id);
     _current = TunnelSnapshot(
       status: TunnelStatus.connected,
       mode: mode,
@@ -568,6 +581,7 @@ class _MutableProfilesTestTunnelEngine implements TunnelEngine {
 
   @override
   Future<void> stop() async {
+    stopCalls++;
     _current = TunnelSnapshot(
       status: TunnelStatus.disconnected,
       mode: _current.mode,

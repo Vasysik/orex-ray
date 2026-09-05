@@ -360,6 +360,9 @@ void main() {
     final switching = controller.selectTarget(second.id);
     await Future<void>.delayed(Duration.zero);
 
+    // The list selection updates immediately even though the native stop is
+    // still in progress; reconnect itself remains serialized.
+    expect(profiles.selectedTarget?.id, second.id);
     expect(engine.current.status, TunnelStatus.disconnecting);
     expect(engine.startedTargets, [first.id]);
 
@@ -369,6 +372,46 @@ void main() {
     expect(engine.startedTargets, [first.id, second.id]);
     expect(controller.snapshot.isConnected, isTrue);
     expect(controller.snapshot.profile?.id, second.id);
+  });
+
+  test('disposing during an asynchronous profile switch cancels cleanly',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    await profiles.importVlessLink(
+      'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@first.example:443'
+      '?encryption=none&security=none&type=tcp#Dispose-first',
+    );
+    final second = await profiles.createProfile(
+      TunnelProfile(
+        id: 'dispose-second',
+        name: 'Dispose-second',
+        address: 'second.example',
+        port: 443,
+        userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      ),
+    );
+    final engine = _DelayedStopTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+    );
+
+    await controller.toggle();
+    final switching = controller.selectTarget(second.id);
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.current.status, TunnelStatus.disconnecting);
+
+    controller.dispose();
+    await switching;
+    profiles.dispose();
+    settings.dispose();
+
+    expect(engine.startedTargets, hasLength(1));
   });
 
   test('VPN ping uses the active route and never a direct profile socket',
