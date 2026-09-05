@@ -3,10 +3,10 @@ package ru.orex.ray
 import android.content.Context
 
 /**
- * Stores the last coarse tunnel state outside the process.
+ * Stores the last coarse tunnel state for the VPN/Quick Settings process.
  *
- * Quick Settings tiles can be rebound in a fresh process after the foreground
- * VPN service stops. Keeping the state only in OrexRayTunnelEvents would leave
+ * Quick Settings can rebind after the foreground VPN service stops. Keeping the
+ * state only in OrexRayTunnelEvents would leave
  * a transient unavailable tile stuck until the Flutter activity starts again.
  */
 internal object OrexRayRuntimeStateStore {

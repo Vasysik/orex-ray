@@ -47,6 +47,38 @@ void main() {
     expect(controller.snapshot.status, TunnelStatus.disconnected);
   });
 
+  test('second toggle cancels an in-progress connection', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Cancelable',
+    );
+    final engine = _ConnectingTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      operatingSystem: 'android',
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.toggle();
+    expect(controller.snapshot.status, TunnelStatus.connecting);
+
+    await controller.toggle();
+
+    expect(engine.stopCalls, 1);
+    expect(controller.snapshot.status, TunnelStatus.disconnected);
+  });
+
   test('Android defaults to VPN and supports local proxy', () async {
     SharedPreferences.setMockInitialValues({});
     final settings = await ConnectionSettingsController.load(
@@ -80,6 +112,8 @@ void main() {
     await settings.setCustomDns('9.9.9.9, 149.112.112.112');
     await settings.setDnsPreset(DnsPreset.custom);
     await settings.setStatsIntervalSeconds(5);
+    await settings.setNotificationStatsIntervalSeconds(30);
+    await settings.setPingIntervalSeconds(120);
     await settings.setShowNotificationSpeed(false);
     await settings.setShowNotificationPing(false);
     await settings.setGeoRoutingEnabled(true);
@@ -98,6 +132,8 @@ void main() {
     expect(settings.logLevel, 'info');
     expect(settings.dnsServers, ['9.9.9.9', '149.112.112.112']);
     expect(settings.statsIntervalSeconds, 5);
+    expect(settings.notificationStatsIntervalSeconds, 30);
+    expect(settings.pingIntervalSeconds, 120);
     expect(settings.showNotificationSpeed, isFalse);
     expect(settings.showNotificationPing, isFalse);
     expect(settings.geoRoutingEnabled, isTrue);
@@ -121,6 +157,8 @@ void main() {
     expect(settings.dnsPreset, DnsPreset.automatic);
     expect(settings.localProxyInVpn, isTrue);
     expect(settings.showNotificationPing, isTrue);
+    expect(settings.notificationStatsIntervalSeconds, 5);
+    expect(settings.pingIntervalSeconds, 60);
     expect(settings.closeToTray, isFalse);
   });
 
@@ -172,6 +210,8 @@ void main() {
 
     await controller.connect();
     await settings.setStatsIntervalSeconds(5);
+    await settings.setNotificationStatsIntervalSeconds(30);
+    await settings.setPingIntervalSeconds(120);
     await settings.setShowNotificationSpeed(false);
     await settings.setShowNotificationPing(false);
     await controller.setStatsUiActive(false);
@@ -180,6 +220,8 @@ void main() {
       engine.runtimeSettings,
       contains((
         interval: 5,
+        notificationInterval: 30,
+        pingInterval: 120,
         speed: false,
         ping: false,
       )),
@@ -278,6 +320,98 @@ void main() {
     expect(controller.snapshot.isConnected, isTrue);
     expect(controller.snapshot.profile?.id, second.id);
     expect(controller.snapshot.mode, ConnectionMode.vpnTun);
+  });
+
+  test('profile switch waits for asynchronous Android stop before restart',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final first = await profiles.importVlessLink(
+      'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@first.example:443'
+      '?encryption=none&security=none&type=tcp#Async-first',
+    );
+    final second = await profiles.createProfile(
+      TunnelProfile(
+        id: 'async-second',
+        name: 'Async-second',
+        address: 'second.example',
+        port: 443,
+        userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      ),
+    );
+    final engine = _DelayedStopTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await controller.toggle();
+    expect(controller.snapshot.profile?.id, first.id);
+
+    final switching = controller.selectTarget(second.id);
+    await Future<void>.delayed(Duration.zero);
+
+    // The list selection updates immediately even though the native stop is
+    // still in progress; reconnect itself remains serialized.
+    expect(profiles.selectedTarget?.id, second.id);
+    expect(engine.current.status, TunnelStatus.disconnecting);
+    expect(engine.startedTargets, [first.id]);
+
+    engine.completeStop();
+    await switching;
+
+    expect(engine.startedTargets, [first.id, second.id]);
+    expect(controller.snapshot.isConnected, isTrue);
+    expect(controller.snapshot.profile?.id, second.id);
+  });
+
+  test('disposing during an asynchronous profile switch cancels cleanly',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    await profiles.importVlessLink(
+      'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@first.example:443'
+      '?encryption=none&security=none&type=tcp#Dispose-first',
+    );
+    final second = await profiles.createProfile(
+      TunnelProfile(
+        id: 'dispose-second',
+        name: 'Dispose-second',
+        address: 'second.example',
+        port: 443,
+        userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      ),
+    );
+    final engine = _DelayedStopTunnelEngine();
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+    );
+
+    await controller.toggle();
+    final switching = controller.selectTarget(second.id);
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.current.status, TunnelStatus.disconnecting);
+
+    controller.dispose();
+    await switching;
+    profiles.dispose();
+    settings.dispose();
+
+    expect(engine.startedTargets, hasLength(1));
   });
 
   test('VPN ping uses the active route and never a direct profile socket',
@@ -401,11 +535,19 @@ void main() {
     expect(engine.directMetadata, isEmpty);
     expect(
       engine.effectiveLatencies,
-      contains((targetId: imported.id, latencyMs: 321)),
+      contains((
+        targetId: imported.id,
+        latencyMs: 321,
+        pingStatus: PingStatus.success,
+      )),
     );
     expect(
       engine.effectiveLatencies,
-      isNot(contains((targetId: imported.id, latencyMs: 71))),
+      isNot(contains((
+        targetId: imported.id,
+        latencyMs: 71,
+        pingStatus: PingStatus.success,
+      ))),
     );
 
     routeProbe.result = const LatencyProbeResult.timeout();
@@ -413,8 +555,50 @@ void main() {
 
     expect(
       engine.effectiveLatencies.last,
-      (targetId: imported.id, latencyMs: null),
+      (
+        targetId: imported.id,
+        latencyMs: null,
+        pingStatus: PingStatus.timeout,
+      ),
     );
+  });
+
+  test('restores a native timeout for an already-running active route',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final imported = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@timeout.example:443'
+      '?encryption=none&security=none&type=tcp#Native-timeout',
+    );
+    final engine = _RecordingTunnelEngine();
+    engine._current = TunnelSnapshot(
+      status: TunnelStatus.connected,
+      mode: ConnectionMode.vpnTun,
+      profile: TunnelTarget.single(imported),
+      stats: const TrafficStats(),
+      effectivePingStatus: PingStatus.timeout,
+    );
+    final controller = TunnelController(
+      engine: engine,
+      profiles: profiles,
+      settings: settings,
+      routeProbeStartupDelay: Duration.zero,
+    );
+    addTearDown(() {
+      controller.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    expect(
+      controller.effectivePingStatusFor(controller.snapshot.profile),
+      PingStatus.timeout,
+    );
+    expect(controller.effectiveLatencyFor(controller.snapshot.profile), isNull);
   });
 
   test(
@@ -1010,9 +1194,110 @@ class _RecordingTunnelEngine implements TunnelEngine {
   }
 }
 
+class _ConnectingTunnelEngine implements TunnelEngine {
+  final StreamController<TunnelSnapshot> _snapshots =
+      StreamController<TunnelSnapshot>.broadcast();
+  TunnelSnapshot _current = const TunnelSnapshot(
+    status: TunnelStatus.disconnected,
+    stats: TrafficStats(),
+  );
+  int stopCalls = 0;
+
+  @override
+  TunnelSnapshot get current => _current;
+
+  @override
+  Stream<TunnelSnapshot> get snapshots => _snapshots.stream;
+
+  @override
+  Set<ConnectionMode> get supportedModes => const {
+        ConnectionMode.vpnTun,
+        ConnectionMode.localProxy,
+      };
+
+  @override
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    _current = TunnelSnapshot(
+      status: TunnelStatus.connecting,
+      mode: mode,
+      profile: profile,
+      stats: const TrafficStats(),
+      message: 'Создаём подключение…',
+    );
+    _snapshots.add(_current);
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+    _current = _current.copyWith(
+      status: TunnelStatus.disconnected,
+      clearMessage: true,
+    );
+    _snapshots.add(_current);
+  }
+
+  @override
+  Future<void> dispose() => _snapshots.close();
+}
+
+class _DelayedStopTunnelEngine implements TunnelEngine {
+  final StreamController<TunnelSnapshot> _snapshots =
+      StreamController<TunnelSnapshot>.broadcast();
+  final List<String> startedTargets = [];
+  TunnelSnapshot _current = const TunnelSnapshot(
+    status: TunnelStatus.disconnected,
+    stats: TrafficStats(),
+  );
+
+  @override
+  TunnelSnapshot get current => _current;
+
+  @override
+  Stream<TunnelSnapshot> get snapshots => _snapshots.stream;
+
+  @override
+  Set<ConnectionMode> get supportedModes => const {
+        ConnectionMode.vpnTun,
+        ConnectionMode.localProxy,
+      };
+
+  @override
+  Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    startedTargets.add(profile.id);
+    _current = TunnelSnapshot(
+      status: TunnelStatus.connected,
+      mode: mode,
+      profile: profile,
+      stats: const TrafficStats(),
+    );
+    _snapshots.add(_current);
+  }
+
+  @override
+  Future<void> stop() async {
+    _current = _current.copyWith(status: TunnelStatus.disconnecting);
+    _snapshots.add(_current);
+  }
+
+  void completeStop() {
+    _current = _current.copyWith(status: TunnelStatus.disconnected);
+    _snapshots.add(_current);
+  }
+
+  @override
+  Future<void> dispose() => _snapshots.close();
+}
+
 class _RuntimeSettingsEngine extends _RecordingTunnelEngine
     implements TunnelRuntimeSettingsSink, TunnelStatsConsumerSink {
-  final List<({int interval, bool speed, bool ping})> runtimeSettings = [];
+  final List<({
+    int interval,
+    int notificationInterval,
+    int pingInterval,
+    bool speed,
+    bool ping,
+  })> runtimeSettings = [];
   final List<bool> statsUiStates = [];
 
   @override
@@ -1023,11 +1308,15 @@ class _RuntimeSettingsEngine extends _RecordingTunnelEngine
   @override
   Future<void> updateRuntimeSettings({
     required int statsIntervalSeconds,
+    required int notificationStatsIntervalSeconds,
+    required int pingIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
   }) async {
     runtimeSettings.add((
       interval: statsIntervalSeconds,
+      notificationInterval: notificationStatsIntervalSeconds,
+      pingInterval: pingIntervalSeconds,
       speed: showNotificationSpeed,
       ping: showNotificationPing,
     ));
@@ -1037,7 +1326,8 @@ class _RuntimeSettingsEngine extends _RecordingTunnelEngine
 class _EffectiveLatencyRecordingEngine extends _RecordingTunnelEngine
     implements TunnelRuntimeMetadataSink, TunnelRuntimeEffectiveLatencySink {
   final List<({String targetId, int? latencyMs})> directMetadata = [];
-  final List<({String targetId, int? latencyMs})> effectiveLatencies = [];
+  final List<({String targetId, int? latencyMs, PingStatus pingStatus})>
+      effectiveLatencies = [];
 
   @override
   Future<void> updateTargetMetadata(TunnelTarget target) async {
@@ -1048,8 +1338,13 @@ class _EffectiveLatencyRecordingEngine extends _RecordingTunnelEngine
   Future<void> updateEffectiveLatency(
     TunnelTarget target, {
     required int? latencyMs,
+    required PingStatus pingStatus,
   }) async {
-    effectiveLatencies.add((targetId: target.id, latencyMs: latencyMs));
+    effectiveLatencies.add((
+      targetId: target.id,
+      latencyMs: latencyMs,
+      pingStatus: pingStatus,
+    ));
   }
 }
 

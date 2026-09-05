@@ -39,3 +39,22 @@ Project source: https://github.com/Loyalsoldier/v2ray-rules-dat
 - Purpose in OrexRay: user-selected custom `geoip.dat` and `geosite.dat` imports on Android and Windows.
 
 Project source: https://github.com/flutter/packages/tree/main/packages/file_selector
+
+## country_flags
+
+- Package: `country_flags`
+- License: MIT
+- Purpose in OrexRay: SVG country flags for detected egress ISO country codes on Android and Windows.
+- Flag artwork source: `flag-icons`, as credited by the package.
+
+Package source: https://pub.dev/packages/country_flags
+
+## Simple Icons / Cloudflare glyph
+
+- Package: `simple_icons`
+- Simple Icons project license: CC0-1.0.
+- Purpose in OrexRay: Cloudflare glyph used to identify an egress reported as Cloudflare WARP.
+- Brand marks can have separate trademark rules; the icon pack license does not grant trademark rights.
+
+Project source: https://simpleicons.org/
+Cloudflare trademark guidelines: https://www.cloudflare.com/trademark/

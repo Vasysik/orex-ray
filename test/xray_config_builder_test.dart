@@ -100,6 +100,25 @@ void main() {
     expect(rules, hasLength(1));
   });
 
+  test('does not emit removed allowInsecure for legacy profiles', () {
+    final legacyTarget = TunnelTarget.single(
+      profile.copyWith(
+        security: 'tls',
+        serverName: 'example.com',
+        allowInsecure: true,
+      ),
+    );
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildLocalProxy(legacyTarget),
+    ) as Map<String, dynamic>;
+    final outbound =
+        (json['outbounds'] as List).first as Map<String, dynamic>;
+    final stream = outbound['streamSettings'] as Map<String, dynamic>;
+    final tls = stream['tlsSettings'] as Map<String, dynamic>;
+
+    expect(tls.containsKey('allowInsecure'), isFalse);
+  });
+
   test('keeps local SOCKS and HTTP proxy available next to VPN TUN', () {
     final json = jsonDecode(
       const XrayConfigBuilder().buildAndroidTun(target),
@@ -292,6 +311,46 @@ void main() {
     expect(api['services'], ['StatsService']);
     expect(system['statsInboundUplink'], isTrue);
     expect(system['statsInboundDownlink'], isTrue);
+
+    final tun = jsonDecode(
+      const XrayConfigBuilder().buildWindowsTun(
+        TunnelTarget.single(profile),
+        apiPort: 32124,
+      ),
+    ) as Map<String, dynamic>;
+    final tunPolicy = tun['policy'] as Map<String, dynamic>;
+    final tunSystem = tunPolicy['system'] as Map<String, dynamic>;
+    expect(tunSystem['statsInboundUplink'], isTrue);
+    expect(tunSystem['statsInboundDownlink'], isTrue);
+  });
+
+  test('disables unused inbound stats only for Android configs', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(
+        TunnelTarget.single(profile),
+      ),
+    ) as Map<String, dynamic>;
+    final policy = json['policy'] as Map<String, dynamic>;
+    final system = policy['system'] as Map<String, dynamic>;
+
+    expect(system['statsInboundUplink'], isFalse);
+    expect(system['statsInboundDownlink'], isFalse);
+    expect(system['statsOutboundUplink'], isTrue);
+    expect(system['statsOutboundDownlink'], isTrue);
+  });
+
+  test('can disable inbound stats for Android local-proxy mode', () {
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildLocalProxy(
+        TunnelTarget.single(profile),
+        enableInboundStats: false,
+      ),
+    ) as Map<String, dynamic>;
+    final policy = json['policy'] as Map<String, dynamic>;
+    final system = policy['system'] as Map<String, dynamic>;
+
+    expect(system['statsInboundUplink'], isFalse);
+    expect(system['statsInboundDownlink'], isFalse);
   });
 
   test('builds working Xray outbounds for imported proxy protocols', () {

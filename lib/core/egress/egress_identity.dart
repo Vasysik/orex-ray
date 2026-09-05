@@ -9,8 +9,6 @@ class EgressIdentity {
   final bool warp;
   final DateTime checkedAt;
 
-  String get flagEmoji => countryFlag(countryCode);
-
   Map<String, Object?> toJson() => {
         'countryCode': countryCode,
         'warp': warp,
@@ -31,18 +29,14 @@ class EgressIdentity {
   }
 }
 
-String countryFlag(String countryCode) {
-  final code = countryCode.trim().toUpperCase();
-  if (!RegExp(r'^[A-Z]{2}$').hasMatch(code)) return '🌐';
-  return String.fromCharCodes(code.codeUnits.map((value) => 0x1F1E6 + value - 65));
-}
 
 EgressIdentity? parseCloudflareTrace(String body, {DateTime? checkedAt}) {
   final values = <String, String>{};
   for (final line in body.split('\n')) {
     final separator = line.indexOf('=');
     if (separator <= 0) continue;
-    values[line.substring(0, separator).trim()] = line.substring(separator + 1).trim();
+    values[line.substring(0, separator).trim()] =
+        line.substring(separator + 1).trim();
   }
   final country = values['loc']?.toUpperCase() ?? '';
   if (!RegExp(r'^[A-Z]{2}$').hasMatch(country)) return null;

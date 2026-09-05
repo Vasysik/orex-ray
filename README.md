@@ -2,12 +2,12 @@
 
 Тёплый Xray-клиент на **Flutter** для **Android** и **Windows**. OrexRay
 объединяет системный VPN, системный прокси, локальные SOCKS5/HTTP-прокси,
-профили VLESS, балансировщики и per-app маршрутизацию в одном интерфейсе в
+профили VLESS/VMess/Trojan/Shadowsocks/SOCKS/HTTP, балансировщики и per-app маршрутизацию в одном интерфейсе в
 визуальном стиле Orex.
 
 Текущая версия задаётся только в `pubspec.yaml` в поле `version`.
 
-OrexRay **0.6.5+8** находится в стадии private beta / dogfood, но текущий фокус уже не на добавлении базовых режимов, а на надёжности long-running VPN. Android VPN уже
+Текущая сборка находится в стадии private beta / dogfood, но фокус уже не на добавлении базовых режимов, а на надёжности long-running VPN. Android VPN уже
 пропускает реальный TCP/UDP-трафик через Xray, работает в фоне и может
 одновременно поднимать локальные SOCKS5/HTTP-прокси. Windows-часть поддерживает
 системный прокси, локальный прокси и отдельный TUN-режим. Это уже рабочий
@@ -100,7 +100,7 @@ DNS, системной таблицы маршрутов и явной прив
 
 ## Надёжность long-running подключения
 
-В 0.6.5+8 доработан recovery-контур для сценария «забыл, что VPN существует»:
+В текущей ветке доработан recovery-контур для сценария «забыл, что VPN существует»:
 
 - Windows получает события resume и изменения IP-интерфейсов от ОС;
 - события собственного интерфейса `OrexRay` отфильтровываются нативно;
@@ -144,29 +144,34 @@ watchdog остаются видимыми в отчёте.
 Кнопка **Скопировать отчёт** повторно редактирует UUID, `vless://` ссылки и типичные
 secret-поля. Отчёт предназначен для bug report без публикации конфигурации доступа.
 
-На Windows здесь же доступна кнопка **Переустановить Xray Core**. Она работает
-только при отключённом туннеле, восстанавливает закреплённую версию Core и
-проверяет архив по встроенному SHA-256. Для установки в Program Files нужны права
-администратора; portable/debug-сборки ремонтируются в своём каталоге без
-переустановки всего OrexRay.
+На Windows обслуживание движка вынесено в **О приложении → Движок**. Кнопка
+**Переустановить Xray Core** работает только при отключённом туннеле,
+восстанавливает закреплённую версию Core и проверяет архив по встроенному SHA-256.
+Для установки в Program Files нужны права администратора; portable/debug-сборки
+ремонтируются в своём каталоге без переустановки всего OrexRay.
 
 ## Флаги выхода и WARP
 
 После успешного подключения OrexRay может проверить выход через локальный HTTP
 proxy самого Xray. Из ответа Cloudflare trace сохраняются только код страны,
-признак WARP и время проверки — выходной IP не сохраняется. На карточке профиля
-появляется emoji-флаг, а WARP отмечается маленьким значком `W`.
+признак WARP и время проверки — выходной IP не сохраняется. На карточке профиля показывается флаг страны выхода, а WARP отмечается
+компактным фирменным значком Cloudflare.
 
-## 3. Профили VLESS
+## 3. Профили и импорт Xray
 
-Профиль можно:
+Профили можно:
 
-- импортировать из `vless://`;
-- создать вручную внутри приложения;
-- редактировать после создания;
-- удалить;
-- проверить ping;
-- быстро выбрать с главной страницы.
+- импортировать из proxy-ссылок и Xray JSON;
+- импортировать JSON как объект `{...}` или массив `[...]`;
+- читать JSON из локального `.json` и HTTP(S)-ссылки;
+- экспортировать один профиль как JSON-объект или выбранные профили массивом;
+- копировать JSON прямо в буфер обмена без промежуточного файла;
+- создать и редактировать вручную;
+- выделять долгим нажатием несколько серверов для mass ping/export/delete;
+- менять порядок серверов drag-and-drop;
+- быстро выбирать маршрут с главной страницы;
+- менять активный маршрут и с главной, и прямо из списка профилей; выбор
+  отображается сразу, а stop/start выполняется последовательно без блокировки UI.
 
 Редактор поддерживает основные параметры, которые уже используются текущим
 Xray config builder:
@@ -178,7 +183,6 @@ Xray config builder:
 - SNI, fingerprint, ALPN;
 - REALITY public key/password и short ID;
 - path, host и gRPC service name;
-- `allowInsecure` для явно проблемных TLS-профилей.
 
 Добавление нового профиля **не переключает активный маршрут автоматически**.
 При первом профиле он становится выбранным, потому что другого маршрута ещё
@@ -249,6 +253,12 @@ Ping можно обновить:
 - общий входящий и исходящий трафик;
 - длительность соединения.
 
+Интервалы разделены: частота UI-статистики и частота обновления Android
+notification настраиваются независимо, а ping имеет свой интервал. На Windows
+этот интервал управляет периодической end-to-end проверкой активного маршрута;
+на Android её выполняет foreground VPN-service. Если UI закрыт и соответствующий
+показатель notification выключен, его periodic task полностью останавливается.
+
 В Android foreground notification отображаются профиль, скорости и задержка в
 компактном виде, например:
 
@@ -277,8 +287,11 @@ bitmap-данных, а иконки запрашиваются лениво д�
 
 ## 8. Фоновая работа Android
 
-Xray работает внутри foreground `VpnService` независимо от Flutter Activity.
-Закрытие интерфейса не должно останавливать активный VPN.
+Android разделяет UI и VPN по процессам: Flutter работает в `ru.orex.ray`, а
+foreground `VpnService`, Xray, TUN и Quick Settings — в `ru.orex.ray:vpn`.
+Поэтому выгрузка тяжёлого UI-процесса при memory pressure не обязана уничтожать
+туннель. Package-level force-stop со стороны прошивки всё равно останавливает
+оба процесса.
 
 Фоновая часть отвечает за:
 
@@ -289,8 +302,11 @@ Xray работает внутри foreground `VpnService` независимо 
 - кнопку отключения из уведомления;
 - восстановление последнего соединения после пересоздания service.
 
-Частота обновления статистики настраивается. OrexRay не держит постоянный wake
-lock только ради счётчиков.
+Частота UI-статистики, notification-статистики и ping настраивается отдельно.
+В фоне stats-loop и ping-loop существуют только при реально активном consumer:
+если показатель выключен либо Android запретил notification channel, лишний
+polling прекращается. OrexRay не держит постоянный wake lock только ради
+счётчиков.
 
 На Android 7+ доступна системная плитка **OrexRay VPN** для панели быстрых
 настроек рядом с Bluetooth и фонариком. Она включает последний VPN, который
@@ -338,7 +354,6 @@ core.
 Остаточные границы:
 
 - режим LAN proxy открывает порт на `0.0.0.0` и требует осознанного включения;
-- `allowInsecure` снижает TLS-защиту и по умолчанию выключен;
 - пользовательская GeoData доверяется Xray parser;
 - сторонний Xray core остаётся частью доверенной вычислительной базы;
 - Windows release устанавливается в Program Files; bundled `xray.exe`,
@@ -379,8 +394,9 @@ lib/
     widgets/            reusable Orex components
 
 android/app/src/main/kotlin/ru/orex/ray/
-  MainActivity.kt                       MethodChannel/EventChannel bridge
-  OrexRayVpnService.kt                  foreground VPN service
+  MainActivity.kt                       Flutter IPC bridge к :vpn process
+  OrexRayTunnelEvents.kt                cross-process runtime events
+  OrexRayVpnService.kt                  foreground VPN service в :vpn process
   OrexRayQuickSettingsTileService.kt    Quick Settings VPN toggle
   OrexRayVpnPermissionActivity.kt       first-run native permission bridge
   OrexRayStartIntentStore.kt            encrypted reconnect state
@@ -393,11 +409,10 @@ android/app/src/main/kotlin/ru/orex/ray/
 строит mode-specific конфиг, а `TunnelController` управляет жизненным циклом
 подключения. UI не должен напрямую запускать native core.
 
-## 12. Проверка и сборки
+## 12. Проверка, debug и release
 
-Практическая инструкция для локальной release-сборки Android и Windows лежит в:
-
-[docs/release-builds.md](docs/release-builds.md)
+Сборки теперь устроены одинаково с Orex Messenger: общий builder
+`tool\build_channel.ps1` и две короткие точки входа — debug/release.
 
 Базовый quality gate:
 
@@ -407,62 +422,107 @@ flutter analyze --no-pub
 flutter test --no-pub
 ```
 
-Android release собирается тем же способом, что Orex Messenger:
+Настоящая debug-сборка Android + Windows:
 
 ```powershell
-flutter build apk --release --split-per-abi --no-pub
+powershell -ExecutionPolicy Bypass -File tool\build_debug.ps1
 ```
 
-Windows release и установщик собираются по той же схеме, что Orex Messenger:
+Release Android + Windows:
 
 ```powershell
-flutter build windows --release --no-pub
-powershell -ExecutionPolicy Bypass -File windows\installer\prepare_xray_core.ps1
-# затем собрать Inno Setup installer по командам из docs/release-builds.md
+powershell -ExecutionPolicy Bypass -File tool\build_release.ps1
 ```
 
-Готовый установщик:
+Платформу можно ограничить одинаковым параметром:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool\build_debug.ps1 -Platform android
+powershell -ExecutionPolicy Bypass -File tool\build_debug.ps1 -Platform windows
+powershell -ExecutionPolicy Bypass -File tool\build_release.ps1 -Platform android
+powershell -ExecutionPolicy Bypass -File tool\build_release.ps1 -Platform windows
+```
+
+Артефакты имеют одну схему имени и лежат в `dist\<debug|release>\<version>\`:
 
 ```text
-build\windows\x64\installer\OrexRay-Setup-<version-from-pubspec>.exe
+OrexRay-<version>-debug.apk
+OrexRay-<version>-debug-x64.zip
+OrexRay-<version>-arm64-v8a.apk
+OrexRay-<version>-armeabi-v7a.apk
+OrexRay-<version>-x86_64.apk
+OrexRay-<version>-x64-setup.exe
+SHA256SUMS.txt
 ```
 
-По умолчанию Dart obfuscation не используется. Release автоматически подписывается
-Gradle через `android/key.properties` или `OREX_ANDROID_*`. Для private beta
-распространяется подписанный APK и его SHA-256; release keystore хранится отдельно
-от репозитория и не пересоздаётся между версиями.
+Debug Android использует отдельный application id `ru.orex.ray.debug` и имя
+`OrexRay Debug`, поэтому может быть установлен рядом с release. Windows debug
+упаковывается целиком вместе с DLL/assets и pinned Xray Core; один `.exe` отдельно
+не является полноценной portable-сборкой.
+
+Для ADB-сценариев есть отдельный сборщик диагностики:
+
+```powershell
+# Собрать debug, установить на подключённый телефон, запустить и начать capture:
+powershell -ExecutionPolicy Bypass -File tool\collect_orexray_android_logs.ps1 `
+  -PrepareDebug -Area vpn-switch
+
+# Проверить отмену зависшего connecting:
+powershell -ExecutionPolicy Bypass -File tool\collect_orexray_android_logs.ps1 `
+  -Area vpn-cancel
+
+# Снять batterystats/power/alarm/jobscheduler:
+powershell -ExecutionPolicy Bypass -File tool\collect_orexray_android_logs.ps1 `
+  -Area battery
+```
+
+Подробности:
+
+- [общая схема сборок](docs/release-builds.md);
+- [Android release](docs/release-android.md);
+- [Windows release](docs/release-windows.md);
+- [Android debug/ADB](docs/android-debugging.md).
+
+Release автоматически подписывается Gradle через `android/key.properties` или
+`OREX_ANDROID_*`. Debug использует обычный Android debug signing. Release keystore
+хранится отдельно от репозитория и не пересоздаётся между версиями.
 
 ## 13. Текущий статус
 
-Версия **0.6.5+8** сфокусирована на надёжности и наблюдаемости:
+Текущая ветка сфокусирована на долгой фоновой работе, импорте/экспорте и
+снижении лишней нагрузки UI:
 
-- исправлен self-triggered Windows TUN recovery-loop;
-- добавлена проверка реальных IPv4/IPv6-маршрутов до статуса «Подключено»;
-- app-level recovery/watchdog события защищены от вытеснения debug-трафиком Xray;
-- уровень логов перенесён в **Диагностику**;
-- опциональный автозапуск и auto-connect;
-- восстановление Windows после resume и смены сети;
-- ограниченный watchdog Xray на Windows и Android;
-- TUN-привязка к фактическому физическому интерфейсу;
-- безопасная диагностика и копируемый отчёт;
-- флаг страны выхода и WARP badge;
-- единый компактный selector режимов на узком и широком экране;
+- Android VPN вынесен в отдельный `:vpn` process и переживает выгрузку Flutter UI;
+- foreground stats/ping работают только при активном UI или реально видимом
+  notification consumer;
+- UI-статистика, notification-статистика и ping получили независимые интервалы;
+- timeout/unavailable активного маршрута отображаются как `—` и красное
+  health-состояние; зелёный glow означает только подтверждённый успешный ping;
+- импорт Xray JSON поддерживает объект, массив, файл, буфер обмена и HTTP(S) URL;
+- экспорт умеет сохранять `.json` и копировать один объект или массив выбранных;
+- long-press включает множественный выбор; в этом режиме карточки переставляются за отдельный drag-handle, а bulk ping/export/delete остаются рядом с обычными действиями;
+- profile screen не подписан на высокочастотные traffic snapshots, а
+  неперекрывающиеся glass-карточки используют grouped backdrop blur;
+- Android Quick Settings tile и restart state работают из отдельного VPN-process;
+- Windows сохраняет system/local proxy и TUN, watchdog/recovery и pinned Xray Core;
+- release-документация разделена на Android/Windows и добавлены готовые
+  PowerShell build scripts.
 
-Сохранены и предыдущие UX-улучшения:
+### Xray Core pins
 
-- исправлена компиляция lazy app icons;
-- portrait header не показывает верхний статус подключения;
-- быстрые selector-ы приведены к Orex choice sheet;
-- выбранные иконки нижней навигации используют медный акцент;
-- смена профиля во время соединения делает автоматическое переподключение;
-- новый профиль не перехватывает текущий выбор;
-- балансировщики получили fallback;
-- экран профилей свёрнут до двух основных действий;
-- import получил вставку из буфера обмена;
-- корень репозитория очищен от накопившихся milestone/hotfix/update заметок;
-- release-инструкция перенесена в один документ `docs/release-builds.md`;
-- добавлена системная плитка OrexRay VPN в быстрые настройки Android;
-- добавлен Windows `.exe` установщик на Inno Setup по схеме Orex Messenger;
-- Android Quick Settings tile переживает закрытие UI и не застревает после stop;
-- Windows получил tray lifecycle, один экземпляр приложения и привязку Xray к
-  жизненному циклу OrexRay.
+Android сейчас закреплён на AndroidLibXrayLite/Xray **26.6.27**. Windows bundle
+пока закреплён на **26.4.13**. Более новый upstream не поднимается автоматически:
+обновление core должно отдельно обновлять checksum и проходить config/smoke
+проверки на обеих платформах. Это важнее, чем следовать latest/pre-release только
+ради номера версии.
+
+Legacy-параметр `allowInsecure` больше не считается поддерживаемой возможностью:
+современный Xray удалил его. Старые данные могут оставаться читаемыми для
+миграции, но новые конфигурации не должны полагаться на отключение TLS-проверки.
+
+## 14. Лицензия
+
+OrexRay распространяется по лицензии [MIT](LICENSE): исходный код можно
+использовать, изменять и распространять, в том числе коммерчески, при
+сохранении уведомления об авторских правах и текста лицензии. Программное
+обеспечение предоставляется «как есть», без гарантий.

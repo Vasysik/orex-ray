@@ -36,11 +36,13 @@ abstract interface class TunnelRuntimeMetadataSink {
 /// A profile's saved [TunnelTarget.latencyMs] is a direct TCP measurement and
 /// must not be reused as the latency of a connected VPN route.  Native
 /// foreground UI can implement this separately so it receives the exact
-/// effective value (or `null` after a timeout) shown by the home screen.
+/// effective value and status shown by the home screen. `latencyMs` is null
+/// for timeout/unavailable states, so the status must travel separately.
 abstract interface class TunnelRuntimeEffectiveLatencySink {
   Future<void> updateEffectiveLatency(
     TunnelTarget target, {
     required int? latencyMs,
+    required PingStatus pingStatus,
   });
 }
 
@@ -55,6 +57,8 @@ abstract interface class TunnelStatsConsumerSink {
 abstract interface class TunnelRuntimeSettingsSink {
   Future<void> updateRuntimeSettings({
     required int statsIntervalSeconds,
+    required int notificationStatsIntervalSeconds,
+    required int pingIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
   });

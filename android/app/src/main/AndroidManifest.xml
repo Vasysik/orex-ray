@@ -39,6 +39,7 @@
 
         <activity
             android:name=".OrexRayVpnPermissionActivity"
+            android:process=":vpn"
             android:exported="false"
             android:excludeFromRecents="true"
             android:taskAffinity=""
@@ -46,6 +47,7 @@
 
         <service
             android:name=".OrexRayQuickSettingsTileService"
+            android:process=":vpn"
             android:exported="true"
             android:icon="@drawable/orexray_icon"
             android:label="OrexRay VPN"
@@ -63,6 +65,7 @@
 
         <receiver
             android:name=".OrexRayBootReceiver"
+            android:process=":vpn"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -72,6 +75,7 @@
 
         <service
             android:name=".OrexRayVpnService"
+            android:process=":vpn"
             android:exported="false"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse"

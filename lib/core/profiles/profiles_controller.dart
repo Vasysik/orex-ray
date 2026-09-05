@@ -6,6 +6,21 @@ import '../tunnel/tunnel_models.dart';
 import 'latency_probe.dart';
 import 'profile_repository.dart';
 import 'proxy_link_parser.dart';
+import 'xray_json_codec.dart';
+
+class XrayJsonImportResult {
+  const XrayJsonImportResult({
+    required this.addedCount,
+    required this.updatedCount,
+    required this.skippedUnsupported,
+  });
+
+  final int addedCount;
+  final int updatedCount;
+  final int skippedUnsupported;
+
+  int get changedCount => addedCount + updatedCount;
+}
 
 class ProfilesController extends ChangeNotifier {
   ProfilesController._({
@@ -22,6 +37,7 @@ class ProfilesController extends ChangeNotifier {
 
   final ProfileRepository _repository;
   final ProxyLinkParser _parser = const ProxyLinkParser();
+  final XrayJsonCodec _xrayJsonCodec = const XrayJsonCodec();
   final LatencyProbe _latencyProbe;
   final List<TunnelProfile> _profiles;
   final List<BalancerProfile> _balancers;
@@ -147,6 +163,101 @@ class ProfilesController extends ChangeNotifier {
     return profile;
   }
 
+  /// Imports one Xray config, an outbound object, or an array containing either.
+  /// The complete payload is validated before any in-memory changes are applied.
+  Future<XrayJsonImportResult> importXrayJson(
+    String payload, {
+    String sourceLabel = '',
+  }) async {
+    final decoded = _xrayJsonCodec.decode(
+      payload,
+      sourceLabel: sourceLabel,
+    );
+    final working = List<TunnelProfile>.from(_profiles);
+    final added = <TunnelProfile>[];
+    var updatedCount = 0;
+
+    int findSame(List<TunnelProfile> values, TunnelProfile profile) {
+      final exact = values.indexWhere((item) => item.id == profile.id);
+      if (exact >= 0) return exact;
+      return values.indexWhere((item) => _sameConnectionProfile(item, profile));
+    }
+
+    for (var profile in decoded.profiles) {
+      _validateProfileInput(profile);
+      var index = findSame(working, profile);
+      if (index >= 0) {
+        final old = working[index];
+        working[index] = profile.copyWith(
+          id: old.id,
+          latencyMs: old.latencyMs,
+          pingStatus: old.pingStatus,
+        );
+        updatedCount += 1;
+        continue;
+      }
+
+      index = findSame(added, profile);
+      if (index >= 0) {
+        final old = added[index];
+        added[index] = profile.copyWith(id: old.id);
+        updatedCount += 1;
+        continue;
+      }
+      added.add(profile);
+    }
+
+    if (working.length + added.length > _maxProfiles) {
+      throw const FormatException('Можно сохранить не больше 500 профилей');
+    }
+    working.insertAll(0, added);
+
+    final previousSelection = _selectedId;
+    _profiles
+      ..clear()
+      ..addAll(working);
+    if (_profiles.isNotEmpty &&
+        (previousSelection == null || targetById(previousSelection) == null)) {
+      _selectedId = decoded.profiles.first.id;
+      final importedSelection = _profiles.indexWhere(
+        (item) => _sameConnectionProfile(item, decoded.profiles.first),
+      );
+      if (importedSelection >= 0) {
+        _selectedId = _profiles[importedSelection].id;
+      }
+    }
+
+    await _persist();
+    _notifyListeners();
+    return XrayJsonImportResult(
+      addedCount: added.length,
+      updatedCount: updatedCount,
+      skippedUnsupported: decoded.skippedUnsupported,
+    );
+  }
+
+  String exportXrayJson({String? profileId}) {
+    if (profileId == null) {
+      return _xrayJsonCodec.encodeProfiles(_profiles, forceArray: true);
+    }
+    final profile = _profileById(profileId);
+    if (profile == null) {
+      throw const FormatException('Профиль для экспорта не найден');
+    }
+    return _xrayJsonCodec.encodeProfiles([profile]);
+  }
+
+  String exportSelectedXrayJson(Iterable<String> profileIds) {
+    final ids = profileIds.toSet();
+    final selected = _profiles
+        .where((profile) => ids.contains(profile.id))
+        .toList(growable: false);
+    if (selected.isEmpty) {
+      throw const FormatException('Нет выбранных профилей для экспорта');
+    }
+    return _xrayJsonCodec.encodeProfiles(selected, forceArray: true);
+  }
+
   /// Legacy public API retained for callers built when VLESS was the only
   /// supported outbound. It now accepts the same supported link set as the UI.
   Future<TunnelProfile> importVlessLink(String link) => importLink(link);
@@ -262,9 +373,22 @@ class ProfilesController extends ChangeNotifier {
     if (_selectedId == id || !targets.any((target) => target.id == id)) {
       return;
     }
+    final previousId = _selectedId;
     _selectedId = id;
-    await _repository.saveSelectedId(id);
+    // Selection is presentation state first: repaint immediately instead of
+    // making the user wait for SharedPreferences I/O before the tile reacts.
     _notifyListeners();
+    try {
+      await _repository.saveSelectedId(id);
+    } catch (_) {
+      // Do not leave an in-memory selection that was not persisted. Only
+      // roll back if no newer selection superseded this request.
+      if (_selectedId == id) {
+        _selectedId = previousId;
+        _notifyListeners();
+      }
+      rethrow;
+    }
   }
 
   Future<void> delete(String id) async {
@@ -296,6 +420,58 @@ class ProfilesController extends ChangeNotifier {
       _selectedId = targets.isEmpty ? null : targets.first.id;
     }
     await _persist();
+    _notifyListeners();
+  }
+
+  /// Deletes several direct profiles as one repository transaction.
+  ///
+  /// Balancers that lose too many members are removed, while valid balancers
+  /// are rewritten once after every selected profile has been removed.
+  Future<void> deleteProfiles(Iterable<String> ids) async {
+    final removedIds = ids.toSet()
+      ..retainAll(_profiles.map((profile) => profile.id).toSet());
+    if (removedIds.isEmpty) return;
+
+    _profiles.removeWhere((profile) => removedIds.contains(profile.id));
+    _balancers.removeWhere((balancer) {
+      final remaining = balancer.memberIds
+          .where((member) => !removedIds.contains(member))
+          .length;
+      return remaining < 2;
+    });
+    for (var index = 0; index < _balancers.length; index++) {
+      final balancer = _balancers[index];
+      final remainingMembers = balancer.memberIds
+          .where((member) => !removedIds.contains(member))
+          .toList(growable: false);
+      final fallbackRemoved = balancer.fallbackProfileId != null &&
+          removedIds.contains(balancer.fallbackProfileId);
+      if (remainingMembers.length != balancer.memberIds.length ||
+          fallbackRemoved) {
+        _balancers[index] = balancer.copyWith(
+          memberIds: remainingMembers,
+          clearFallback: fallbackRemoved,
+        );
+      }
+    }
+
+    if (_selectedId == null ||
+        removedIds.contains(_selectedId) ||
+        !targets.any((target) => target.id == _selectedId)) {
+      _selectedId = targets.isEmpty ? null : targets.first.id;
+    }
+    await _persist();
+    _notifyListeners();
+  }
+
+  /// Persists the user-visible order of direct server profiles.
+  Future<void> reorderProfiles(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _profiles.length) return;
+    if (newIndex < 0 || newIndex >= _profiles.length) return;
+    if (oldIndex == newIndex) return;
+    final profile = _profiles.removeAt(oldIndex);
+    _profiles.insert(newIndex, profile);
+    await _repository.saveProfiles(_profiles);
     _notifyListeners();
   }
 
@@ -356,6 +532,57 @@ class ProfilesController extends ChangeNotifier {
           // Do not erase useful saved measurements when the protected native
           // probe itself is unavailable. Continue with the remaining profiles
           // because another endpoint can still be measured safely.
+          continue;
+        }
+        if (_disposed || (shouldApply != null && !shouldApply())) return;
+        final index = _profiles.indexWhere((item) => item.id == profile.id);
+        if (index >= 0 &&
+            (_profiles[index].latencyMs != result.latencyMs ||
+                _profiles[index].pingStatus != result.status)) {
+          _profiles[index] = _profiles[index].copyWith(
+            latencyMs: result.latencyMs,
+            pingStatus: result.status,
+            clearLatency: result.latencyMs == null,
+          );
+          changed = true;
+        }
+      }
+      if (!_disposed && changed) await _repository.saveProfiles(_profiles);
+    } finally {
+      _refreshingLatency = false;
+      _notifyListeners();
+    }
+  }
+
+  /// Refreshes only the requested direct profiles and saves their results in
+  /// one repository write. This keeps bulk selection actions cheap even for a
+  /// large list.
+  Future<void> refreshLatencies(
+    Iterable<String> ids, {
+    bool Function()? shouldApply,
+  }) async {
+    final requested = ids.toSet();
+    if (_disposed ||
+        _refreshingLatency ||
+        requested.isEmpty ||
+        (shouldApply != null && !shouldApply())) {
+      return;
+    }
+    final candidates = _profiles
+        .where((profile) => requested.contains(profile.id))
+        .toList(growable: false);
+    if (candidates.isEmpty) return;
+
+    _refreshingLatency = true;
+    _notifyListeners();
+    var changed = false;
+    try {
+      for (final profile in candidates) {
+        if (_disposed || (shouldApply != null && !shouldApply())) return;
+        LatencyProbeResult result;
+        try {
+          result = await _latencyProbe.measure(profile);
+        } on LatencyMeasurementSkipped {
           continue;
         }
         if (_disposed || (shouldApply != null && !shouldApply())) return;

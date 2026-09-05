@@ -193,6 +193,8 @@ class WindowsXrayEngine implements
       message: 'Подготавливаем Xray Core…',
       stats: const TrafficStats(),
     );
+    // Paint the connecting state before core verification/config generation.
+    await Future<void>.delayed(Duration.zero);
 
     try {
       await _proxyRecovery;
@@ -1125,8 +1127,8 @@ class WindowsXrayEngine implements
       };
 
   String _connectedMessage(ConnectionMode mode) => switch (mode) {
-        ConnectionMode.vpnTun => 'VPN-туннель активен',
-        ConnectionMode.systemProxy => 'Системный прокси Windows активен',
+        ConnectionMode.vpnTun => 'VPN активен',
+        ConnectionMode.systemProxy => 'Системный прокси активен',
         ConnectionMode.localProxy =>
           'SOCKS5 :${_settings.socksPort} · HTTP :${_settings.httpPort}',
       };

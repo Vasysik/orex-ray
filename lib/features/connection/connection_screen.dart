@@ -20,7 +20,7 @@ class ConnectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([tunnel, settings]),
+      animation: Listenable.merge([tunnel.profileUiChanges, settings]),
       builder: (context, _) {
         final locked = !tunnel.canChangeMode;
         final disabledColor = Theme.of(context).disabledColor;

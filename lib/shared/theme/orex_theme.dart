@@ -30,7 +30,8 @@ class OrexColors {
 
   static const unread = copper;
   static const online = Color(0xFF8FB36A);
-  static const danger = Color(0xFFCF6679);
+  static const danger = Color(0xFFB36A6A);
+  static const dangerStrong = danger;
 
   static const copperGradient = LinearGradient(
     begin: Alignment.topLeft,

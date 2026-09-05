@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/profiles/latency_probe.dart';
@@ -97,6 +98,191 @@ void main() {
       profiles.profiles.map((profile) => profile.outboundProtocol).toSet(),
       OutboundProtocol.values.toSet(),
     );
+  });
+
+  test('imports Xray JSON arrays atomically and preserves existing ping', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    final existing = await profiles.importVlessLink(link);
+    await profiles.updateProfile(
+      existing.copyWith(
+        latencyMs: 88,
+        pingStatus: PingStatus.success,
+      ),
+    );
+
+    final result = await profiles.importXrayJson(
+      '''[
+        {
+          "protocol": "vless",
+          "tag": "Renamed",
+          "settings": {
+            "address": "example.com",
+            "port": 443,
+            "id": "11111111-1111-4111-8111-111111111111",
+            "encryption": "none"
+          }
+        },
+        {
+          "protocol": "trojan",
+          "tag": "Trojan JSON",
+          "settings": {
+            "address": "trojan-json.example",
+            "port": 443,
+            "password": "secret"
+          },
+          "streamSettings": {
+            "security": "tls",
+            "tlsSettings": {"serverName": "trojan-json.example"}
+          }
+        }
+      ]
+      ''',
+    );
+
+    expect(result.addedCount, 1);
+    expect(result.updatedCount, 1);
+    expect(profiles.profiles, hasLength(2));
+    final updated = profiles.profiles.singleWhere((item) => item.id == existing.id);
+    expect(updated.name, 'Renamed');
+    expect(updated.latencyMs, 88);
+    expect(updated.pingStatus, PingStatus.success);
+  });
+
+  test('exporting all profiles always returns a JSON array', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    await profiles.importVlessLink(link);
+
+    final exported = profiles.exportXrayJson();
+    final decoded = jsonDecode(exported);
+    expect(decoded, isA<List>());
+    expect(decoded as List, hasLength(1));
+  });
+
+  test('Xray JSON export round-trips through controller', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    await profiles.importVlessLink(link);
+    await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+
+    final exported = profiles.exportXrayJson();
+    expect(exported.trimLeft().startsWith('['), isTrue);
+
+    SharedPreferences.setMockInitialValues({});
+    final restored = await ProfilesController.load();
+    addTearDown(restored.dispose);
+    final result = await restored.importXrayJson(exported);
+
+    expect(result.addedCount, 2);
+    expect(restored.profiles.map((item) => item.name).toSet(), {'Test', 'Second'});
+  });
+
+  test('selected Xray export keeps only requested profiles and stays an array',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    final first = await profiles.importVlessLink(link);
+    await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+
+    final decoded = jsonDecode(profiles.exportSelectedXrayJson([first.id]));
+    expect(decoded, isA<List>());
+    expect(decoded as List, hasLength(1));
+    expect(jsonEncode(decoded), contains('example.com'));
+    expect(jsonEncode(decoded), isNot(contains('second.example')));
+  });
+
+  test('bulk latency refresh probes only selected profiles', () async {
+    SharedPreferences.setMockInitialValues({});
+    final probe = _RecordingLatencyProbe();
+    final profiles = await ProfilesController.load(latencyProbe: probe);
+    addTearDown(profiles.dispose);
+
+    final first = await profiles.importVlessLink(link);
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+
+    await profiles.refreshLatencies([first.id]);
+
+    expect(probe.profileIds, [first.id]);
+    expect(
+      profiles.profiles.singleWhere((item) => item.id == first.id).latencyMs,
+      42,
+    );
+    expect(
+      profiles.profiles.singleWhere((item) => item.id == second.id).latencyMs,
+      isNull,
+    );
+  });
+
+  test('bulk delete rewrites balancers once and clears removed fallback',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+
+    final first = await profiles.importVlessLink(link);
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+    final third = await profiles.importVlessLink(
+      'vless://33333333-3333-4333-8333-333333333333@third.example:443'
+      '?encryption=none&security=none&type=tcp#Third',
+    );
+    final balancer = await profiles.saveBalancer(
+      name: 'Bulk pool',
+      memberIds: [first.id, second.id, third.id],
+      strategy: BalancerStrategy.random,
+      probeUrl: 'https://www.gstatic.com/generate_204',
+      probeIntervalSeconds: 30,
+      fallbackTarget: BalancerProfile.fallbackProfile(first.id),
+    );
+
+    await profiles.deleteProfiles([first.id]);
+
+    expect(profiles.profiles.map((item) => item.id), isNot(contains(first.id)));
+    final updated = profiles.balancers.singleWhere(
+      (item) => item.id == balancer.id,
+    );
+    expect(updated.memberIds.toSet(), {second.id, third.id});
+    expect(updated.fallbackTarget, isNull);
+    expect(profiles.selectedTarget?.id, isNot(first.id));
+  });
+
+  test('reorders direct profiles and persists their order', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final first = await profiles.importVlessLink(link);
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+    expect(profiles.profiles.map((item) => item.id), [second.id, first.id]);
+
+    await profiles.reorderProfiles(0, 1);
+    expect(profiles.profiles.map((item) => item.id), [first.id, second.id]);
+    profiles.dispose();
+
+    final reloaded = await ProfilesController.load();
+    addTearDown(reloaded.dispose);
+    expect(reloaded.profiles.map((item) => item.id), [first.id, second.id]);
   });
 
   test('in-flight latency result is ignored after controller disposal',
@@ -298,6 +484,16 @@ class _CountingLatencyProbe extends LatencyProbe {
   @override
   Future<LatencyProbeResult> measure(TunnelProfile profile) async {
     calls += 1;
+    return const LatencyProbeResult.success(42);
+  }
+}
+
+class _RecordingLatencyProbe extends LatencyProbe {
+  final List<String> profileIds = [];
+
+  @override
+  Future<LatencyProbeResult> measure(TunnelProfile profile) async {
+    profileIds.add(profile.id);
     return const LatencyProbeResult.success(42);
   }
 }

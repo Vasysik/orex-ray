@@ -106,6 +106,7 @@ class XrayConfigBuilder {
       geoProxyRules: geoProxyRules,
       geoBlockRules: geoBlockRules,
       logLevel: logLevel,
+      enableInboundStats: false,
     );
   }
 
@@ -122,6 +123,7 @@ class XrayConfigBuilder {
     List<String> geoBlockRules = const [],
     String logLevel = 'error',
     int? apiPort,
+    bool enableInboundStats = true,
   }) {
     return _encode(
       target,
@@ -138,6 +140,7 @@ class XrayConfigBuilder {
       geoBlockRules: geoBlockRules,
       logLevel: logLevel,
       apiPort: apiPort,
+      enableInboundStats: enableInboundStats,
     );
   }
 
@@ -178,6 +181,7 @@ class XrayConfigBuilder {
     required List<String> geoBlockRules,
     required String logLevel,
     int? apiPort,
+    bool enableInboundStats = true,
   }) {
     final routeToTarget = target.isBalancer
         ? <String, Object?>{'balancerTag': 'orexray-balancer'}
@@ -260,8 +264,11 @@ class XrayConfigBuilder {
         },
       'policy': {
         'system': {
-          'statsInboundUplink': true,
-          'statsInboundDownlink': true,
+          // Android reads per-outbound counters from the embedded core, while
+          // Windows StatsService aggregates `inbound>>>orexray-*`. Keep the
+          // inbound counters only where there is an actual consumer.
+          'statsInboundUplink': enableInboundStats,
+          'statsInboundDownlink': enableInboundStats,
           'statsOutboundUplink': true,
           'statsOutboundDownlink': true,
         },
@@ -402,7 +409,6 @@ class XrayConfigBuilder {
         if (profile.serverName.isNotEmpty) 'serverName': profile.serverName,
         'fingerprint': profile.fingerprint,
         if (profile.alpn.isNotEmpty) 'alpn': profile.alpn,
-        if (profile.allowInsecure) 'allowInsecure': true,
       };
     }
 

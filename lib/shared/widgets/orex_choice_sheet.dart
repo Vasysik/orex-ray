@@ -8,6 +8,7 @@ class OrexChoiceSheetOption<T> {
     required this.value,
     required this.icon,
     required this.title,
+    this.leading,
     this.subtitle,
     this.selected = false,
   });
@@ -15,6 +16,7 @@ class OrexChoiceSheetOption<T> {
   final T value;
   final IconData icon;
   final String title;
+  final Widget? leading;
   final String? subtitle;
   final bool selected;
 }
@@ -64,6 +66,7 @@ Future<T?> showOrexChoiceSheet<T>(
                     for (final option in options)
                       _OrexChoiceTile(
                         icon: option.icon,
+                        leading: option.leading,
                         title: option.title,
                         subtitle: option.subtitle,
                         selected: option.selected,
@@ -83,12 +86,14 @@ class _OrexChoiceTile extends StatelessWidget {
   const _OrexChoiceTile({
     required this.icon,
     required this.title,
+    this.leading,
     required this.selected,
     required this.onTap,
     this.subtitle,
   });
 
   final IconData icon;
+  final Widget? leading;
   final String title;
   final String? subtitle;
   final bool selected;
@@ -97,7 +102,7 @@ class _OrexChoiceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: OrexColors.copper),
+      leading: leading ?? Icon(icon, color: OrexColors.copper),
       title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: subtitle == null
           ? null

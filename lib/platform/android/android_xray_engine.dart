@@ -93,6 +93,9 @@ class AndroidXrayEngine
             : 'Запускаем локальный прокси…',
       ),
     );
+    // Let Flutter present the connecting frame before synchronous config
+    // generation. This matters most during in-app profile reconnects.
+    await Future<void>.delayed(Duration.zero);
 
     try {
       final config = mode == ConnectionMode.vpnTun
@@ -123,6 +126,7 @@ class AndroidXrayEngine
               geoProxyRules: _settings.geoProxyRules,
               geoBlockRules: _settings.geoBlockRules,
               logLevel: _settings.logLevel,
+              enableInboundStats: false,
             );
       await _channel.invokeMethod<void>('start', <String, Object?>{
         'config': config,
@@ -134,6 +138,8 @@ class AndroidXrayEngine
         // end-to-end active-route measurement instead of showing it as VPN
         // latency while the route check is still pending.
         'latencyMs': null,
+        'pingStatus': PingStatus.unknown.storageValue,
+        'latencyProbeUrl': _settings.latencyProbeUrl,
         'statsOutboundTags': target.isBalancer
             ? [
                 for (var index = 0; index < target.profiles.length; index++)
@@ -147,6 +153,9 @@ class AndroidXrayEngine
         'httpPort': _settings.httpPort,
         'localProxyInVpn': _settings.localProxyInVpn,
         'statsIntervalSeconds': _settings.statsIntervalSeconds,
+        'notificationStatsIntervalSeconds':
+            _settings.notificationStatsIntervalSeconds,
+        'pingIntervalSeconds': _settings.pingIntervalSeconds,
         'showNotificationSpeed': _settings.showNotificationSpeed,
         'showNotificationPing': _settings.showNotificationPing,
         'statsUiActive': _statsUiActive,
@@ -162,19 +171,28 @@ class AndroidXrayEngine
   }
 
   @override
-  Future<void> updateTargetMetadata(TunnelTarget target) =>
-      _updateTargetMetadata(target, latencyMs: target.latencyMs);
+  Future<void> updateTargetMetadata(TunnelTarget target) => _updateTargetMetadata(
+        target,
+        latencyMs: target.latencyMs,
+        pingStatus: target.pingStatus,
+      );
 
   @override
   Future<void> updateEffectiveLatency(
     TunnelTarget target, {
     required int? latencyMs,
+    required PingStatus pingStatus,
   }) =>
-      _updateTargetMetadata(target, latencyMs: latencyMs);
+      _updateTargetMetadata(
+        target,
+        latencyMs: latencyMs,
+        pingStatus: pingStatus,
+      );
 
   Future<void> _updateTargetMetadata(
     TunnelTarget target, {
     required int? latencyMs,
+    required PingStatus pingStatus,
   }) async {
     _activeTarget = target;
     try {
@@ -183,6 +201,8 @@ class AndroidXrayEngine
         'targetId': target.id,
         'targetName': target.name,
         'latencyMs': latencyMs,
+        'pingStatus': pingStatus.storageValue,
+        'latencyProbeUrl': _settings.latencyProbeUrl,
       });
     } catch (_) {
       // Runtime metadata is best-effort and must never interrupt the tunnel.
@@ -192,6 +212,8 @@ class AndroidXrayEngine
   @override
   Future<void> updateRuntimeSettings({
     required int statsIntervalSeconds,
+    required int notificationStatsIntervalSeconds,
+    required int pingIntervalSeconds,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
   }) async {
@@ -200,6 +222,8 @@ class AndroidXrayEngine
       await _channel
           .invokeMethod<void>('updateRuntimeSettings', <String, Object?>{
         'statsIntervalSeconds': statsIntervalSeconds,
+        'notificationStatsIntervalSeconds': notificationStatsIntervalSeconds,
+        'pingIntervalSeconds': pingIntervalSeconds,
         'showNotificationSpeed': showNotificationSpeed,
         'showNotificationPing': showNotificationPing,
       });
@@ -334,6 +358,12 @@ class AndroidXrayEngine
     final downBps = (event['downloadBytesPerSecond'] as num?)?.toInt() ?? 0;
     final upBps = (event['uploadBytesPerSecond'] as num?)?.toInt() ?? 0;
     final durationSeconds = (event['durationSeconds'] as num?)?.toInt() ?? 0;
+    final effectiveLatencyMs = (event['latencyMs'] as num?)?.toInt();
+    final effectivePingStatus =
+        PingStatus.fromStorageValue(event['pingStatus'] as String?) ??
+            (effectiveLatencyMs == null
+                ? PingStatus.unknown
+                : PingStatus.success);
 
     _emit(
       TunnelSnapshot(
@@ -347,6 +377,8 @@ class AndroidXrayEngine
           uploadBytesPerSecond: upBps,
           duration: Duration(seconds: durationSeconds),
         ),
+        effectiveLatencyMs: effectiveLatencyMs,
+        effectivePingStatus: effectivePingStatus,
         message: event['message'] as String?,
         errorMessage: event['errorMessage'] as String?,
       ),

@@ -31,28 +31,31 @@ class GlassPanel extends StatelessWidget {
         (isDark ? OrexColors.ochreLight : OrexColors.copperBright)
             .withValues(alpha: isDark ? 0.18 : 0.28);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: glassColor,
-            borderRadius: BorderRadius.circular(borderRadius),
-            border: Border.all(color: borderColor),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withValues(alpha: isDark ? 0.04 : 0.20),
-                Colors.transparent,
-              ],
-            ),
-          ),
-          child: Material(type: MaterialType.transparency, child: child),
+    final filter = ImageFilter.blur(sigmaX: blur, sigmaY: blur);
+    final panel = Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: glassColor,
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(color: borderColor),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: isDark ? 0.04 : 0.20),
+            Colors.transparent,
+          ],
         ),
       ),
+      child: Material(type: MaterialType.transparency, child: child),
+    );
+    final grouped = BackdropGroup.of(context) != null;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: grouped
+          ? BackdropFilter.grouped(filter: filter, child: panel)
+          : BackdropFilter(filter: filter, child: panel),
     );
   }
 }

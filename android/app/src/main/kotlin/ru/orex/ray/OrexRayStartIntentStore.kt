@@ -17,6 +17,7 @@ internal object OrexRayStartIntentStore {
     private const val TAG = "OrexRay"
     private const val RESTART_STATE_KEY = "service_restart_state_v1"
     private const val QUICK_TILE_STATE_KEY = "quick_tile_start_state_v1"
+    private const val MIGRATION_MARKER_KEY = "vpn_state_store_migrated_v2"
 
     fun saveRestart(context: Context, intent: Intent) {
         save(context, RESTART_STATE_KEY, intent, restartServiceOverride = true)
@@ -47,8 +48,18 @@ internal object OrexRayStartIntentStore {
         targetId: String?,
         targetName: String,
         latencyMs: Int?,
+        pingStatus: String,
+        latencyProbeUrl: String,
     ) {
-        updateMetadata(context, RESTART_STATE_KEY, targetId, targetName, latencyMs)
+        updateMetadata(
+            context,
+            RESTART_STATE_KEY,
+            targetId,
+            targetName,
+            latencyMs,
+            pingStatus,
+            latencyProbeUrl,
+        )
     }
 
     fun updateQuickTileMetadata(
@@ -56,13 +67,25 @@ internal object OrexRayStartIntentStore {
         targetId: String?,
         targetName: String,
         latencyMs: Int?,
+        pingStatus: String,
+        latencyProbeUrl: String,
     ) {
-        updateMetadata(context, QUICK_TILE_STATE_KEY, targetId, targetName, latencyMs)
+        updateMetadata(
+            context,
+            QUICK_TILE_STATE_KEY,
+            targetId,
+            targetName,
+            latencyMs,
+            pingStatus,
+            latencyProbeUrl,
+        )
     }
 
     fun updateRuntimeSettings(
         context: Context,
         statsIntervalSeconds: Int,
+        notificationStatsIntervalSeconds: Int,
+        pingIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
     ) {
@@ -70,6 +93,8 @@ internal object OrexRayStartIntentStore {
             context,
             RESTART_STATE_KEY,
             statsIntervalSeconds,
+            notificationStatsIntervalSeconds,
+            pingIntervalSeconds,
             showNotificationSpeed,
             showNotificationPing,
         )
@@ -77,6 +102,8 @@ internal object OrexRayStartIntentStore {
             context,
             QUICK_TILE_STATE_KEY,
             statsIntervalSeconds,
+            notificationStatsIntervalSeconds,
+            pingIntervalSeconds,
             showNotificationSpeed,
             showNotificationPing,
         )
@@ -110,6 +137,14 @@ internal object OrexRayStartIntentStore {
                 intent.getIntExtra(OrexRayVpnService.EXTRA_LATENCY_MS, -1),
             )
             .put(
+                OrexRayVpnService.EXTRA_PING_STATUS,
+                intent.getStringExtra(OrexRayVpnService.EXTRA_PING_STATUS) ?: "unknown",
+            )
+            .put(
+                OrexRayVpnService.EXTRA_LATENCY_PROBE_URL,
+                intent.getStringExtra(OrexRayVpnService.EXTRA_LATENCY_PROBE_URL).orEmpty(),
+            )
+            .put(
                 OrexRayVpnService.EXTRA_MTU,
                 intent.getIntExtra(OrexRayVpnService.EXTRA_MTU, 1500),
             )
@@ -128,6 +163,17 @@ internal object OrexRayStartIntentStore {
             .put(
                 OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
                 intent.getIntExtra(OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS, 2),
+            )
+            .put(
+                OrexRayVpnService.EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                intent.getIntExtra(
+                    OrexRayVpnService.EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                    5,
+                ),
+            )
+            .put(
+                OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,
+                intent.getIntExtra(OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS, 60),
             )
             .put(
                 OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
@@ -166,11 +212,11 @@ internal object OrexRayStartIntentStore {
                 ),
             )
 
-        AndroidSecureStore(context.applicationContext).write(key, json.toString())
+        vpnSecureStore(context).write(key, json.toString())
     }
 
     private fun load(context: Context, key: String): Intent? {
-        val secureStore = AndroidSecureStore(context.applicationContext)
+        val secureStore = vpnSecureStore(context)
         val payload = runCatching { secureStore.read(key) }
             .onFailure { Log.e(TAG, "Could not read encrypted start state: $key", it) }
             .getOrNull()
@@ -199,6 +245,14 @@ internal object OrexRayStartIntentStore {
                 .putExtra(
                     OrexRayVpnService.EXTRA_LATENCY_MS,
                     json.optInt(OrexRayVpnService.EXTRA_LATENCY_MS, -1),
+                )
+                .putExtra(
+                    OrexRayVpnService.EXTRA_PING_STATUS,
+                    json.optString(OrexRayVpnService.EXTRA_PING_STATUS, "unknown"),
+                )
+                .putExtra(
+                    OrexRayVpnService.EXTRA_LATENCY_PROBE_URL,
+                    json.optString(OrexRayVpnService.EXTRA_LATENCY_PROBE_URL, ""),
                 )
                 .putStringArrayListExtra(
                     OrexRayVpnService.EXTRA_STATS_OUTBOUND_TAGS,
@@ -230,14 +284,25 @@ internal object OrexRayStartIntentStore {
                     json.optInt(OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS, 2),
                 )
                 .putExtra(
+                    OrexRayVpnService.EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                    json.optInt(
+                        OrexRayVpnService.EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                        5,
+                    ),
+                )
+                .putExtra(
+                    OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,
+                    json.optInt(OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS, 60),
+                )
+                .putExtra(
                     OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
                     json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED, true),
                 )
-            .putExtra(
-                OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
-                json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING, true),
-            )
-            .putExtra(
+                .putExtra(
+                    OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING,
+                    json.optBoolean(OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_PING, true),
+                )
+                .putExtra(
                     OrexRayVpnService.EXTRA_RESTART_SERVICE,
                     json.optBoolean(OrexRayVpnService.EXTRA_RESTART_SERVICE, true),
                 )
@@ -261,14 +326,18 @@ internal object OrexRayStartIntentStore {
         targetId: String?,
         targetName: String,
         latencyMs: Int?,
+        pingStatus: String,
+        latencyProbeUrl: String,
     ) {
-        val secureStore = AndroidSecureStore(context.applicationContext)
+        val secureStore = vpnSecureStore(context)
         val payload = runCatching { secureStore.read(key) }.getOrNull() ?: return
         runCatching {
             val json = JSONObject(payload)
                 .put(OrexRayVpnService.EXTRA_TARGET_ID, targetId.orEmpty())
                 .put(OrexRayVpnService.EXTRA_TARGET_NAME, targetName)
                 .put(OrexRayVpnService.EXTRA_LATENCY_MS, latencyMs ?: -1)
+                .put(OrexRayVpnService.EXTRA_PING_STATUS, pingStatus)
+                .put(OrexRayVpnService.EXTRA_LATENCY_PROBE_URL, latencyProbeUrl)
             secureStore.write(key, json.toString())
         }.onFailure { Log.w(TAG, "Could not update encrypted start metadata: $key", it) }
     }
@@ -277,16 +346,26 @@ internal object OrexRayStartIntentStore {
         context: Context,
         key: String,
         statsIntervalSeconds: Int,
+        notificationStatsIntervalSeconds: Int,
+        pingIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
     ) {
-        val secureStore = AndroidSecureStore(context.applicationContext)
+        val secureStore = vpnSecureStore(context)
         val payload = runCatching { secureStore.read(key) }.getOrNull() ?: return
         runCatching {
             val json = JSONObject(payload)
                 .put(
                     OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
                     statsIntervalSeconds,
+                )
+                .put(
+                    OrexRayVpnService.EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                    notificationStatsIntervalSeconds,
+                )
+                .put(
+                    OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,
+                    pingIntervalSeconds,
                 )
                 .put(
                     OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
@@ -301,8 +380,30 @@ internal object OrexRayStartIntentStore {
     }
 
     private fun clear(context: Context, key: String) {
-        runCatching { AndroidSecureStore(context.applicationContext).delete(key) }
+        runCatching { vpnSecureStore(context).delete(key) }
             .onFailure { Log.w(TAG, "Could not clear encrypted start state: $key", it) }
+    }
+
+    @Synchronized
+    private fun vpnSecureStore(context: Context): AndroidSecureStore {
+        val appContext = context.applicationContext
+        val vpnStore = AndroidSecureStore(appContext, AndroidSecureStore.VPN_PREFS_NAME)
+        val migrated = runCatching { vpnStore.read(MIGRATION_MARKER_KEY) }
+            .getOrNull() == "1"
+        if (migrated) return vpnStore
+
+        // Service/tile state used to share the Flutter process' secure
+        // SharedPreferences file. A dedicated :vpn process must not write that
+        // same XML file concurrently with Flutter, so migrate these two keys
+        // once and keep all future VPN writes in their own file.
+        val legacyStore = AndroidSecureStore(appContext)
+        for (key in listOf(RESTART_STATE_KEY, QUICK_TILE_STATE_KEY)) {
+            val legacy = runCatching { legacyStore.read(key) }.getOrNull() ?: continue
+            runCatching { vpnStore.write(key, legacy) }
+                .onFailure { Log.w(TAG, "Could not migrate encrypted VPN state: $key", it) }
+        }
+        vpnStore.write(MIGRATION_MARKER_KEY, "1")
+        return vpnStore
     }
 
     private fun JSONArray?.toStringArrayList(): ArrayList<String> {

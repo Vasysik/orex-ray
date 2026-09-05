@@ -619,6 +619,8 @@ class TunnelSnapshot {
     required this.stats,
     this.mode = ConnectionMode.vpnTun,
     this.profile,
+    this.effectiveLatencyMs,
+    this.effectivePingStatus = PingStatus.unknown,
     this.message,
     this.errorMessage,
   });
@@ -627,6 +629,8 @@ class TunnelSnapshot {
   final ConnectionMode mode;
   final TunnelTarget? profile;
   final TrafficStats stats;
+  final int? effectiveLatencyMs;
+  final PingStatus effectivePingStatus;
   final String? message;
   final String? errorMessage;
 
@@ -641,6 +645,9 @@ class TunnelSnapshot {
     TunnelTarget? profile,
     bool clearProfile = false,
     TrafficStats? stats,
+    int? effectiveLatencyMs,
+    bool clearEffectiveLatency = false,
+    PingStatus? effectivePingStatus,
     String? message,
     bool clearMessage = false,
     String? errorMessage,
@@ -651,6 +658,10 @@ class TunnelSnapshot {
       mode: mode ?? this.mode,
       profile: clearProfile ? null : (profile ?? this.profile),
       stats: stats ?? this.stats,
+      effectiveLatencyMs: clearEffectiveLatency
+          ? null
+          : (effectiveLatencyMs ?? this.effectiveLatencyMs),
+      effectivePingStatus: effectivePingStatus ?? this.effectivePingStatus,
       message: clearMessage ? null : (message ?? this.message),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
     );

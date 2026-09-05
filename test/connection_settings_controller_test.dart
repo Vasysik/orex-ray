@@ -3,6 +3,58 @@ import 'package:orex_ray/core/settings/connection_settings_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('stats intervals are independent and persist', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    addTearDown(settings.dispose);
+
+    expect(settings.statsIntervalSeconds, 2);
+    expect(settings.notificationStatsIntervalSeconds, 5);
+
+    await settings.setStatsIntervalSeconds(15);
+    await settings.setNotificationStatsIntervalSeconds(30);
+
+    final reloaded = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    addTearDown(reloaded.dispose);
+    expect(reloaded.statsIntervalSeconds, 15);
+    expect(reloaded.notificationStatsIntervalSeconds, 30);
+
+    await expectLater(
+      settings.setStatsIntervalSeconds(4),
+      throwsA(isA<FormatException>()),
+    );
+    await expectLater(
+      settings.setNotificationStatsIntervalSeconds(2),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('ping interval defaults, validates and persists', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    addTearDown(settings.dispose);
+
+    expect(settings.pingIntervalSeconds, 60);
+    await settings.setPingIntervalSeconds(120);
+    expect(settings.pingIntervalSeconds, 120);
+    await expectLater(
+      settings.setPingIntervalSeconds(17),
+      throwsA(isA<FormatException>()),
+    );
+
+    final reloaded = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    addTearDown(reloaded.dispose);
+    expect(reloaded.pingIntervalSeconds, 120);
+  });
+
   test('latency probe service defaults to Cloudflare and persists custom URL',
       () async {
     SharedPreferences.setMockInitialValues({});

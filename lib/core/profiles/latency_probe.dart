@@ -108,8 +108,10 @@ class LatencyMeasurementSkipped implements Exception {
 /// balancer decision, and the currently selected outbound. HTTPS endpoints
 /// complete a TLS handshake after the proxy CONNECT acknowledgement, so a
 /// local HTTP-inbound acknowledgement alone can never become a false success.
-/// Callers use it only for explicit lifecycle events or a manual refresh; it
-/// is never a periodic background probe.
+/// Dart callers use it only for explicit lifecycle events or a manual refresh.
+/// Android's foreground VPN service has its own low-frequency native route
+/// check so notification latency can keep updating after Flutter is removed
+/// from recents.
 class TunnelRouteLatencyProbe {
   TunnelRouteLatencyProbe({
     this.timeout = const Duration(seconds: 6),

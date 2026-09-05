@@ -1,9 +1,13 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/egress/egress_identity.dart';
 import '../../core/profiles/profiles_controller.dart';
 import '../../core/profiles/vless_link_parser.dart';
+import '../../core/profiles/xray_json_codec.dart';
+import '../../core/profiles/xray_json_file.dart';
+import '../../core/profiles/xray_json_source.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
@@ -12,7 +16,14 @@ import '../../shared/widgets/orex_choice_sheet.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
 
-enum _ProfileCreateAction { importLink, newProfile, balancer }
+enum _ProfileCreateAction {
+  importLink,
+  importXrayJson,
+  newProfile,
+  balancer,
+}
+
+enum _XrayJsonExportAction { copy, saveFile }
 
 class ProfilesScreen extends StatelessWidget {
   const ProfilesScreen({
@@ -25,82 +36,7 @@ class ProfilesScreen extends StatelessWidget {
   final TunnelController tunnel;
 
   @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([profiles, tunnel, tunnel.egressChanges]),
-      builder: (context, _) {
-        final selected = profiles.selectedTarget;
-        return ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            _ProfilesHeader(
-              refreshingLatency: tunnel.refreshingLatency,
-              canRefreshLatency: profiles.profiles.isNotEmpty,
-              onOpenProfileMenu: () => _showProfileMenu(context),
-              onRefreshLatency: tunnel.refreshAllLatencies,
-            ),
-            const SizedBox(height: 20),
-            if (profiles.profiles.isEmpty)
-              _EmptyProfiles(onImport: () => _showImportDialog(context))
-            else ...[
-              _SectionTitle(
-                title: 'Серверы',
-                count: profiles.profiles.length,
-              ),
-              const SizedBox(height: 10),
-              for (final profile in profiles.profiles)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _ProfileCard(
-                    profile: profile,
-                    identity: tunnel.egressIdentityFor(profile.id),
-                    selected: selected?.id == profile.id,
-                    onSelect: () => tunnel.selectTarget(profile.id),
-                    latencyMs: profile.latencyMs,
-                    onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
-                        ? () => tunnel.refreshProfileLatency(profile.id)
-                        : null,
-                    onEdit: () => _showEditProfileDialog(context, profile),
-                    onDelete: () =>
-                        _deleteTarget(context, profile.id, profile.name),
-                  ),
-                ),
-              if (profiles.balancers.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                _SectionTitle(
-                  title: 'Балансировщики',
-                  count: profiles.balancers.length,
-                ),
-                const SizedBox(height: 10),
-                for (final balancer in profiles.balancers)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _BalancerCard(
-                      balancer: balancer,
-                      identity: tunnel.egressIdentityFor(balancer.id),
-                      members: [
-                        for (final id in balancer.memberIds)
-                          ...profiles.profiles.where((item) => item.id == id),
-                      ],
-                      selected: selected?.id == balancer.id,
-                      latencyMs: profiles.targetById(balancer.id)?.latencyMs,
-                      onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
-                          ? () => tunnel.refreshTargetLatency(balancer.id)
-                          : null,
-                      onSelect: () => tunnel.selectTarget(balancer.id),
-                      onEdit: () =>
-                          _showBalancerDialog(context, existing: balancer),
-                      onDelete: () =>
-                          _deleteTarget(context, balancer.id, balancer.name),
-                    ),
-                  ),
-              ],
-            ],
-          ],
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => _ProfilesBody(owner: this);
 
   Future<void> _showProfileMenu(BuildContext context) async {
     final action = await showOrexChoiceSheet<_ProfileCreateAction>(
@@ -109,8 +45,14 @@ class ProfilesScreen extends StatelessWidget {
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.importLink,
           icon: Icons.add_link_rounded,
-          title: 'Импорт',
+          title: 'Импорт ссылки',
           subtitle: 'VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP',
+        ),
+        OrexChoiceSheetOption<_ProfileCreateAction>(
+          value: _ProfileCreateAction.importXrayJson,
+          icon: Icons.data_object_rounded,
+          title: 'Импорт JSON Xray',
+          subtitle: 'Файл, сырой JSON, массив [] или HTTP/HTTPS URL',
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.newProfile,
@@ -132,6 +74,9 @@ class ProfilesScreen extends StatelessWidget {
       case _ProfileCreateAction.importLink:
         await _showImportDialog(context);
         break;
+      case _ProfileCreateAction.importXrayJson:
+        await _showXrayJsonImportDialog(context);
+        break;
       case _ProfileCreateAction.newProfile:
         await _showCreateProfileDialog(context);
         break;
@@ -150,6 +95,116 @@ class ProfilesScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Профиль «${profile.name}» импортирован')),
     );
+  }
+
+  Future<void> _showXrayJsonImportDialog(BuildContext context) async {
+    final result = await showDialog<XrayJsonImportResult>(
+      context: context,
+      builder: (context) => _ImportXrayJsonDialog(profiles: profiles),
+    );
+    if (result == null || !context.mounted) return;
+    final parts = <String>[
+      if (result.addedCount > 0) 'добавлено ${result.addedCount}',
+      if (result.updatedCount > 0) 'обновлено ${result.updatedCount}',
+      if (result.skippedUnsupported > 0)
+        'пропущено неподдерживаемых ${result.skippedUnsupported}',
+    ];
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          parts.isEmpty ? 'JSON импортирован' : 'JSON Xray: ${parts.join(', ')}',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showXrayJsonExportMenu(
+    BuildContext context, {
+    String? profileId,
+    Iterable<String>? profileIds,
+    String? suggestedBaseName,
+  }) async {
+    final selectedIds = profileIds?.toSet();
+    if (profileId == null &&
+        (selectedIds == null || selectedIds.isEmpty) &&
+        profiles.profiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Нет профилей для экспорта')),
+      );
+      return;
+    }
+
+    final exportingMultiple = profileId == null;
+    final exportCount = selectedIds?.length ?? profiles.profiles.length;
+    final action = await showOrexChoiceSheet<_XrayJsonExportAction>(
+      context,
+      title: exportingMultiple ? 'Экспорт $exportCount профилей' : 'Экспорт профиля',
+      options: [
+        OrexChoiceSheetOption<_XrayJsonExportAction>(
+          value: _XrayJsonExportAction.copy,
+          icon: Icons.content_copy_rounded,
+          title:
+              exportingMultiple ? 'Копировать массив JSON' : 'Копировать JSON',
+          subtitle: exportingMultiple
+              ? 'Выбранные профили как массив полных Xray-конфигов'
+              : 'Полный Xray-конфиг профиля в буфер обмена',
+        ),
+        const OrexChoiceSheetOption<_XrayJsonExportAction>(
+          value: _XrayJsonExportAction.saveFile,
+          icon: Icons.save_alt_rounded,
+          title: 'Сохранить .json',
+          subtitle: 'Выбрать файл через системный диалог',
+        ),
+      ],
+    );
+    if (action == null || !context.mounted) return;
+
+    try {
+      final payload = selectedIds == null
+          ? profiles.exportXrayJson(profileId: profileId)
+          : profiles.exportSelectedXrayJson(selectedIds);
+      switch (action) {
+        case _XrayJsonExportAction.copy:
+          await Clipboard.setData(ClipboardData(text: payload));
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                exportingMultiple
+                    ? 'Массив JSON Xray скопирован'
+                    : 'JSON Xray скопирован',
+              ),
+            ),
+          );
+          break;
+        case _XrayJsonExportAction.saveFile:
+          final baseName = _safeFileName(
+            suggestedBaseName ?? 'orexray-selected-$exportCount',
+          );
+          final saved = await const XrayJsonFileExporter().save(
+            content: payload,
+            suggestedName: '$baseName.json',
+          );
+          if (!context.mounted || !saved) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('JSON Xray экспортирован')),
+          );
+          break;
+      }
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось экспортировать JSON: $error')),
+      );
+    }
+  }
+
+  String _safeFileName(String value) {
+    final sanitized = value
+        .trim()
+        .replaceAll(RegExp(r'[\/:*?"<>|]+'), '-')
+        .replaceAll(RegExp(r'\s+'), ' ');
+    return sanitized.isEmpty ? 'orexray-xray' : sanitized;
   }
 
   Future<void> _showCreateProfileDialog(BuildContext context) async {
@@ -248,18 +303,319 @@ class ProfilesScreen extends StatelessWidget {
   }
 }
 
+class _ProfilesBody extends StatefulWidget {
+  const _ProfilesBody({required this.owner});
+
+  final ProfilesScreen owner;
+
+  @override
+  State<_ProfilesBody> createState() => _ProfilesBodyState();
+}
+
+class _ProfilesBodyState extends State<_ProfilesBody> {
+  final Set<String> _selectedProfileIds = <String>{};
+  String? _draggingProfileId;
+
+  ProfilesController get profiles => widget.owner.profiles;
+  TunnelController get tunnel => widget.owner.tunnel;
+  bool get _selectionMode => _selectedProfileIds.isNotEmpty;
+
+  void _toggleSelection(String id) {
+    setState(() {
+      if (!_selectedProfileIds.add(id)) {
+        _selectedProfileIds.remove(id);
+      }
+    });
+  }
+
+  void _enterSelection(String id) {
+    if (_selectedProfileIds.contains(id)) return;
+    setState(() => _selectedProfileIds.add(id));
+  }
+
+  void _clearSelection() {
+    if (!_selectionMode) return;
+    setState(_selectedProfileIds.clear);
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedProfileIds
+        ..clear()
+        ..addAll(profiles.profiles.map((profile) => profile.id));
+    });
+  }
+
+  Future<void> _deleteSelected(BuildContext context) async {
+    final count = _selectedProfileIds.length;
+    if (count == 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить $count профилей?'),
+        content: const Text(
+          'Выбранные серверы будут удалены с этого устройства. '
+          'Балансировщики с недостаточным числом серверов тоже будут удалены.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ids = Set<String>.from(_selectedProfileIds);
+    await profiles.deleteProfiles(ids);
+    if (mounted) _clearSelection();
+  }
+
+  Future<void> _exportSelected(BuildContext context) async {
+    final ids = Set<String>.from(_selectedProfileIds);
+    if (ids.isEmpty) return;
+    await widget.owner._showXrayJsonExportMenu(
+      context,
+      profileIds: ids,
+      suggestedBaseName: 'orexray-selected-${ids.length}',
+    );
+  }
+
+  Future<void> _pingSelected() async {
+    if (_selectedProfileIds.isEmpty || tunnel.refreshingLatency) return;
+    await tunnel.refreshProfileLatencies(
+      Set<String>.from(_selectedProfileIds),
+    );
+  }
+
+  Future<void> _selectFromProfiles(String id) async {
+    if (!tunnel.canChangeTarget) return;
+    await tunnel.selectTarget(id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([profiles, tunnel.egressChanges]),
+      builder: (context, _) {
+        final currentProfiles = profiles.profiles;
+        final validIds = currentProfiles.map((profile) => profile.id).toSet();
+        _selectedProfileIds.removeWhere((id) => !validIds.contains(id));
+        final activeTarget = profiles.selectedTarget;
+
+        final header = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AnimatedBuilder(
+              animation: tunnel.profileUiChanges,
+              builder: (context, _) => _ProfilesHeader(
+                refreshingLatency: tunnel.refreshingLatency,
+                canRefreshLatency: currentProfiles.isNotEmpty,
+                selectionMode: _selectionMode,
+                allSelected:
+                    _selectedProfileIds.length == currentProfiles.length,
+                onOpenProfileMenu: () => widget.owner._showProfileMenu(context),
+                onRefreshLatency: tunnel.refreshAllLatencies,
+                onCloseSelection: _clearSelection,
+                onSelectAll: _selectAll,
+                onPingSelected: _pingSelected,
+                onExportSelected: () => _exportSelected(context),
+                onDeleteSelected: () => _deleteSelected(context),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _SectionTitle(
+              title: 'Серверы',
+              count: currentProfiles.length,
+              selectedCount: _selectionMode ? _selectedProfileIds.length : null,
+            ),
+            const SizedBox(height: 10),
+          ],
+        );
+
+        final footer = !_selectionMode && profiles.balancers.isNotEmpty
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 10),
+                  _SectionTitle(
+                    title: 'Балансировщики',
+                    count: profiles.balancers.length,
+                  ),
+                  const SizedBox(height: 10),
+                  for (final balancer in profiles.balancers)
+                    Padding(
+                      key: ValueKey(balancer.id),
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _BalancerCard(
+                        balancer: balancer,
+                        identity: tunnel.egressIdentityFor(balancer.id),
+                        members: [
+                          for (final id in balancer.memberIds)
+                            ...currentProfiles.where((item) => item.id == id),
+                        ],
+                        selected: activeTarget?.id == balancer.id,
+                        latencyMs: profiles.targetById(balancer.id)?.latencyMs,
+                        onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
+                            ? () => tunnel.refreshTargetLatency(balancer.id)
+                            : null,
+                        onSelect: () => _selectFromProfiles(balancer.id),
+                        onEdit: () => widget.owner._showBalancerDialog(
+                          context,
+                          existing: balancer,
+                        ),
+                        onDelete: () => widget.owner._deleteTarget(
+                          context,
+                          balancer.id,
+                          balancer.name,
+                        ),
+                      ),
+                    ),
+                ],
+              )
+            : null;
+
+        if (currentProfiles.isEmpty) {
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              AnimatedBuilder(
+                animation: tunnel.profileUiChanges,
+                builder: (context, _) => _ProfilesHeader(
+                  refreshingLatency: tunnel.refreshingLatency,
+                  canRefreshLatency: false,
+                  selectionMode: false,
+                  allSelected: false,
+                  onOpenProfileMenu: () => widget.owner._showProfileMenu(context),
+                  onRefreshLatency: tunnel.refreshAllLatencies,
+                  onCloseSelection: _clearSelection,
+                  onSelectAll: _selectAll,
+                  onPingSelected: _pingSelected,
+                  onExportSelected: () => _exportSelected(context),
+                  onDeleteSelected: () => _deleteSelected(context),
+                ),
+              ),
+              const SizedBox(height: 20),
+              _EmptyProfiles(
+                onImport: () => widget.owner._showProfileMenu(context),
+              ),
+            ],
+          );
+        }
+
+        return ReorderableListView.builder(
+          padding: const EdgeInsets.all(20),
+          buildDefaultDragHandles: false,
+          header: header,
+          footer: footer,
+          itemCount: currentProfiles.length,
+          onReorderStart: (index) {
+            if (!mounted || index < 0 || index >= currentProfiles.length) return;
+            setState(() => _draggingProfileId = currentProfiles[index].id);
+          },
+          onReorderEnd: (_) {
+            if (mounted && _draggingProfileId != null) {
+              setState(() => _draggingProfileId = null);
+            }
+          },
+          proxyDecorator: (child, index, animation) {
+            return AnimatedBuilder(
+              animation: animation,
+              child: child,
+              builder: (context, child) {
+                final scale = Tween<double>(
+                  begin: 1,
+                  end: 1.015,
+                ).evaluate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                    reverseCurve: Curves.easeInCubic,
+                  ),
+                );
+                return Transform.scale(scale: scale, child: child);
+              },
+            );
+          },
+          onReorderItem: profiles.reorderProfiles,
+          itemBuilder: (context, index) {
+            final profile = currentProfiles[index];
+            final card = _ProfileCard(
+              profile: profile,
+              identity: tunnel.egressIdentityFor(profile.id),
+              selected: activeTarget?.id == profile.id,
+              multiSelected: _selectedProfileIds.contains(profile.id),
+              selectionMode: _selectionMode,
+              dragging: _draggingProfileId == profile.id,
+              onSelect: () => _selectionMode
+                  ? _toggleSelection(profile.id)
+                  : _selectFromProfiles(profile.id),
+              onLongPress:
+                  _selectionMode ? null : () => _enterSelection(profile.id),
+              latencyMs: profile.latencyMs,
+              onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
+                  ? () => tunnel.refreshProfileLatency(profile.id)
+                  : null,
+              onEdit: () =>
+                  widget.owner._showEditProfileDialog(context, profile),
+              onExport: () => widget.owner._showXrayJsonExportMenu(
+                context,
+                profileId: profile.id,
+                suggestedBaseName: profile.name,
+              ),
+              onDelete: () => widget.owner._deleteTarget(
+                context,
+                profile.id,
+                profile.name,
+              ),
+            );
+            return Padding(
+              key: ValueKey(profile.id),
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _selectionMode
+                  ? ReorderableDelayedDragStartListener(
+                      index: index,
+                      child: card,
+                    )
+                  : card,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 class _ProfilesHeader extends StatelessWidget {
   const _ProfilesHeader({
     required this.refreshingLatency,
     required this.canRefreshLatency,
+    required this.selectionMode,
+    required this.allSelected,
     required this.onOpenProfileMenu,
     required this.onRefreshLatency,
+    required this.onCloseSelection,
+    required this.onSelectAll,
+    required this.onPingSelected,
+    required this.onExportSelected,
+    required this.onDeleteSelected,
   });
 
   final bool refreshingLatency;
   final bool canRefreshLatency;
+  final bool selectionMode;
+  final bool allSelected;
   final VoidCallback onOpenProfileMenu;
   final Future<void> Function() onRefreshLatency;
+  final VoidCallback onCloseSelection;
+  final VoidCallback onSelectAll;
+  final Future<void> Function() onPingSelected;
+  final VoidCallback onExportSelected;
+  final VoidCallback onDeleteSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -275,34 +631,69 @@ class _ProfilesHeader extends StatelessWidget {
       ],
     );
 
-    final actions = Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        OutlinedButton.icon(
-          onPressed: onOpenProfileMenu,
-          icon: const Icon(Icons.add_rounded),
-          label: const Row(
-            mainAxisSize: MainAxisSize.min,
+    final actions = selectionMode
+        ? Wrap(
+            spacing: 10,
+            runSpacing: 10,
             children: [
-              Text('Профиль'),
-              SizedBox(width: 4),
-              Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+              OutlinedButton.icon(
+                onPressed: refreshingLatency ? null : () => onPingSelected(),
+                icon: const Icon(Icons.network_ping_rounded),
+                label: const Text('Пинг'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onExportSelected,
+                icon: const Icon(Icons.ios_share_rounded),
+                label: const Text('Экспорт'),
+              ),
+              _HeaderIconActionButton(
+                tooltip: 'Удалить',
+                onPressed: onDeleteSelected,
+                color: OrexColors.danger,
+                icon: Icons.delete_outline_rounded,
+              ),
+              _HeaderIconActionButton(
+                tooltip: 'Выбрать все',
+                onPressed: allSelected ? null : onSelectAll,
+                icon: Icons.select_all_rounded,
+              ),
+              _HeaderIconActionButton(
+                tooltip: 'Готово',
+                onPressed: onCloseSelection,
+                icon: Icons.check_rounded,
+              ),
             ],
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed:
-              refreshingLatency || !canRefreshLatency ? null : onRefreshLatency,
-          icon: const Icon(Icons.network_ping_rounded),
-          label: const Text('Проверить пинг'),
-        ),
-      ],
-    );
+          )
+        : Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: onOpenProfileMenu,
+                icon: const Icon(Icons.add_rounded),
+                label: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Профиль'),
+                    SizedBox(width: 4),
+                    Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: refreshingLatency || !canRefreshLatency
+                    ? null
+                    : onRefreshLatency,
+                icon: const Icon(Icons.network_ping_rounded),
+                label: const Text('Проверить пинг'),
+              ),
+            ],
+          );
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= 700) {
+        final rowBreakpoint = selectionMode ? 920.0 : 700.0;
+        if (constraints.maxWidth >= rowBreakpoint) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -325,11 +716,48 @@ class _ProfilesHeader extends StatelessWidget {
   }
 }
 
+class _HeaderIconActionButton extends StatelessWidget {
+  const _HeaderIconActionButton({
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+    this.color,
+  });
+
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final IconData icon;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: color,
+          shape: const StadiumBorder(),
+        ),
+        child: Icon(icon),
+      ),
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, required this.count});
+  const _SectionTitle({
+    required this.title,
+    required this.count,
+    this.selectedCount,
+  });
 
   final String title;
   final int count;
+  final int? selectedCount;
 
   @override
   Widget build(BuildContext context) {
@@ -343,6 +771,19 @@ class _SectionTitle extends StatelessWidget {
                 )),
         const SizedBox(width: 8),
         Text('$count', style: Theme.of(context).textTheme.bodySmall),
+        if (selectedCount case final selected?) ...[
+          const SizedBox(width: 14),
+          Text(
+            'ВЫДЕЛЕНО',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: OrexColors.copper,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.7,
+                ),
+          ),
+          const SizedBox(width: 8),
+          Text('$selected', style: Theme.of(context).textTheme.bodySmall),
+        ],
       ],
     );
   }
@@ -366,7 +807,7 @@ class _EmptyProfiles extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
-            'Импортируйте ссылку VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP.',
+            'Импортируйте ссылку или JSON Xray с одним или несколькими профилями.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -387,74 +828,116 @@ class _ProfileCard extends StatelessWidget {
     required this.profile,
     required this.identity,
     required this.selected,
+    required this.multiSelected,
+    required this.selectionMode,
+    required this.dragging,
     required this.onSelect,
+    required this.onLongPress,
     required this.latencyMs,
     required this.onRefreshPing,
     required this.onEdit,
+    required this.onExport,
     required this.onDelete,
   });
 
   final TunnelProfile profile;
   final EgressIdentity? identity;
   final bool selected;
+  final bool multiSelected;
+  final bool selectionMode;
+  final bool dragging;
   final VoidCallback onSelect;
+  final VoidCallback? onLongPress;
   final int? latencyMs;
   final VoidCallback? onRefreshPing;
   final VoidCallback onEdit;
+  final VoidCallback onExport;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    return GlassPanel(
-      borderRadius: 22,
-      tint: selected ? OrexColors.copper : null,
-      opacity: selected ? 0.16 : 0.50,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        onTap: onSelect,
-        leading: EgressAvatar(
-          identity: identity,
-          selected: selected,
-        ),
-        title: Row(
-          children: [
-            Expanded(
-                child: Text(profile.name,
-                    maxLines: 1, overflow: TextOverflow.ellipsis)),
-            _PingBadge(
-              latencyMs: latencyMs,
-              onTap: onRefreshPing,
-            ),
-          ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 5),
-          child: Text(
-            '${profile.endpoint}\n${profile.protocol} · ${profile.transportLabel}',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+    final card = RepaintBoundary(
+      child: GlassPanel(
+        borderRadius: 22,
+        blur: dragging ? 0 : 18,
+        tint: multiSelected ? OrexColors.copper : null,
+        opacity: dragging
+            ? 0.88
+            : multiSelected
+                ? 0.24
+                : 0.50,
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
           ),
-        ),
-        isThreeLine: true,
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) {
-            if (value == 'edit') onEdit();
-            if (value == 'ping') onRefreshPing?.call();
-            if (value == 'delete') onDelete();
-          },
-          itemBuilder: (context) => [
-            PopupMenuItem(value: 'edit', child: Text('Редактировать')),
-            PopupMenuItem(
-              value: 'ping',
-              enabled: onRefreshPing != null,
-              child: const Text('Проверить пинг'),
+          onTap: onSelect,
+          onLongPress: onLongPress,
+          leading: EgressAvatar(
+            identity: identity,
+            selected: selected,
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  profile.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              _PingBadge(
+                latencyMs: latencyMs,
+                onTap: onRefreshPing,
+              ),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child: Text(
+              '${profile.endpoint}\n${profile.protocol} · ${profile.transportLabel}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            PopupMenuDivider(),
-            PopupMenuItem(value: 'delete', child: Text('Удалить')),
-          ],
+          ),
+          isThreeLine: true,
+          trailing: selectionMode
+              ? Checkbox(
+                  value: multiSelected,
+                  onChanged: (_) => onSelect(),
+                )
+              : PopupMenuButton<String>(
+                      onSelected: (value) {
+                        if (value == 'edit') onEdit();
+                        if (value == 'ping') onRefreshPing?.call();
+                        if (value == 'export') onExport();
+                        if (value == 'delete') onDelete();
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Text('Редактировать'),
+                        ),
+                        PopupMenuItem(
+                          value: 'ping',
+                          enabled: onRefreshPing != null,
+                          child: const Text('Проверить пинг'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'export',
+                          child: Text('Экспорт JSON Xray'),
+                        ),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Удалить'),
+                        ),
+                      ],
+                    ),
         ),
       ),
     );
+    return card;
   }
 }
 
@@ -487,7 +970,7 @@ class _PingBadge extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
-          latency == null ? 'Пинг —' : '$latency мс',
+          latency == null ? '- мс' : '$latency мс',
           style: TextStyle(
               color: color, fontSize: 12, fontWeight: FontWeight.w600),
         ),
@@ -523,8 +1006,7 @@ class _BalancerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassPanel(
       borderRadius: 22,
-      tint: selected ? OrexColors.copper : null,
-      opacity: selected ? 0.16 : 0.50,
+      opacity: 0.50,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         onTap: onSelect,
@@ -676,6 +1158,183 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Text('Сохранить'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ImportXrayJsonDialog extends StatefulWidget {
+  const _ImportXrayJsonDialog({required this.profiles});
+
+  final ProfilesController profiles;
+
+  @override
+  State<_ImportXrayJsonDialog> createState() => _ImportXrayJsonDialogState();
+}
+
+class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
+  final TextEditingController _controller = TextEditingController();
+  final XrayJsonSource _source = XrayJsonSource();
+  String? _error;
+  bool _importing = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    final text = data?.text?.trim() ?? '';
+    if (text.isEmpty) {
+      setState(() => _error = 'В буфере обмена нет JSON или URL');
+      return;
+    }
+    setState(() {
+      _controller.text = text;
+      _controller.selection = TextSelection.collapsed(offset: text.length);
+      _error = null;
+    });
+  }
+
+  Future<void> _pickFile() async {
+    if (_importing) return;
+    try {
+      final file = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'Xray JSON',
+            extensions: ['json'],
+          ),
+        ],
+      );
+      if (file == null || !mounted) return;
+      setState(() {
+        _importing = true;
+        _error = null;
+      });
+      if (await file.length() > XrayJsonCodec.maxPayloadBytes) {
+        throw const FormatException('JSON Xray больше 5 МБ');
+      }
+      final payload = await file.readAsString();
+      await _importPayload(payload, sourceLabel: file.name);
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_importing) return;
+    final raw = _controller.text.trim();
+    if (raw.isEmpty) {
+      setState(() => _error = 'Вставь JSON, массив [] или URL');
+      return;
+    }
+    setState(() {
+      _importing = true;
+      _error = null;
+    });
+    try {
+      final uri = Uri.tryParse(raw);
+      if (uri != null &&
+          uri.hasAuthority &&
+          (uri.scheme == 'http' || uri.scheme == 'https')) {
+        final payload = await _source.loadUrl(raw);
+        await _importPayload(payload, sourceLabel: raw);
+      } else {
+        await _importPayload(raw);
+      }
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _importPayload(
+    String payload, {
+    String sourceLabel = '',
+  }) async {
+    final result = await widget.profiles.importXrayJson(
+      payload,
+      sourceLabel: sourceLabel,
+    );
+    if (mounted) Navigator.of(context).pop(result);
+  }
+
+  void _showError(Object error) {
+    if (!mounted) return;
+    setState(() {
+      _importing = false;
+      _error = error is FormatException
+          ? error.message.toString()
+          : 'Не удалось импортировать JSON: $error';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Импорт JSON Xray'),
+      content: SizedBox(
+        width: 620,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Поддерживается полный Xray config, один outbound, массив [] '
+              'из нескольких конфигов и HTTP/HTTPS ссылка с JSON.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              minLines: 5,
+              maxLines: 12,
+              autofocus: true,
+              enabled: !_importing,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                hintText: '{ "outbounds": [...] }\nили https://example.com/config.json',
+                errorText: _error,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: _importing ? null : _pickFile,
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: const Text('Выбрать .json'),
+                ),
+                TextButton.icon(
+                  onPressed: _importing ? null : _pasteFromClipboard,
+                  icon: const Icon(Icons.content_paste_rounded),
+                  label: const Text('Из буфера'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _importing ? null : () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _importing ? null : _submit,
+          child: _importing
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Импортировать'),
         ),
       ],
     );
@@ -1009,14 +1668,6 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                   _field(_password, 'REALITY public key / password'),
                   _field(_shortId, 'Short ID'),
                 ],
-                if (_security == 'tls')
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Allow insecure'),
-                    value: _allowInsecure,
-                    onChanged: (value) =>
-                        setState(() => _allowInsecure = value),
-                  ),
                 if (_transport == 'websocket' ||
                     _transport == 'xhttp' ||
                     _transport == 'httpupgrade') ...[
@@ -1245,7 +1896,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                   title: Text(profile.name),
                   subtitle: Text(
                     '${profile.endpoint} · '
-                    '${profile.latencyMs == null ? 'Пинг —' : '${profile.latencyMs} мс'}',
+                    '${profile.latencyMs == null ? '- мс' : '${profile.latencyMs} мс'}',
                   ),
                 ),
             ],

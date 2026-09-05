@@ -22,16 +22,17 @@ class TunnelController extends ChangeNotifier {
     ExitLocationRefreshPolicy? egressRefreshPolicy,
     TunnelRouteLatencyProbe? routeLatencyProbe,
     Duration routeProbeStartupDelay = const Duration(milliseconds: 350),
+    String? operatingSystem,
   })  : _engine = engine,
         _profiles = profiles,
         _settings = settings,
         _routeLatencyProbe = routeLatencyProbe ?? TunnelRouteLatencyProbe(),
         _routeProbeStartupDelay = routeProbeStartupDelay,
+        _operatingSystem = operatingSystem ?? Platform.operatingSystem,
         _engineSnapshot = engine.current {
     _egressRefreshCoordinator = ExitLocationRefreshCoordinator(
       policy: egressRefreshPolicy ??
-          ExitLocationRefreshPolicy.forOperatingSystem(
-              Platform.operatingSystem),
+          ExitLocationRefreshPolicy.forOperatingSystem(_operatingSystem),
       activeTargetId: () =>
           _engineSnapshot.isConnected ? _engineSnapshot.profile?.id : null,
       canRefresh: _canRefreshEgressTarget,
@@ -50,6 +51,7 @@ class TunnelController extends ChangeNotifier {
         return;
       }
       final previous = _engineSnapshot;
+      final profileUiChanged = _profileUiStateChanged(previous, value);
       final becameConnected = value.isConnected && !previous.isConnected;
       if (_latencyContextChanged(previous, value)) {
         _latencyContextRevision++;
@@ -64,6 +66,7 @@ class TunnelController extends ChangeNotifier {
       }
       _engineSnapshot = value;
       _clearRouteLatencyIfStale();
+      _adoptNativeRouteHealth(value);
       if (!value.isConnected && !value.isBusy) {
         _lastRuntimeMetadataKey = null;
       }
@@ -72,6 +75,7 @@ class TunnelController extends ChangeNotifier {
       } else {
         _egressRefreshCoordinator.stopPeriodic();
       }
+      _syncDesktopPingTimer();
       if (becameConnected) {
         _handleBecameConnected(value);
       }
@@ -81,6 +85,7 @@ class TunnelController extends ChangeNotifier {
       if (disconnectedVpnTargetId != null) {
         _schedulePendingVpnDirectLatency(disconnectedVpnTargetId);
       }
+      if (profileUiChanged) _profileUiRevision.value++;
       notifyListeners();
     });
     _lastSelectedTargetId = _profiles.selectedTarget?.id;
@@ -90,10 +95,12 @@ class TunnelController extends ChangeNotifier {
     _settings.addListener(_onSettingsChanged);
     unawaited(_loadEgressCache());
     if (_engineSnapshot.isConnected) {
+      _adoptNativeRouteHealth(_engineSnapshot);
       _hasConnectedBefore = true;
       _egressRefreshCoordinator.startPeriodic();
       unawaited(_requestEgressRefresh(ExitLocationRefreshTrigger.connected));
     }
+    _syncDesktopPingTimer();
   }
 
   final TunnelEngine _engine;
@@ -101,6 +108,7 @@ class TunnelController extends ChangeNotifier {
   final ConnectionSettingsController _settings;
   final TunnelRouteLatencyProbe _routeLatencyProbe;
   final Duration _routeProbeStartupDelay;
+  final String _operatingSystem;
   late final StreamSubscription<TunnelSnapshot> _engineSubscription;
   TunnelSnapshot _engineSnapshot;
   Future<void>? _shutdownFuture;
@@ -109,12 +117,15 @@ class TunnelController extends ChangeNotifier {
   bool _dependenciesDetached = false;
   bool _closing = false;
   bool _disposed = false;
+  final Completer<void> _closingSignal = Completer<void>();
   bool _hasConnectedBefore = false;
   int _latencyContextRevision = 0;
   String? _lastSelectedTargetId;
   ConnectionMode? _lastConfiguredMode;
   String? _pendingVpnDirectLatencyTargetId;
   Future<void>? _automaticRouteLatencyFuture;
+  Timer? _desktopPingTimer;
+  int? _desktopPingTimerSeconds;
   int? _automaticRouteLatencyContextRevision;
   int? _automaticRouteLatencyProbeConfigurationRevision;
   String? _lastRuntimeMetadataKey;
@@ -127,6 +138,7 @@ class TunnelController extends ChangeNotifier {
   ];
   final Map<String, EgressIdentity> _egressIdentities = {};
   final ValueNotifier<int> _egressRevision = ValueNotifier<int>(0);
+  final ValueNotifier<int> _profileUiRevision = ValueNotifier<int>(0);
   late final ExitLocationRefreshCoordinator _egressRefreshCoordinator;
   LatencyProbeResult? _activeRouteLatency;
   String? _activeRouteLatencyTargetId;
@@ -188,9 +200,14 @@ class TunnelController extends ChangeNotifier {
   int? effectiveLatencyFor(TunnelTarget? target) {
     if (target == null) return null;
     if (_engineSnapshot.isConnected) {
-      return _isActiveRouteTarget(target.id)
-          ? routeLatencyFor(target.id)?.latencyMs
-          : target.latencyMs;
+      if (_isActiveRouteTarget(target.id)) {
+        final routeLatency = routeLatencyFor(target.id);
+        if (routeLatency != null) return routeLatency.latencyMs;
+        return _engineSnapshot.effectivePingStatus == PingStatus.success
+            ? _engineSnapshot.effectiveLatencyMs
+            : null;
+      }
+      return target.latencyMs;
     }
     final routeLatency = routeLatencyFor(target.id);
     return routeLatency == null ? target.latencyMs : routeLatency.latencyMs;
@@ -203,11 +220,13 @@ class TunnelController extends ChangeNotifier {
   PingStatus effectivePingStatusFor(TunnelTarget? target) {
     if (target == null) return PingStatus.unknown;
     if (_engineSnapshot.isConnected) {
-      return _isActiveRouteTarget(target.id)
-          ? routeLatencyFor(target.id)?.status ?? PingStatus.unknown
-          : _engineSnapshot.mode == ConnectionMode.vpnTun
-              ? PingStatus.unknown
-              : target.pingStatus;
+      if (_isActiveRouteTarget(target.id)) {
+        return routeLatencyFor(target.id)?.status ??
+            _engineSnapshot.effectivePingStatus;
+      }
+      return _engineSnapshot.mode == ConnectionMode.vpnTun
+          ? PingStatus.unknown
+          : target.pingStatus;
     }
     final routeLatency = routeLatencyFor(target.id);
     return routeLatency?.status ?? target.pingStatus;
@@ -215,12 +234,20 @@ class TunnelController extends ChangeNotifier {
 
   Listenable get egressChanges => _egressRevision;
 
+  /// Low-frequency presentation changes used by profile/connection screens.
+  /// Traffic stats intentionally do not bump this notifier, otherwise hidden
+  /// glass-heavy pages rebuild on every 1-2 second sample.
+  Listenable get profileUiChanges => _profileUiRevision;
+
   List<TunnelTarget> get targets => _profiles.targets;
 
   bool get refreshingLatency =>
       _profiles.refreshingLatency || _routeLatencyRefreshCount > 0;
 
-  bool get canChangeTarget => !_engineSnapshot.isBusy;
+  bool _targetSwitchInFlight = false;
+
+  bool get canChangeTarget =>
+      !_engineSnapshot.isBusy && !_targetSwitchInFlight;
 
   /// Waits for a native runtime that may have survived the Flutter activity,
   /// then adopts its current snapshot before latency or connection decisions.
@@ -274,31 +301,117 @@ class TunnelController extends ChangeNotifier {
   }
 
   Future<void> selectTarget(String id) async {
-    if (!canChangeTarget) return;
+    if (_closing || !canChangeTarget) return;
     final next = _profiles.targetById(id);
     if (next == null) return;
 
     final activeId = _engineSnapshot.profile?.id;
-    final selectedId = _profiles.selectedTarget?.id;
-    if (selectedId == id && (!_engineSnapshot.isConnected || activeId == id)) {
+    final previousSelected = _profiles.selectedTarget;
+    final previousSelectedId = previousSelected?.id;
+    if (previousSelectedId == id &&
+        (!_engineSnapshot.isConnected || activeId == id)) {
       return;
     }
 
     final reconnect = _engineSnapshot.isConnected;
     final activeMode = _engineSnapshot.mode;
-    if (reconnect) {
-      await _engine.stop();
-      _syncFromEngine();
+    _targetSwitchInFlight = reconnect;
+    if (reconnect && !_closing) {
+      _profileUiRevision.value++;
+      notifyListeners();
     }
 
-    await _profiles.select(id);
+    try {
+      // Calling select() updates in-memory presentation synchronously before
+      // it reaches SharedPreferences I/O. Keep that persistence in flight while
+      // the old tunnel starts stopping, so reconnect latency never depends on
+      // storage latency.
+      final selectionFuture = _profiles.select(id);
+      if (!reconnect) {
+        await selectionFuture;
+        return;
+      }
 
-    if (reconnect) {
+      // Yield once so Flutter can paint the newly selected tile before native
+      // stop work begins.
+      await Future<void>.delayed(Duration.zero);
+      if (_closing) return;
+
+      final stopFuture = _stopForTargetSwitch();
+      try {
+        await selectionFuture;
+      } catch (_) {
+        final stopped = await stopFuture;
+        if (stopped && !_closing && previousSelected != null) {
+          await _engine.start(previousSelected, activeMode);
+          if (!_closing) _syncFromEngine();
+        }
+        rethrow;
+      }
+
+      final stopped = await stopFuture;
+      if (_closing) return;
+      if (!stopped) {
+        if (previousSelectedId != null &&
+            _profiles.selectedTarget?.id == id) {
+          await _profiles.select(previousSelectedId);
+        }
+        return;
+      }
+
       final selected = _profiles.selectedTarget;
       if (selected != null) {
+        // Give the disconnected frame a chance to render before building the
+        // next platform config. This avoids a visibly frozen profile screen on
+        // slower phones and Windows machines.
+        await Future<void>.delayed(Duration.zero);
+        if (_closing) return;
         await _engine.start(selected, activeMode);
-        _syncFromEngine();
+        if (!_closing) _syncFromEngine();
       }
+    } finally {
+      if (reconnect) {
+        _targetSwitchInFlight = false;
+        if (!_closing && !_disposed) {
+          _profileUiRevision.value++;
+          notifyListeners();
+        }
+      }
+    }
+  }
+
+  Future<bool> _stopForTargetSwitch() async {
+    if (!_engineSnapshot.isConnected && !_engineSnapshot.isBusy) return true;
+
+    final settled = Completer<void>();
+    late final StreamSubscription<TunnelSnapshot> subscription;
+    subscription = _engine.snapshots.listen((snapshot) {
+      if (!settled.isCompleted &&
+          (snapshot.status == TunnelStatus.disconnected ||
+              snapshot.status == TunnelStatus.error)) {
+        settled.complete();
+      }
+    });
+    try {
+      await _engine.stop();
+      _syncFromEngine();
+      if (_engine.current.status != TunnelStatus.disconnected &&
+          _engine.current.status != TunnelStatus.error) {
+        try {
+          await Future.any<void>([
+            settled.future,
+            _closingSignal.future,
+          ]).timeout(const Duration(seconds: 12));
+        } on TimeoutException {
+          if (!_closing) _syncFromEngine();
+          return false;
+        }
+      }
+      if (_closing) return false;
+      _syncFromEngine();
+      return _engine.current.status == TunnelStatus.disconnected;
+    } finally {
+      await subscription.cancel();
     }
   }
 
@@ -356,6 +469,27 @@ class TunnelController extends ChangeNotifier {
     );
   }
 
+  Future<void> refreshProfileLatencies(Iterable<String> profileIds) async {
+    await waitForInitialState();
+    if (_closing) return;
+    final ids = profileIds.toSet();
+    if (ids.isEmpty) return;
+    final active = _engineSnapshot.profile;
+    if (_engineSnapshot.isConnected && !_canRefreshSavedDirectLatencies) {
+      if (active != null &&
+          !active.isBalancer &&
+          ids.contains(active.primaryProfile.id)) {
+        await _refreshActiveRouteLatency(expectedTargetId: active.id);
+      }
+      return;
+    }
+    final contextRevision = _latencyContextRevision;
+    await _profiles.refreshLatencies(
+      ids,
+      shouldApply: () => _canApplyDirectLatency(contextRevision),
+    );
+  }
+
   Future<void> refreshAllLatencies() async {
     await waitForInitialState();
     if (_closing) return;
@@ -382,7 +516,14 @@ class TunnelController extends ChangeNotifier {
     await waitForInitialState();
     if (_closing) return;
     final current = snapshot;
-    if (current.isBusy) return;
+    if (current.status == TunnelStatus.connecting) {
+      // A start can wait on Android VPN permission or on the native core.
+      // Treat a second press as an explicit cancellation instead of trapping
+      // the user behind a disabled button.
+      await disconnect();
+      return;
+    }
+    if (current.status == TunnelStatus.disconnecting) return;
     if (current.isConnected) {
       await disconnect();
       return;
@@ -402,6 +543,7 @@ class TunnelController extends ChangeNotifier {
         status: TunnelStatus.error,
         errorMessage: 'Сначала выбери профиль или балансировщик.',
       );
+      _profileUiRevision.value++;
       notifyListeners();
       return;
     }
@@ -559,6 +701,7 @@ class TunnelController extends ChangeNotifier {
     }
 
     _routeLatencyRefreshCount++;
+    _profileUiRevision.value++;
     notifyListeners();
     try {
       // Android reports the connection immediately after Xray starts. Give the
@@ -602,7 +745,10 @@ class TunnelController extends ChangeNotifier {
       );
     } finally {
       _routeLatencyRefreshCount--;
-      if (!_closing) notifyListeners();
+      if (!_closing) {
+        _profileUiRevision.value++;
+        notifyListeners();
+      }
     }
   }
 
@@ -766,6 +912,33 @@ class TunnelController extends ChangeNotifier {
     );
   }
 
+  void _syncDesktopPingTimer() {
+    if (_operatingSystem != 'windows' ||
+        _closing ||
+        !_engineSnapshot.isConnected) {
+      _desktopPingTimer?.cancel();
+      _desktopPingTimer = null;
+      _desktopPingTimerSeconds = null;
+      return;
+    }
+
+    final seconds = _settings.pingIntervalSeconds;
+    if (_desktopPingTimer != null && _desktopPingTimerSeconds == seconds) {
+      return;
+    }
+    _desktopPingTimer?.cancel();
+    _desktopPingTimerSeconds = seconds;
+    _desktopPingTimer = Timer.periodic(Duration(seconds: seconds), (_) {
+      if (_closing || !_engineSnapshot.isConnected) return;
+      unawaited(
+        _refreshRouteLatencyForLifecycle(
+          expectedTargetId: _engineSnapshot.profile?.id,
+          waitForProxy: false,
+        ),
+      );
+    });
+  }
+
   Future<void> _waitForEgressProxy({int attempts = 8}) async {
     Object? lastError;
     for (var attempt = 1; attempt <= attempts; attempt++) {
@@ -874,10 +1047,17 @@ class TunnelController extends ChangeNotifier {
     );
   }
 
+  void _markClosing() {
+    _closing = true;
+    if (!_closingSignal.isCompleted) _closingSignal.complete();
+  }
+
   Future<void> shutdown() => _shutdownFuture ??= _shutdown();
 
   Future<void> _shutdown() async {
-    _closing = true;
+    _markClosing();
+    _desktopPingTimer?.cancel();
+    _desktopPingTimer = null;
     _egressRefreshCoordinator.dispose();
     _detachDependencies();
     await _cancelEngineSubscription();
@@ -889,7 +1069,9 @@ class TunnelController extends ChangeNotifier {
   }
 
   Future<void> _disposeWithoutStopping() async {
-    _closing = true;
+    _markClosing();
+    _desktopPingTimer?.cancel();
+    _desktopPingTimer = null;
     _egressRefreshCoordinator.dispose();
     _detachDependencies();
     await _cancelEngineSubscription();
@@ -909,6 +1091,7 @@ class TunnelController extends ChangeNotifier {
   void _syncFromEngine() {
     final next = _engine.current;
     final previous = _engineSnapshot;
+    final profileUiChanged = _profileUiStateChanged(previous, next);
     final becameConnected = next.isConnected && !previous.isConnected;
     if (_latencyContextChanged(previous, next)) {
       _latencyContextRevision++;
@@ -921,9 +1104,11 @@ class TunnelController extends ChangeNotifier {
     if (next.isConnected) _pendingVpnDirectLatencyTargetId = null;
     _engineSnapshot = next;
     _clearRouteLatencyIfStale();
+    _adoptNativeRouteHealth(next);
     if (!next.isConnected && !next.isBusy) {
       _lastRuntimeMetadataKey = null;
     }
+    _syncDesktopPingTimer();
     if (becameConnected) {
       _handleBecameConnected(next);
     }
@@ -931,8 +1116,19 @@ class TunnelController extends ChangeNotifier {
       final targetId = _pendingVpnDirectLatencyTargetId;
       if (targetId != null) _schedulePendingVpnDirectLatency(targetId);
     }
-    if (!_closing) notifyListeners();
+    if (!_closing) {
+      if (profileUiChanged) _profileUiRevision.value++;
+      notifyListeners();
+    }
   }
+
+  static bool _profileUiStateChanged(
+    TunnelSnapshot previous,
+    TunnelSnapshot next,
+  ) =>
+      previous.status != next.status ||
+      previous.mode != next.mode ||
+      previous.profile?.id != next.profile?.id;
 
   void _clearRouteLatencyIfStale() {
     if (_engineSnapshot.isConnected &&
@@ -941,6 +1137,35 @@ class TunnelController extends ChangeNotifier {
     }
     _activeRouteLatency = null;
     _activeRouteLatencyTargetId = null;
+  }
+
+  void _adoptNativeRouteHealth(TunnelSnapshot snapshot) {
+    if (!snapshot.isConnected) return;
+    final targetId = snapshot.profile?.id;
+    if (targetId == null || targetId.isEmpty) return;
+
+    final PingStatus status = snapshot.effectivePingStatus;
+    LatencyProbeResult? result;
+    switch (status) {
+      case PingStatus.success:
+        final latencyMs = snapshot.effectiveLatencyMs;
+        if (latencyMs != null && latencyMs > 0) {
+          result = LatencyProbeResult.success(latencyMs);
+        }
+        break;
+      case PingStatus.timeout:
+        result = const LatencyProbeResult.timeout();
+        break;
+      case PingStatus.unavailable:
+        result = const LatencyProbeResult.unavailable();
+        break;
+      case PingStatus.unknown:
+        break;
+    }
+    if (result == null) return;
+
+    _activeRouteLatencyTargetId = targetId;
+    _activeRouteLatency = result;
   }
 
   void _detachDependencies() {
@@ -981,6 +1206,7 @@ class TunnelController extends ChangeNotifier {
     if (_lastConfiguredMode != configuredMode) {
       _lastConfiguredMode = configuredMode;
       _latencyContextRevision++;
+      _profileUiRevision.value++;
     }
     final routeProbeUri = _settings.latencyProbeUri;
     if (_lastRouteProbeUri != routeProbeUri) {
@@ -1001,11 +1227,15 @@ class TunnelController extends ChangeNotifier {
       unawaited(
         (_engine as TunnelRuntimeSettingsSink).updateRuntimeSettings(
           statsIntervalSeconds: _settings.statsIntervalSeconds,
+          notificationStatsIntervalSeconds:
+              _settings.notificationStatsIntervalSeconds,
+          pingIntervalSeconds: _settings.pingIntervalSeconds,
           showNotificationSpeed: _settings.showNotificationSpeed,
           showNotificationPing: _settings.showNotificationPing,
         ),
       );
     }
+    _syncDesktopPingTimer();
     notifyListeners();
   }
 
@@ -1039,6 +1269,7 @@ class TunnelController extends ChangeNotifier {
         (_engine as TunnelRuntimeEffectiveLatencySink).updateEffectiveLatency(
           target,
           latencyMs: routeLatency?.latencyMs,
+          pingStatus: routeLatency?.status ?? PingStatus.unknown,
         ),
       );
     } else {
@@ -1065,10 +1296,13 @@ class TunnelController extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    _closing = true;
+    _markClosing();
+    _desktopPingTimer?.cancel();
+    _desktopPingTimer = null;
     _egressRefreshCoordinator.dispose();
     _detachDependencies();
     _egressRevision.dispose();
+    _profileUiRevision.dispose();
     unawaited(_shutdownFuture ??= _disposeWithoutStopping());
     super.dispose();
   }

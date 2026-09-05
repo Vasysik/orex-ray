@@ -72,31 +72,50 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      HomeScreen(tunnel: widget.tunnel),
-      ProfilesScreen(profiles: widget.profiles, tunnel: widget.tunnel),
-      ConnectionScreen(tunnel: widget.tunnel, settings: widget.settings),
-      _appsPageLoaded
-          ? AppsScreen(controller: widget.appRouting)
-          : const SizedBox.shrink(),
-      NetworkScreen(settings: widget.settings),
-      GeoDataScreen(controller: widget.geoData, settings: widget.settings),
-      BackgroundScreen(settings: widget.settings),
-      AppearanceScreen(theme: widget.theme),
-      DiagnosticsScreen(
-        tunnel: widget.tunnel,
-        settings: widget.settings,
-        appVersion: widget.appVersion,
+      BackdropGroup(
+        child: HomeScreen(tunnel: widget.tunnel, active: _index == 0),
       ),
-      AboutScreen(appVersion: widget.appVersion),
-      MoreScreen(
-        showApps: !Platform.isWindows,
-        onOpenApps: () => _selectPage(_appsIndex),
-        onOpenNetwork: () => _selectPage(_networkIndex),
-        onOpenGeoData: () => _selectPage(_geoDataIndex),
-        onOpenBackground: () => _selectPage(_backgroundIndex),
-        onOpenAppearance: () => _selectPage(_appearanceIndex),
-        onOpenDiagnostics: () => _selectPage(_diagnosticsIndex),
-        onOpenAbout: () => _selectPage(_aboutIndex),
+      BackdropGroup(
+        child: ProfilesScreen(profiles: widget.profiles, tunnel: widget.tunnel),
+      ),
+      BackdropGroup(
+        child: ConnectionScreen(tunnel: widget.tunnel, settings: widget.settings),
+      ),
+      BackdropGroup(
+        child: _appsPageLoaded
+            ? AppsScreen(controller: widget.appRouting)
+            : const SizedBox.shrink(),
+      ),
+      BackdropGroup(child: NetworkScreen(settings: widget.settings)),
+      BackdropGroup(
+        child: GeoDataScreen(controller: widget.geoData, settings: widget.settings),
+      ),
+      BackdropGroup(child: BackgroundScreen(settings: widget.settings)),
+      BackdropGroup(child: AppearanceScreen(theme: widget.theme)),
+      BackdropGroup(
+        child: DiagnosticsScreen(
+          tunnel: widget.tunnel,
+          settings: widget.settings,
+          appVersion: widget.appVersion,
+        ),
+      ),
+      BackdropGroup(
+        child: AboutScreen(
+          appVersion: widget.appVersion,
+          tunnel: widget.tunnel,
+        ),
+      ),
+      BackdropGroup(
+        child: MoreScreen(
+          showApps: !Platform.isWindows,
+          onOpenApps: () => _selectPage(_appsIndex),
+          onOpenNetwork: () => _selectPage(_networkIndex),
+          onOpenGeoData: () => _selectPage(_geoDataIndex),
+          onOpenBackground: () => _selectPage(_backgroundIndex),
+          onOpenAppearance: () => _selectPage(_appearanceIndex),
+          onOpenDiagnostics: () => _selectPage(_diagnosticsIndex),
+          onOpenAbout: () => _selectPage(_aboutIndex),
+        ),
       ),
     ];
 

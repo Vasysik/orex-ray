@@ -9,6 +9,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.VpnService
 import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.ResultReceiver
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
@@ -19,6 +23,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : FlutterActivity() {
     companion object {
@@ -26,10 +31,13 @@ class MainActivity : FlutterActivity() {
         private const val METHOD_CHANNEL = "ru.orex.ray/tunnel"
         private const val EVENT_CHANNEL = "ru.orex.ray/tunnel_events"
         private const val SECURE_CHANNEL = "ru.orex.ray/secure_storage"
+        private const val FILE_EXPORT_CHANNEL = "ru.orex.ray/file_export"
         private const val VPN_PERMISSION_REQUEST = 7711
         private const val NOTIFICATION_PERMISSION_REQUEST = 7712
+        private const val FILE_EXPORT_REQUEST = 7713
         private const val MODE_VPN = "vpn_tun"
         private const val MODE_LOCAL_PROXY = "local_proxy"
+        private const val VPN_QUERY_TIMEOUT_MS = 2_000L
     }
 
     private data class StartRequest(
@@ -38,6 +46,8 @@ class MainActivity : FlutterActivity() {
         val targetId: String?,
         val targetName: String,
         val latencyMs: Int?,
+        val pingStatus: String,
+        val latencyProbeUrl: String,
         val statsOutboundTags: List<String>,
         val mtu: Int,
         val dnsServers: List<String>,
@@ -45,6 +55,8 @@ class MainActivity : FlutterActivity() {
         val httpPort: Int,
         val localProxyInVpn: Boolean,
         val statsIntervalSeconds: Int,
+        val notificationStatsIntervalSeconds: Int,
+        val pingIntervalSeconds: Int,
         val showNotificationSpeed: Boolean,
         val showNotificationPing: Boolean,
         val statsUiActive: Boolean,
@@ -54,8 +66,11 @@ class MainActivity : FlutterActivity() {
     )
 
     private var pendingStart: StartRequest? = null
+    private var pendingFileExportResult: MethodChannel.Result? = null
+    private var pendingFileExportContent: String? = null
     private val secureStore by lazy { AndroidSecureStore(applicationContext) }
     private val packageWorker = Executors.newFixedThreadPool(2)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var activityDestroyed = false
@@ -94,6 +109,13 @@ class MainActivity : FlutterActivity() {
                                 ?: "OrexRay",
                             latencyMs = call.argument<Int>("latencyMs")
                                 ?.takeIf { it >= 0 },
+                            pingStatus = normalizePingStatus(
+                                call.argument<String>("pingStatus"),
+                                call.argument<Int>("latencyMs")?.takeIf { it >= 0 },
+                            ),
+                            latencyProbeUrl = normalizeLatencyProbeUrl(
+                                call.argument<String>("latencyProbeUrl"),
+                            ),
                             statsOutboundTags = call.argument<List<String>>(
                                 "statsOutboundTags",
                             )
@@ -118,7 +140,17 @@ class MainActivity : FlutterActivity() {
                                 call.argument<Boolean>("localProxyInVpn") ?: true,
                             statsIntervalSeconds = (
                                 call.argument<Int>("statsIntervalSeconds") ?: 2
-                            ).let { if (it in setOf(1, 2, 5, 10)) it else 2 },
+                            ).let { if (it in setOf(1, 2, 3, 5, 10, 15, 30)) it else 2 },
+                            notificationStatsIntervalSeconds = (
+                                call.argument<Int>("notificationStatsIntervalSeconds") ?: 5
+                            ).let {
+                                if (it in setOf(5, 10, 15, 30, 60)) it else 5
+                            },
+                            pingIntervalSeconds = (
+                                call.argument<Int>("pingIntervalSeconds") ?: 60
+                            ).let {
+                                if (it in setOf(15, 30, 60, 120, 300)) it else 60
+                            },
                             showNotificationSpeed =
                                 call.argument<Boolean>("showNotificationSpeed") ?: true,
                             showNotificationPing =
@@ -135,6 +167,10 @@ class MainActivity : FlutterActivity() {
                                 .orEmpty(),
                         )
 
+                        debugInfo(
+                            "Start requested mode=${request.mode} " +
+                                "targetId=${request.targetId ?: "-"}",
+                        )
                         runCatching { startRequestedMode(request) }
                             .onSuccess { result.success(null) }
                             .onFailure { error ->
@@ -148,6 +184,7 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "stop" -> {
+                        debugInfo("Stop requested from Flutter")
                         runCatching { stopCoreService() }
                             .onSuccess { result.success(null) }
                             .onFailure { error ->
@@ -166,6 +203,8 @@ class MainActivity : FlutterActivity() {
                                 targetId = call.argument<String>("targetId"),
                                 targetName = call.argument<String>("targetName"),
                                 latencyMs = call.argument<Int>("latencyMs"),
+                                pingStatus = call.argument<String>("pingStatus"),
+                                latencyProbeUrl = call.argument<String>("latencyProbeUrl"),
                             )
                         }
                             .onSuccess { result.success(null) }
@@ -183,6 +222,10 @@ class MainActivity : FlutterActivity() {
                             updateRuntimeSettings(
                                 statsIntervalSeconds = call.argument<Int>("statsIntervalSeconds")
                                     ?: 2,
+                                notificationStatsIntervalSeconds =
+                                    call.argument<Int>("notificationStatsIntervalSeconds") ?: 5,
+                                pingIntervalSeconds = call.argument<Int>("pingIntervalSeconds")
+                                    ?: 60,
                                 showNotificationSpeed =
                                     call.argument<Boolean>("showNotificationSpeed") ?: true,
                                 showNotificationPing =
@@ -213,7 +256,7 @@ class MainActivity : FlutterActivity() {
                             }
                     }
 
-                    "status" -> result.success(OrexRayVpnService.runtimeState(this))
+                    "status" -> queryVpnState(result)
                     "setAutoConnectOnBoot" -> {
                         OrexRayStartupStore.setAutoConnectOnBoot(
                             this,
@@ -232,7 +275,7 @@ class MainActivity : FlutterActivity() {
                                 )
                             }
                     }
-                    "diagnostics" -> result.success(OrexRayDiagnosticsStore.snapshot())
+                    "diagnostics" -> queryVpnDiagnostics(result)
                     "assetDirectory" -> result.success(
                         File(filesDir, "xray").apply { mkdirs() }.absolutePath,
                     )
@@ -289,6 +332,48 @@ class MainActivity : FlutterActivity() {
                         error.message ?: error.javaClass.simpleName,
                         null,
                     )
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FILE_EXPORT_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "saveJson" -> {
+                        val fileName = call.argument<String>("fileName")
+                            ?.trim()
+                            ?.takeIf { it.isNotEmpty() }
+                            ?: "orexray-xray.json"
+                        val content = call.argument<String>("content")
+                        if (content == null) {
+                            result.error("invalid_content", "JSON content is missing", null)
+                            return@setMethodCallHandler
+                        }
+                        if (pendingFileExportResult != null) {
+                            result.error("export_busy", "Another file export is active", null)
+                            return@setMethodCallHandler
+                        }
+                        pendingFileExportResult = result
+                        pendingFileExportContent = content
+                        runCatching {
+                            startActivityForResult(
+                                Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    type = "application/json"
+                                    putExtra(Intent.EXTRA_TITLE, fileName)
+                                },
+                                FILE_EXPORT_REQUEST,
+                            )
+                        }.onFailure { error ->
+                            pendingFileExportResult = null
+                            pendingFileExportContent = null
+                            result.error(
+                                "export_failed",
+                                error.message ?: error.javaClass.simpleName,
+                                null,
+                            )
+                        }
+                    }
+                    else -> result.notImplemented()
                 }
             }
     }
@@ -389,6 +474,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         activityDestroyed = true
+        pendingFileExportResult?.error(
+            "activity_destroyed",
+            "Activity was destroyed during file export",
+            null,
+        )
+        pendingFileExportResult = null
+        pendingFileExportContent = null
+        OrexRayTunnelEvents.detach()
         packageWorker.shutdownNow()
         super.onDestroy()
     }
@@ -427,7 +520,7 @@ class MainActivity : FlutterActivity() {
         pendingStart = request
         val permissionIntent = VpnService.prepare(this)
         if (permissionIntent != null) {
-            OrexRayTunnelEvents.emit(
+            OrexRayTunnelEvents.emitTransient(
                 this,
                 OrexRayTunnelEvents.event(
                     status = "connecting",
@@ -456,18 +549,87 @@ class MainActivity : FlutterActivity() {
         continueStart(request)
     }
 
-    @Deprecated("The platform callback is required for the VPN permission activity")
+    @Deprecated("The platform callback is required for VPN permission and document export")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == FILE_EXPORT_REQUEST) {
+            val callback = pendingFileExportResult ?: return
+            val content = pendingFileExportContent
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                pendingFileExportResult = null
+                pendingFileExportContent = null
+                callback.success(null)
+                return
+            }
+            val uri = data.data!!
+            if (content == null) {
+                pendingFileExportResult = null
+                pendingFileExportContent = null
+                callback.error("export_failed", "JSON content is missing", null)
+                return
+            }
+
+            // Release the potentially large JSON string, but keep the result pending
+            // until the worker finishes. This both prevents overlapping exports and lets
+            // onDestroy() resolve the Dart Future if the Activity disappears mid-write.
+            pendingFileExportContent = null
+            runCatching {
+                packageWorker.execute {
+                    val writeResult = runCatching {
+                        contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                            output.write(content.toByteArray(Charsets.UTF_8))
+                            output.flush()
+                        } ?: error("Could not open selected document")
+                    }
+                    runOnUiThread {
+                        // onDestroy() may already have resolved and cleared this callback.
+                        if (pendingFileExportResult !== callback) return@runOnUiThread
+                        pendingFileExportResult = null
+                        writeResult.onSuccess {
+                            callback.success(uri.toString())
+                        }.onFailure { error ->
+                            Log.e(TAG, "Could not export JSON", error)
+                            callback.error(
+                                "export_failed",
+                                error.message ?: error.javaClass.simpleName,
+                                null,
+                            )
+                        }
+                    }
+                }
+            }.onFailure { error ->
+                if (pendingFileExportResult === callback) {
+                    pendingFileExportResult = null
+                }
+                Log.e(TAG, "Could not schedule JSON export", error)
+                callback.error(
+                    "export_failed",
+                    error.message ?: error.javaClass.simpleName,
+                    null,
+                )
+            }
+            return
+        }
         if (requestCode != VPN_PERMISSION_REQUEST) return
 
         val request = pendingStart
         pendingStart = null
-        if (resultCode == Activity.RESULT_OK && request != null) {
+        if (request == null) {
+            // Flutter may have cancelled while the system VPN permission
+            // activity was on top. Never turn that deliberate cancellation
+            // into a misleading permission error or revive the old request.
+            debugInfo("VPN permission result ignored: start was cancelled")
+            OrexRayTunnelEvents.emitTransient(
+                this,
+                OrexRayTunnelEvents.event(status = "disconnected", mode = MODE_VPN),
+            )
+            return
+        }
+        if (resultCode == Activity.RESULT_OK) {
             runCatching { startCoreService(request) }
                 .onFailure { error ->
                     Log.e(TAG, "Could not start VPN service after permission", error)
-                    OrexRayTunnelEvents.emit(
+                    OrexRayTunnelEvents.emitTransient(
                         this,
                         OrexRayTunnelEvents.event(
                             status = "error",
@@ -477,11 +639,11 @@ class MainActivity : FlutterActivity() {
                     )
                 }
         } else {
-            OrexRayTunnelEvents.emit(
+            OrexRayTunnelEvents.emitTransient(
                 this,
                 OrexRayTunnelEvents.event(
                     status = "error",
-                    mode = request?.mode ?: MODE_VPN,
+                    mode = request.mode,
                     errorMessage = "Разрешение VPN не выдано",
                 ),
             )
@@ -496,6 +658,11 @@ class MainActivity : FlutterActivity() {
             .putExtra(OrexRayVpnService.EXTRA_TARGET_ID, request.targetId)
             .putExtra(OrexRayVpnService.EXTRA_TARGET_NAME, request.targetName)
             .putExtra(OrexRayVpnService.EXTRA_LATENCY_MS, request.latencyMs ?: -1)
+            .putExtra(OrexRayVpnService.EXTRA_PING_STATUS, request.pingStatus)
+            .putExtra(
+                OrexRayVpnService.EXTRA_LATENCY_PROBE_URL,
+                request.latencyProbeUrl,
+            )
             .putStringArrayListExtra(
                 OrexRayVpnService.EXTRA_STATS_OUTBOUND_TAGS,
                 ArrayList(request.statsOutboundTags),
@@ -514,6 +681,14 @@ class MainActivity : FlutterActivity() {
             .putExtra(
                 OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
                 request.statsIntervalSeconds,
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                request.notificationStatsIntervalSeconds,
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,
+                request.pingIntervalSeconds,
             )
             .putExtra(
                 OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
@@ -552,6 +727,8 @@ class MainActivity : FlutterActivity() {
         targetId: String?,
         targetName: String?,
         latencyMs: Int?,
+        pingStatus: String?,
+        latencyProbeUrl: String?,
     ) {
         val intent = Intent(this, OrexRayVpnService::class.java)
             .setAction(OrexRayVpnService.ACTION_UPDATE_METADATA)
@@ -564,11 +741,38 @@ class MainActivity : FlutterActivity() {
                 targetName?.trim().orEmpty(),
             )
             .putExtra(OrexRayVpnService.EXTRA_LATENCY_MS, latencyMs ?: -1)
+            .putExtra(
+                OrexRayVpnService.EXTRA_PING_STATUS,
+                normalizePingStatus(pingStatus, latencyMs),
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_LATENCY_PROBE_URL,
+                normalizeLatencyProbeUrl(latencyProbeUrl),
+            )
         startService(intent)
+    }
+
+    private fun normalizePingStatus(value: String?, latencyMs: Int?): String =
+        when (value?.trim()?.lowercase()) {
+            "success" -> if (latencyMs != null && latencyMs >= 0) "success" else "unknown"
+            "timeout" -> "timeout"
+            "unavailable" -> "unavailable"
+            else -> if (latencyMs != null && latencyMs >= 0) "success" else "unknown"
+        }
+
+    private fun normalizeLatencyProbeUrl(value: String?): String {
+        val normalized = value?.trim().orEmpty()
+        return if (normalized.startsWith("https://") || normalized.startsWith("http://")) {
+            normalized
+        } else {
+            "https://cloudflare.com/cdn-cgi/trace"
+        }
     }
 
     private fun updateRuntimeSettings(
         statsIntervalSeconds: Int,
+        notificationStatsIntervalSeconds: Int,
+        pingIntervalSeconds: Int,
         showNotificationSpeed: Boolean,
         showNotificationPing: Boolean,
     ) {
@@ -577,6 +781,14 @@ class MainActivity : FlutterActivity() {
             .putExtra(
                 OrexRayVpnService.EXTRA_STATS_INTERVAL_SECONDS,
                 statsIntervalSeconds,
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_NOTIFICATION_STATS_INTERVAL_SECONDS,
+                notificationStatsIntervalSeconds,
+            )
+            .putExtra(
+                OrexRayVpnService.EXTRA_PING_INTERVAL_SECONDS,
+                pingIntervalSeconds,
             )
             .putExtra(
                 OrexRayVpnService.EXTRA_SHOW_NOTIFICATION_SPEED,
@@ -594,6 +806,72 @@ class MainActivity : FlutterActivity() {
             .setAction(OrexRayVpnService.ACTION_SET_STATS_UI_ACTIVE)
             .putExtra(OrexRayVpnService.EXTRA_STATS_UI_ACTIVE, active)
         startService(intent)
+    }
+
+    private fun queryVpnState(result: MethodChannel.Result) {
+        queryVpnService(
+            action = OrexRayVpnService.ACTION_QUERY_STATE,
+            fallback = OrexRayTunnelEvents.event(status = "disconnected"),
+            result = result,
+        ) { bundle -> OrexRayTunnelEvents.fromBundle(bundle) }
+    }
+
+    private fun queryVpnDiagnostics(result: MethodChannel.Result) {
+        queryVpnService(
+            action = OrexRayVpnService.ACTION_QUERY_DIAGNOSTICS,
+            fallback = mapOf(
+                "pid" to null,
+                "coreRunning" to false,
+                "lastError" to null,
+                "lastExitCode" to null,
+                "automaticRestarts" to 0,
+                "logs" to emptyList<String>(),
+            ),
+            result = result,
+        ) { bundle ->
+            mapOf(
+                "pid" to bundle.getInt("pid").takeIf { bundle.containsKey("pid") },
+                "coreRunning" to bundle.getBoolean("coreRunning"),
+                "lastError" to bundle.getString("lastError"),
+                "lastExitCode" to bundle.getLong("lastExitCode")
+                    .takeIf { bundle.containsKey("lastExitCode") },
+                "automaticRestarts" to bundle.getInt("automaticRestarts"),
+                "logs" to bundle.getStringArrayList("logs").orEmpty(),
+            )
+        }
+    }
+
+    private fun <T> queryVpnService(
+        action: String,
+        fallback: T,
+        result: MethodChannel.Result,
+        decode: (Bundle) -> T,
+    ) {
+        val completed = AtomicBoolean(false)
+        val timeout = Runnable {
+            if (completed.compareAndSet(false, true)) result.success(fallback)
+        }
+        val receiver = object : ResultReceiver(mainHandler) {
+            override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                if (!completed.compareAndSet(false, true)) return
+                mainHandler.removeCallbacks(timeout)
+                result.success(resultData?.let(decode) ?: fallback)
+            }
+        }
+        mainHandler.postDelayed(timeout, VPN_QUERY_TIMEOUT_MS)
+        runCatching {
+            startService(
+                Intent(this, OrexRayVpnService::class.java)
+                    .setAction(action)
+                    .putExtra(OrexRayVpnService.EXTRA_RESULT_RECEIVER, receiver),
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "VPN service query failed: $action", error)
+            if (completed.compareAndSet(false, true)) {
+                mainHandler.removeCallbacks(timeout)
+                result.success(fallback)
+            }
+        }
     }
 
     private fun openNotificationSettings() {

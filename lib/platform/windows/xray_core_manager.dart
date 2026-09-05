@@ -67,7 +67,7 @@ class XrayCoreManager {
         if (!kDebugMode) {
           throw StateError(
             'Встроенный Xray Core повреждён или был изменён. '
-            'Открой «Диагностика» и выбери «Переустановить Xray Core».\n$error',
+            'Открой «О приложении» и выбери «Переустановить Xray Core».\n$error',
           );
         }
       }
