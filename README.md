@@ -446,12 +446,12 @@ powershell -ExecutionPolicy Bypass -File tool\build_release.ps1 -Platform window
 Артефакты имеют одну схему имени и лежат в `dist\<debug|release>\<version>\`:
 
 ```text
-OrexRay-<version>-debug-android.apk
-OrexRay-<version>-debug-windows-x64.zip
-OrexRay-<version>-release-android-arm64-v8a.apk
-OrexRay-<version>-release-android-armeabi-v7a.apk
-OrexRay-<version>-release-android-x86_64.apk
-OrexRay-<version>-release-windows-x64-setup.exe
+OrexRay-<version>-debug.apk
+OrexRay-<version>-debug-x64.zip
+OrexRay-<version>-release-arm64-v8a.apk
+OrexRay-<version>-release-armeabi-v7a.apk
+OrexRay-<version>-release-x86_64.apk
+OrexRay-<version>-release-x64-setup.exe
 SHA256SUMS.txt
 ```
 

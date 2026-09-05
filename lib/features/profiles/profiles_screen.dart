@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -329,10 +332,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
   }
 
   void _enterSelection(String id) {
-    if (_selectionMode) {
-      _toggleSelection(id);
-      return;
-    }
+    if (_selectedProfileIds.contains(id)) return;
     setState(() => _selectedProfileIds.add(id));
   }
 
@@ -558,39 +558,44 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
           onReorderItem: profiles.reorderProfiles,
           itemBuilder: (context, index) {
             final profile = currentProfiles[index];
+            final card = _ProfileCard(
+              profile: profile,
+              identity: tunnel.egressIdentityFor(profile.id),
+              selected: activeTarget?.id == profile.id,
+              multiSelected: _selectedProfileIds.contains(profile.id),
+              selectionMode: _selectionMode,
+              dragging: _draggingProfileId == profile.id,
+              onSelect: () => _selectionMode
+                  ? _toggleSelection(profile.id)
+                  : _selectFromProfiles(context, profile.id),
+              onLongPress:
+                  _selectionMode ? null : () => _enterSelection(profile.id),
+              latencyMs: profile.latencyMs,
+              onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
+                  ? () => tunnel.refreshProfileLatency(profile.id)
+                  : null,
+              onEdit: () =>
+                  widget.owner._showEditProfileDialog(context, profile),
+              onExport: () => widget.owner._showXrayJsonExportMenu(
+                context,
+                profileId: profile.id,
+                suggestedBaseName: profile.name,
+              ),
+              onDelete: () => widget.owner._deleteTarget(
+                context,
+                profile.id,
+                profile.name,
+              ),
+            );
             return Padding(
               key: ValueKey(profile.id),
               padding: const EdgeInsets.only(bottom: 12),
-              child: _ProfileCard(
-                profile: profile,
-                identity: tunnel.egressIdentityFor(profile.id),
-                selected: activeTarget?.id == profile.id,
-                multiSelected: _selectedProfileIds.contains(profile.id),
-                selectionMode: _selectionMode,
-                reorderIndex: index,
-                dragging: _draggingProfileId == profile.id,
-                onSelect: () => _selectionMode
-                    ? _toggleSelection(profile.id)
-                    : _selectFromProfiles(context, profile.id),
-                onLongPress:
-                    _selectionMode ? null : () => _enterSelection(profile.id),
-                latencyMs: profile.latencyMs,
-                onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
-                    ? () => tunnel.refreshProfileLatency(profile.id)
-                    : null,
-                onEdit: () =>
-                    widget.owner._showEditProfileDialog(context, profile),
-                onExport: () => widget.owner._showXrayJsonExportMenu(
-                  context,
-                  profileId: profile.id,
-                  suggestedBaseName: profile.name,
-                ),
-                onDelete: () => widget.owner._deleteTarget(
-                  context,
-                  profile.id,
-                  profile.name,
-                ),
-              ),
+              child: _selectionMode
+                  ? _AdaptiveReorderableDragStartListener(
+                      index: index,
+                      child: card,
+                    )
+                  : card,
             );
           },
         );
@@ -646,11 +651,6 @@ class _ProfilesHeader extends StatelessWidget {
             runSpacing: 10,
             children: [
               OutlinedButton.icon(
-                onPressed: onCloseSelection,
-                icon: const Icon(Icons.close_rounded),
-                label: const Text('Готово'),
-              ),
-              OutlinedButton.icon(
                 onPressed: allSelected ? null : onSelectAll,
                 icon: const Icon(Icons.select_all_rounded),
                 label: const Text('Все'),
@@ -672,6 +672,11 @@ class _ProfilesHeader extends StatelessWidget {
                 ),
                 icon: const Icon(Icons.delete_outline_rounded),
                 label: const Text('Удалить'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onCloseSelection,
+                icon: const Icon(Icons.close_rounded),
+                label: const Text('Готово'),
               ),
             ],
           )
@@ -809,7 +814,6 @@ class _ProfileCard extends StatelessWidget {
     required this.selected,
     required this.multiSelected,
     required this.selectionMode,
-    required this.reorderIndex,
     required this.dragging,
     required this.onSelect,
     required this.onLongPress,
@@ -825,7 +829,6 @@ class _ProfileCard extends StatelessWidget {
   final bool selected;
   final bool multiSelected;
   final bool selectionMode;
-  final int reorderIndex;
   final bool dragging;
   final VoidCallback onSelect;
   final VoidCallback? onLongPress;
@@ -837,7 +840,7 @@ class _ProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
+    final card = RepaintBoundary(
       child: GlassPanel(
         borderRadius: 22,
         blur: dragging ? 0 : 18,
@@ -883,28 +886,9 @@ class _ProfileCard extends StatelessWidget {
           ),
           isThreeLine: true,
           trailing: selectionMode
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Checkbox(
-                      value: multiSelected,
-                      onChanged: (_) => onSelect(),
-                    ),
-                    const SizedBox(width: 2),
-                    Tooltip(
-                      message: 'Перетащить профиль',
-                      child: ReorderableDragStartListener(
-                        index: reorderIndex,
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.grab,
-                          child: const Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Icon(Icons.drag_indicator_rounded),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+              ? Checkbox(
+                  value: multiSelected,
+                  onChanged: (_) => onSelect(),
                 )
               : PopupMenuButton<String>(
                       onSelected: (value) {
@@ -935,6 +919,116 @@ class _ProfileCard extends StatelessWidget {
                       ],
                     ),
         ),
+      ),
+    );
+    if (onLongPress == null) return card;
+    return _MouseHoldRegion(
+      onHold: onLongPress!,
+      child: card,
+    );
+  }
+}
+
+class _MouseHoldRegion extends StatefulWidget {
+  const _MouseHoldRegion({required this.onHold, required this.child});
+
+  final VoidCallback onHold;
+  final Widget child;
+
+  @override
+  State<_MouseHoldRegion> createState() => _MouseHoldRegionState();
+}
+
+class _MouseHoldRegionState extends State<_MouseHoldRegion> {
+  Timer? _timer;
+  int? _pointer;
+
+  void _handlePointerDown(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse ||
+        event.buttons != kPrimaryMouseButton) {
+      return;
+    }
+    _cancel();
+    _pointer = event.pointer;
+    _timer = Timer(kLongPressTimeout, () {
+      _timer = null;
+      if (!mounted || _pointer != event.pointer) return;
+      widget.onHold();
+    });
+  }
+
+  void _handlePointerUp(PointerEvent event) {
+    if (event.pointer == _pointer) _cancel();
+  }
+
+  void _cancel() {
+    _timer?.cancel();
+    _timer = null;
+    _pointer = null;
+  }
+
+  @override
+  void dispose() {
+    _cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _handlePointerDown,
+      onPointerUp: _handlePointerUp,
+      onPointerCancel: _handlePointerUp,
+      child: widget.child,
+    );
+  }
+}
+
+class _AdaptiveReorderableDragStartListener extends StatelessWidget {
+  const _AdaptiveReorderableDragStartListener({
+    required this.index,
+    required this.child,
+  });
+
+  final int index;
+  final Widget child;
+
+  void _startDrag(BuildContext context, PointerDownEvent event) {
+    final MultiDragGestureRecognizer recognizer;
+    switch (event.kind) {
+      case PointerDeviceKind.mouse:
+      case PointerDeviceKind.trackpad:
+        // Desktop: moving the pointer while the button is held must not
+        // invalidate the drag. The reorder starts as soon as actual movement
+        // wins the gesture arena.
+        recognizer = ImmediateMultiDragGestureRecognizer(debugOwner: this);
+        break;
+      case PointerDeviceKind.touch:
+      case PointerDeviceKind.stylus:
+      case PointerDeviceKind.invertedStylus:
+        // Touch keeps the familiar long-press-to-reorder behavior so normal
+        // scrolling is not stolen by the selected card.
+        recognizer = DelayedMultiDragGestureRecognizer(debugOwner: this);
+        break;
+      case PointerDeviceKind.unknown:
+        recognizer = ImmediateMultiDragGestureRecognizer(debugOwner: this);
+        break;
+    }
+    SliverReorderableList.of(context).startItemDragReorder(
+      index: index,
+      event: event,
+      recognizer: recognizer,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.grab,
+      child: Listener(
+        onPointerDown: (event) => _startDrag(context, event),
+        child: child,
       ),
     );
   }

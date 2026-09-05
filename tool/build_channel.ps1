@@ -92,7 +92,7 @@ try {
   if ($Platform -in @('all', 'android')) {
     Write-Host ''
     Write-Host "=== Android $Mode ==="
-    Remove-ArtifactPattern -Pattern "OrexRay-$Release-$Mode-android*.apk"
+    Remove-ArtifactPattern -Pattern "OrexRay-$Release-$Mode*.apk"
 
     if (-not $ReuseFlutterBuilds) {
       if ($Mode -eq 'debug') {
@@ -110,7 +110,7 @@ try {
       $DebugApk = Join-Path $RepoRoot 'build\app\outputs\flutter-apk\app-debug.apk'
       Publish-Artifact `
         -Source $DebugApk `
-        -Name "OrexRay-$Release-debug-android.apk" | Out-Null
+        -Name "OrexRay-$Release-debug.apk" | Out-Null
     } else {
       $AndroidArtifacts = @(
         @{ Source = 'app-arm64-v8a-release.apk'; Abi = 'arm64-v8a' },
@@ -121,7 +121,7 @@ try {
         $Source = Join-Path $RepoRoot "build\app\outputs\flutter-apk\$($Artifact.Source)"
         Publish-Artifact `
           -Source $Source `
-          -Name "OrexRay-$Release-release-android-$($Artifact.Abi).apk" | Out-Null
+          -Name "OrexRay-$Release-release-$($Artifact.Abi).apk" | Out-Null
       }
     }
   }
@@ -129,7 +129,7 @@ try {
   if ($Platform -in @('all', 'windows')) {
     Write-Host ''
     Write-Host "=== Windows $Mode ==="
-    Remove-ArtifactPattern -Pattern "OrexRay-$Release-$Mode-windows-x64*"
+    Remove-ArtifactPattern -Pattern "OrexRay-$Release-$Mode-x64*"
 
     $Configuration = if ($Mode -eq 'debug') { 'Debug' } else { 'Release' }
     $WindowsRunnerDir = Join-Path $RepoRoot "build\windows\x64\runner\$Configuration"
@@ -149,7 +149,7 @@ try {
       if (-not (Test-Path (Join-Path $WindowsRunnerDir 'orex_ray.exe'))) {
         throw "Windows debug executable was not found in $WindowsRunnerDir"
       }
-      $ZipName = "OrexRay-$Release-debug-windows-x64.zip"
+      $ZipName = "OrexRay-$Release-debug-x64.zip"
       $ZipPath = Join-Path $OutputDir $ZipName
       Remove-Item -Force -ErrorAction SilentlyContinue $ZipPath
       Compress-Archive -Path (Join-Path $WindowsRunnerDir '*') -DestinationPath $ZipPath -Force
@@ -174,7 +174,7 @@ try {
       $Installer = Join-Path $RepoRoot "build\windows\x64\installer\OrexRay-Setup-$Release.exe"
       Publish-Artifact `
         -Source $Installer `
-        -Name "OrexRay-$Release-release-windows-x64-setup.exe" | Out-Null
+        -Name "OrexRay-$Release-release-x64-setup.exe" | Out-Null
     }
   }
 

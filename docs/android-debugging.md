@@ -9,7 +9,7 @@ powershell -ExecutionPolicy Bypass -File tool\build_debug.ps1 -Platform android
 Результат:
 
 ```text
-dist\debug\<version>\OrexRay-<version>-debug-android.apk
+dist\debug\<version>\OrexRay-<version>-debug.apk
 ```
 
 Это настоящий Flutter debug APK с package id `ru.orex.ray.debug`; release

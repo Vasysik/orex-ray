@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -131,6 +132,10 @@ void main() {
       'vless://11111111-1111-4111-8111-111111111111@example.com:443'
       '?encryption=none&security=none&type=tcp#Bulk-actions',
     );
+    await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@example.net:443'
+      '?encryption=none&security=none&type=tcp#Bulk-actions-2',
+    );
     final tunnel = TunnelController(
       engine: const _ProfilesTestTunnelEngine(),
       profiles: profiles,
@@ -152,7 +157,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.longPress(find.text('Bulk-actions'));
+    final hold = await tester.startGesture(
+      tester.getCenter(find.text('Bulk-actions')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await hold.moveBy(const Offset(48, 4));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+    await hold.up();
     await tester.pumpAndSettle();
     expect(find.text('ВЫДЕЛЕНО'), findsOneWidget);
     expect(find.text('1'), findsWidgets);
@@ -160,9 +171,26 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, 'Экспорт'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Удалить'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Готово'), findsOneWidget);
-    expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
-    expect(find.byType(ReorderableDragStartListener), findsOneWidget);
-    expect(find.byIcon(Icons.drag_indicator_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.drag_indicator_rounded), findsNothing);
+
+    final drag = await tester.startGesture(
+      tester.getCenter(find.text('Bulk-actions')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await drag.moveBy(const Offset(0, 150));
+    await tester.pump(const Duration(milliseconds: 32));
+    await drag.moveBy(const Offset(0, 80));
+    await tester.pump(const Duration(milliseconds: 32));
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(profiles.profiles.last.name, 'Bulk-actions');
+
+    final deleteButton = find.widgetWithText(OutlinedButton, 'Удалить');
+    final doneButton = find.widgetWithText(OutlinedButton, 'Готово');
+    expect(
+      tester.getTopLeft(doneButton).dx,
+      greaterThan(tester.getTopLeft(deleteButton).dx),
+    );
   });
 
   testWidgets('profile tab does not switch target while VPN is active',

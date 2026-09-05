@@ -11,7 +11,8 @@ void main() {
     expect(OrexColors.copperDeep, const Color(0xFF854132));
     expect(OrexColors.cream, const Color(0xFFFCFAFA));
     expect(OrexColors.online, const Color(0xFF8FB36A));
-    expect(OrexColors.danger, const Color(0xFFCF6679));
+    expect(OrexColors.danger, const Color(0xFFB36A6A));
+    expect(OrexColors.dangerStrong, OrexColors.danger);
     expect(OrexColors.copperGradient.colors, [
       OrexColors.copperBright,
       OrexColors.copperDeep,

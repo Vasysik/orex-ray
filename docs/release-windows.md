@@ -37,7 +37,7 @@ Inno Setup
 
 ```text
 dist\release\<x.y.z+n>\
-  OrexRay-<version>-release-windows-x64-setup.exe
+  OrexRay-<version>-release-x64-setup.exe
   SHA256SUMS.txt
 ```
 

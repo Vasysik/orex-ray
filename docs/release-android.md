@@ -42,9 +42,9 @@ flutter build apk --release --split-per-abi --no-pub
 
 ```text
 dist\release\<x.y.z+n>\
-  OrexRay-<version>-release-android-arm64-v8a.apk
-  OrexRay-<version>-release-android-armeabi-v7a.apk
-  OrexRay-<version>-release-android-x86_64.apk
+  OrexRay-<version>-release-arm64-v8a.apk
+  OrexRay-<version>-release-armeabi-v7a.apk
+  OrexRay-<version>-release-x86_64.apk
   SHA256SUMS.txt
 ```
 
@@ -55,7 +55,7 @@ dist\release\<x.y.z+n>\
 ```powershell
 & "$env:LOCALAPPDATA\Android\Sdk\build-tools\<VERSION>\apksigner.bat" `
   verify --verbose --print-certs `
-  "dist\release\<version>\OrexRay-<version>-release-android-arm64-v8a.apk"
+  "dist\release\<version>\OrexRay-<version>-release-arm64-v8a.apk"
 ```
 
 У обновлений должны сохраняться package id и certificate SHA-256, а

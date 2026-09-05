@@ -53,15 +53,15 @@ powershell -ExecutionPolicy Bypass -File tool\build_release.ps1 -Platform window
 
 ```text
 dist\debug\<x.y.z+n>\
-  OrexRay-<version>-debug-android.apk
-  OrexRay-<version>-debug-windows-x64.zip
+  OrexRay-<version>-debug.apk
+  OrexRay-<version>-debug-x64.zip
   SHA256SUMS.txt
 
 dist\release\<x.y.z+n>\
-  OrexRay-<version>-release-android-arm64-v8a.apk
-  OrexRay-<version>-release-android-armeabi-v7a.apk
-  OrexRay-<version>-release-android-x86_64.apk
-  OrexRay-<version>-release-windows-x64-setup.exe
+  OrexRay-<version>-release-arm64-v8a.apk
+  OrexRay-<version>-release-armeabi-v7a.apk
+  OrexRay-<version>-release-x86_64.apk
+  OrexRay-<version>-release-x64-setup.exe
   SHA256SUMS.txt
 ```
 

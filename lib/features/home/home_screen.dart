@@ -131,10 +131,12 @@ class _Header extends StatelessWidget {
         ? tunnel.effectivePingStatusFor(profile)
         : PingStatus.unknown;
     final routeFailed = _routeFailed(pingStatus);
+    final routeConfirmed = pingStatus == PingStatus.success;
     final label = routeFailed
         ? _routeFailureTitle(pingStatus)
         : switch (snapshot.status) {
-            TunnelStatus.connected => 'Защищено',
+            TunnelStatus.connected when routeConfirmed => 'Защищено',
+            TunnelStatus.connected => 'Проверяем маршрут…',
             TunnelStatus.connecting => 'Подключение',
             TunnelStatus.disconnecting => 'Отключение',
             TunnelStatus.error => 'Ошибка',
@@ -146,8 +148,8 @@ class _Header extends StatelessWidget {
         const SizedBox(width: 16),
         StatusPill(
           label: label,
-          active: snapshot.isConnected && !routeFailed,
-          color: routeFailed ? OrexColors.dangerStrong : null,
+          active: snapshot.isConnected && routeConfirmed,
+          color: routeFailed ? OrexColors.danger : null,
         ),
       ],
     );
@@ -311,7 +313,12 @@ class _ConnectionHero extends StatelessWidget {
         children: [
           if (showStatusText) ...[
             Text(
-              routeFailed ? _routeFailureTitle(pingStatus) : _statusTitle(snapshot.status),
+              routeFailed
+                  ? _routeFailureTitle(pingStatus)
+                  : snapshot.status == TunnelStatus.connected &&
+                          pingStatus != PingStatus.success
+                      ? 'Проверяем маршрут…'
+                      : _statusTitle(snapshot.status),
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
@@ -371,7 +378,7 @@ class _ConnectButton extends StatelessWidget {
     final pingConfirmed = active && pingStatus == PingStatus.success;
     final healthConfirmed = routeFailed || pingConfirmed;
     final glowColor = routeFailed
-        ? OrexColors.dangerStrong
+        ? OrexColors.danger
         : pingConfirmed
             ? OrexColors.online
             : OrexColors.copper;
@@ -417,7 +424,7 @@ class _ConnectButton extends StatelessWidget {
                 BoxShadow(
                   color: glowColor.withValues(
                     alpha: routeFailed
-                        ? 0.58
+                        ? 0.34
                         : pingConfirmed
                             ? 0.32
                             : 0.22,

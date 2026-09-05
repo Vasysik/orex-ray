@@ -92,7 +92,7 @@ function Get-PackageProcesses {
 
 if ($PrepareDebug) {
   $Release = Get-OrexRayRelease
-  $DebugApk = Join-Path $RepoRoot "dist\debug\$Release\OrexRay-$Release-debug-android.apk"
+  $DebugApk = Join-Path $RepoRoot "dist\debug\$Release\OrexRay-$Release-debug.apk"
   if (-not (Test-Path $DebugApk)) {
     throw "Debug APK not found after build: $DebugApk"
   }
