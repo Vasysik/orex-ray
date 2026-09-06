@@ -35,6 +35,29 @@ void main() {
     expect(result.announce, 'Maintenance tonight');
   });
 
+  test('decodes base64 metadata from HTTP headers', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final userInfo = base64.encode(
+      utf8.encode('upload=10; download=20; total=100; expire=2000000000'),
+    );
+    final support = base64.encode(utf8.encode('https://support.example/help'));
+    server.listen((request) async {
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.set('subscription-userinfo', 'base64:$userInfo')
+        ..headers.set('support-url', 'base64:$support')
+        ..write('payload');
+      await request.response.close();
+    });
+
+    final result = await SubscriptionSource().loadUrl(
+      'http://127.0.0.1:${server.port}/subscription',
+    );
+    expect(result.userInfo, contains('total=100'));
+    expect(result.supportUrl, 'https://support.example/help');
+  });
+
   test('decodes base64 profile-title metadata', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() => server.close(force: true));

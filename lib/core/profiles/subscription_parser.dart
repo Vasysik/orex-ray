@@ -158,7 +158,6 @@ class SubscriptionParser {
     final notices = <String>[];
     final seenIds = <String>{};
     final seenNotices = <String>{};
-    String? legacySupportUrl;
     var skipped = 0;
 
     for (final rawLine in const LineSplitter().convert(text)) {
@@ -177,7 +176,6 @@ class SubscriptionParser {
         if (_isInformationalProfile(profile)) {
           final notice = profile.name.trim();
           if (notice.isNotEmpty && seenNotices.add(notice)) notices.add(notice);
-          legacySupportUrl ??= _supportUrlFromNotice(notice);
           continue;
         }
         if (seenIds.add(profile.id)) profiles.add(profile);
@@ -189,7 +187,6 @@ class SubscriptionParser {
     return SubscriptionParseResult(
       profiles: List.unmodifiable(profiles),
       skippedUnsupported: skipped,
-      supportUrl: legacySupportUrl,
       notices: List.unmodifiable(notices),
     );
   }
@@ -201,12 +198,10 @@ class SubscriptionParser {
     final profiles = <TunnelProfile>[];
     final notices = <String>[];
     final seenNotices = <String>{};
-    String? legacySupportUrl;
     for (final profile in source) {
       if (_isInformationalProfile(profile)) {
         final notice = profile.name.trim();
         if (notice.isNotEmpty && seenNotices.add(notice)) notices.add(notice);
-        legacySupportUrl ??= _supportUrlFromNotice(notice);
       } else {
         profiles.add(profile);
       }
@@ -214,7 +209,6 @@ class SubscriptionParser {
     return SubscriptionParseResult(
       profiles: List.unmodifiable(profiles),
       skippedUnsupported: skippedUnsupported,
-      supportUrl: legacySupportUrl,
       notices: List.unmodifiable(notices),
     );
   }
@@ -261,23 +255,31 @@ class SubscriptionParser {
 
     for (final line in const LineSplitter().convert(text)) {
       final trimmed = line.trim();
-      if (!trimmed.startsWith('#')) {
+      final prefixLength = trimmed.startsWith('//')
+          ? 2
+          : trimmed.startsWith('#')
+              ? 1
+              : 0;
+      if (prefixLength == 0) {
         body.add(line);
         continue;
       }
-      final colon = trimmed.indexOf(':');
-      if (colon <= 1) continue;
-      final key = trimmed.substring(1, colon).trim().toLowerCase();
+      final colon = trimmed.indexOf(':', prefixLength);
+      if (colon <= prefixLength) continue;
+      final key = trimmed
+          .substring(prefixLength, colon)
+          .trim()
+          .toLowerCase();
       final value = trimmed.substring(colon + 1).trim();
       switch (key) {
         case 'profile-title':
-          title = _decodeMetadataTitle(value);
+          title = _decodeMetadataValue(value);
           break;
         case 'subscription-userinfo':
-          if (value.isNotEmpty) userInfo = value;
+          userInfo = _decodeMetadataValue(value);
           break;
         case 'profile-update-interval':
-          final parsed = int.tryParse(value);
+          final parsed = int.tryParse(_decodeMetadataValue(value) ?? '');
           if (parsed != null && parsed > 0) updateInterval = parsed;
           break;
         case 'support-url':
@@ -287,7 +289,7 @@ class SubscriptionParser {
           webPageUrl = _normalizedMetadataUrl(value);
           break;
         case 'announce':
-          if (value.isNotEmpty) announce = value;
+          announce = _decodeMetadataValue(value);
           break;
       }
     }
@@ -303,26 +305,16 @@ class SubscriptionParser {
     );
   }
 
-  String? _supportUrlFromNotice(String value) {
-    final match = RegExp(
-      r'(?:https?://)?(?:www\.)?t\.me/[A-Za-z0-9_+\-/]+',
-      caseSensitive: false,
-    ).firstMatch(value);
-    if (match == null) return null;
-    final raw = match.group(0)!;
-    return raw.startsWith('http') ? raw : 'https://$raw';
-  }
-
   String? _normalizedMetadataUrl(String value) {
-    final raw = value.trim();
-    if (raw.isEmpty) return null;
+    final raw = _decodeMetadataValue(value);
+    if (raw == null) return null;
     final uri = Uri.tryParse(raw);
     if (uri == null || !uri.hasAuthority) return null;
     if (uri.scheme != 'http' && uri.scheme != 'https') return null;
     return uri.toString();
   }
 
-  String? _decodeMetadataTitle(String value) {
+  String? _decodeMetadataValue(String value) {
     final raw = value.trim();
     if (raw.isEmpty) return null;
     if (!raw.toLowerCase().startsWith('base64:')) return raw;
@@ -336,7 +328,7 @@ class SubscriptionParser {
       final decoded = utf8.decode(base64.decode(encoded)).trim();
       return decoded.isEmpty ? null : decoded;
     } on Object {
-      return raw;
+      return null;
     }
   }
 }

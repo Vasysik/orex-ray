@@ -201,6 +201,58 @@ void main() {
   });
 
 
+  test('body metadata overrides HTTP header metadata', () async {
+    SharedPreferences.setMockInitialValues({});
+    const subscribed = '''
+#profile-title: Body title
+#subscription-userinfo: upload=1; download=2; total=30
+#support-url: https://body.example/support
+vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443?encryption=none&security=none&type=tcp#One
+''';
+    final source = _SequenceSubscriptionSource([
+      const SubscriptionFetchResult(
+        body: subscribed,
+        profileTitle: 'Header title',
+        userInfo: 'upload=10; download=20; total=300',
+        supportUrl: 'https://header.example/support',
+      ),
+    ]);
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+
+    await profiles.importSubscription('https://sub.example/metadata-priority');
+    final subscription = profiles.subscriptions.single;
+    expect(subscription.name, 'Body title');
+    expect(subscription.userInfo, contains('total=30'));
+    expect(subscription.supportUrl, 'https://body.example/support');
+  });
+
+  test('full subscription refresh clears support when provider stops sending it',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    const subscribed =
+        'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
+        '?encryption=none&security=none&type=tcp#One';
+    final source = _SequenceSubscriptionSource([
+      const SubscriptionFetchResult(
+        body: subscribed,
+        supportUrl: 'https://support.example/help',
+      ),
+      const SubscriptionFetchResult(body: subscribed),
+    ]);
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+
+    await profiles.importSubscription('https://sub.example/support');
+    expect(
+      profiles.subscriptions.single.supportUrl,
+      'https://support.example/help',
+    );
+
+    await profiles.refreshSubscription(profiles.subscriptions.single.id);
+    expect(profiles.subscriptions.single.supportUrl, isEmpty);
+  });
+
   test('auto-refresh updates stale subscriptions on app-resume checks', () async {
     SharedPreferences.setMockInitialValues({});
     const first =

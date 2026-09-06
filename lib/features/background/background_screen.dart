@@ -192,6 +192,35 @@ class BackgroundScreen extends StatelessWidget {
                   },
                 ),
               ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.monitor_heart_outlined,
+                  color: OrexColors.copper,
+                ),
+                title: const Text('Метаданные подписок'),
+                subtitle: const Text(
+                  'Проверять квоту, срок и ссылки через лёгкий HEAD-запрос '
+                  'при открытии и возврате в приложение. Серверы не скачиваются.',
+                ),
+                trailing: DropdownButton<int>(
+                  value: settings.subscriptionMetadataRefreshMinutes,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('Выкл.')),
+                    DropdownMenuItem(value: 10, child: Text('10 мин')),
+                    DropdownMenuItem(value: 30, child: Text('30 мин')),
+                    DropdownMenuItem(value: 60, child: Text('1 ч')),
+                    DropdownMenuItem(value: 360, child: Text('6 ч')),
+                    DropdownMenuItem(value: 720, child: Text('12 ч')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      settings.setSubscriptionMetadataRefreshMinutes(value);
+                    }
+                  },
+                ),
+              ),
             ],
           ),
           if (Platform.isWindows) ...[

@@ -11,7 +11,7 @@ void main() {
       'vless://22222222-2222-4222-8222-222222222222@two.example:443'
       '?encryption=none&security=none&type=tcp#Two';
 
-  test('parses Happ-style plain subscription and metadata', () {
+  test('parses plain subscription and metadata', () {
     final result = const SubscriptionParser().parse('''
 #profile-title: Test VPN
 #profile-update-interval: 6
@@ -32,6 +32,21 @@ $second
     expect(result.webPageUrl, 'https://panel.example/user');
     expect(result.announce, 'Maintenance tonight');
     expect(result.skippedUnsupported, 1);
+  });
+
+  test('decodes base64 metadata values from subscription body', () {
+    final userInfo = base64.encode(
+      utf8.encode('upload=10; download=20; total=100; expire=2000000000'),
+    );
+    final support = base64.encode(utf8.encode('https://support.example/help'));
+    final result = const SubscriptionParser().parse('''
+#subscription-userinfo: base64:$userInfo
+#support-url: base64:$support
+$first
+''');
+
+    expect(result.userInfo, contains('total=100'));
+    expect(result.supportUrl, 'https://support.example/help');
   });
 
   test('parses legacy base64 V2Ray subscription', () {
@@ -76,7 +91,20 @@ $second
     expect(result.profiles, hasLength(1));
     expect(result.profiles.single.name, 'One');
     expect(result.notices, ['📅 Осталось: 23 дня', '➡️ t.me/TestVpnBot']);
-    expect(result.supportUrl, 'https://t.me/TestVpnBot');
+    expect(result.supportUrl, isNull);
+  });
+
+  test('parses // comment metadata without inferring support', () {
+    final result = const SubscriptionParser().parse('''
+//profile-title: JSON style
+//support-url: https://support.example/help
+//subscription-userinfo: upload=1; download=2; total=10
+$first
+''');
+
+    expect(result.profileTitle, 'JSON style');
+    expect(result.supportUrl, 'https://support.example/help');
+    expect(result.userInfo, contains('total=10'));
   });
 
   test('rejects payload without supported nodes', () {

@@ -781,6 +781,10 @@ class _QuickInfo extends StatelessWidget {
     }
     if (groups.isEmpty) return;
 
+    final simpleFlatPicker = groups.length == 1 &&
+        groups.single.key == 'manual:ungrouped' &&
+        balancers.isEmpty;
+
     _QuickTargetGroup? selectedGroup;
     for (final group in groups) {
       if (group.targets.any((target) => target.id == selectedId)) {
@@ -818,50 +822,62 @@ class _QuickInfo extends StatelessWidget {
                             ?.copyWith(fontWeight: FontWeight.w800),
                       ),
                     ),
-                    if (selectedGroup != null)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                        child: Text(
-                          'Текущая группа: ${selectedGroup.title}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(sheetContext).textTheme.bodySmall,
-                        ),
-                      )
-                    else
+                    if (simpleFlatPicker) ...[
                       const SizedBox(height: 8),
-                    for (final group in groups) ...[
-                      ListTile(
-                        dense: true,
-                        leading: Icon(group.icon, color: OrexColors.copper),
-                        title: Text(
-                          group.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      for (final target in groups.single.targets)
+                        _QuickTargetTile(
+                          target: target,
+                          selected: selectedId == target.id,
+                          latencyMs: tunnel.effectiveLatencyFor(target),
+                          identity: tunnel.egressIdentityFor(target.id),
+                          onTap: () => Navigator.of(sheetContext).pop(target.id),
                         ),
-                        subtitle: Text('${group.targets.length} серверов'),
-                        trailing: Icon(
-                          expanded.contains(group.key)
-                              ? Icons.expand_less_rounded
-                              : Icons.expand_more_rounded,
-                        ),
-                        onTap: () => setSheetState(() {
-                          if (!expanded.add(group.key)) {
-                            expanded.remove(group.key);
-                          }
-                        }),
-                      ),
-                      if (expanded.contains(group.key))
-                        for (final target in group.targets)
-                          _QuickTargetTile(
-                            target: target,
-                            selected: selectedId == target.id,
-                            latencyMs: tunnel.effectiveLatencyFor(target),
-                            identity: tunnel.egressIdentityFor(target.id),
-                            onTap: () =>
-                                Navigator.of(sheetContext).pop(target.id),
+                    ] else ...[
+                      if (selectedGroup != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                          child: Text(
+                            'Текущая группа: ${selectedGroup.title}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(sheetContext).textTheme.bodySmall,
                           ),
-                      if (group != groups.last) const Divider(height: 1),
+                        )
+                      else
+                        const SizedBox(height: 8),
+                      for (final group in groups) ...[
+                        ListTile(
+                          dense: true,
+                          leading: Icon(group.icon, color: OrexColors.copper),
+                          title: Text(
+                            group.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text('${group.targets.length} серверов'),
+                          trailing: Icon(
+                            expanded.contains(group.key)
+                                ? Icons.expand_less_rounded
+                                : Icons.expand_more_rounded,
+                          ),
+                          onTap: () => setSheetState(() {
+                            if (!expanded.add(group.key)) {
+                              expanded.remove(group.key);
+                            }
+                          }),
+                        ),
+                        if (expanded.contains(group.key))
+                          for (final target in group.targets)
+                            _QuickTargetTile(
+                              target: target,
+                              selected: selectedId == target.id,
+                              latencyMs: tunnel.effectiveLatencyFor(target),
+                              identity: tunnel.egressIdentityFor(target.id),
+                              onTap: () =>
+                                  Navigator.of(sheetContext).pop(target.id),
+                            ),
+                        if (group != groups.last) const Divider(height: 1),
+                      ],
                     ],
                   ],
                 ),

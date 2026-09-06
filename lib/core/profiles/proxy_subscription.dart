@@ -40,8 +40,13 @@ class SubscriptionUserInfo {
   }
 
   static SubscriptionUserInfo? tryParse(String value) {
-    final raw = value.trim();
+    var raw = value.trim();
     if (raw.isEmpty) return null;
+    if (raw.toLowerCase().startsWith('base64:')) {
+      final decoded = _decodeBase64Metadata(raw.substring('base64:'.length));
+      if (decoded == null) return null;
+      raw = decoded;
+    }
     final fields = <String, int>{};
     for (final chunk in raw.split(';')) {
       final separator = chunk.indexOf('=');
@@ -67,6 +72,21 @@ class SubscriptionUserInfo {
       totalBytes: total != null && total > 0 ? total : null,
       expireEpochSeconds: expire != null && expire > 0 ? expire : null,
     );
+  }
+}
+
+String? _decodeBase64Metadata(String value) {
+  try {
+    var payload = value.trim().replaceAll('-', '+').replaceAll('_', '/');
+    if (payload.isEmpty) return null;
+    final remainder = payload.length % 4;
+    if (remainder != 0) {
+      payload = payload.padRight(payload.length + (4 - remainder), '=');
+    }
+    final decoded = utf8.decode(base64.decode(payload)).trim();
+    return decoded.isEmpty ? null : decoded;
+  } on Object {
+    return null;
   }
 }
 

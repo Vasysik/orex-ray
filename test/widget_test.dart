@@ -171,6 +171,69 @@ void main() {
     );
   });
 
+  testWidgets('quick profile picker stays flat without real groups',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@one.example:443'
+      '?encryption=none&security=none&type=tcp#Flat-one',
+    );
+    await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@two.example:443'
+      '?encryption=none&security=none&type=tcp#Flat-two',
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    final tunnel = TunnelController(
+      engine: const _TestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: HomeScreen(tunnel: tunnel),
+      ),
+    );
+    await tester.pump();
+
+    final currentProfile = find.text('Flat-one').first;
+    await tester.ensureVisible(currentProfile);
+    await tester.pumpAndSettle();
+    await tester.tap(currentProfile);
+    await tester.pumpAndSettle();
+
+    final sheet = find.byType(BottomSheet);
+    expect(sheet, findsOneWidget);
+    expect(
+      find.descendant(of: sheet, matching: find.text('Flat-one')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Flat-two')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Серверы')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: sheet,
+        matching: find.textContaining('Текущая группа:'),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('phone layout shows route verification and timeout above button',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

@@ -42,17 +42,25 @@ void main() {
     addTearDown(settings.dispose);
 
     expect(settings.subscriptionAutoUpdateHours, 12);
+    expect(settings.subscriptionMetadataRefreshMinutes, 10);
     await settings.setSubscriptionAutoUpdateHours(24);
+    await settings.setSubscriptionMetadataRefreshMinutes(30);
     expect(settings.subscriptionAutoUpdateHours, 24);
+    expect(settings.subscriptionMetadataRefreshMinutes, 30);
 
     final reloaded = await ConnectionSettingsController.load(
       operatingSystem: 'windows',
     );
     addTearDown(reloaded.dispose);
     expect(reloaded.subscriptionAutoUpdateHours, 24);
+    expect(reloaded.subscriptionMetadataRefreshMinutes, 30);
 
     await expectLater(
       settings.setSubscriptionAutoUpdateHours(2),
+      throwsA(isA<FormatException>()),
+    );
+    await expectLater(
+      settings.setSubscriptionMetadataRefreshMinutes(20),
       throwsA(isA<FormatException>()),
     );
   });

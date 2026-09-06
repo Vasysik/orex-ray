@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/egress/exit_location_refresh_coordinator.dart';
 import 'package:orex_ray/core/profiles/latency_probe.dart';
 import 'package:orex_ray/core/profiles/profiles_controller.dart';
+import 'package:orex_ray/core/profiles/subscription_source.dart';
 import 'package:orex_ray/core/settings/connection_settings_controller.dart';
 import 'package:orex_ray/core/tunnel/tunnel_engine.dart';
 import 'package:orex_ray/core/tunnel/tunnel_models.dart';
@@ -108,8 +109,10 @@ void main() {
 
     await tester.longPress(find.text('Copy-all'));
     await tester.pumpAndSettle();
+    expect(find.text('СЕРВЕРЫ'), findsOneWidget);
     expect(find.text('ВЫДЕЛЕНО'), findsOneWidget);
-    expect(find.text('1'), findsWidgets);
+    expect(find.byTooltip('Готово'), findsOneWidget);
+    expect(find.byTooltip('Удалить'), findsOneWidget);
     await tester.tap(find.widgetWithText(OutlinedButton, 'Экспорт'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Копировать массив JSON'));
@@ -164,8 +167,10 @@ void main() {
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await hold.up();
     await tester.pumpAndSettle();
+    expect(find.text('СЕРВЕРЫ'), findsOneWidget);
     expect(find.text('ВЫДЕЛЕНО'), findsOneWidget);
-    expect(find.text('1'), findsWidgets);
+    expect(find.byTooltip('Готово'), findsOneWidget);
+    expect(find.byTooltip('Удалить'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Пинг'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Экспорт'), findsOneWidget);
     expect(find.byTooltip('Удалить'), findsOneWidget);
@@ -253,6 +258,189 @@ void main() {
         .where((checkbox) => checkbox.value == true)
         .length;
     expect(checked, greaterThanOrEqualTo(3));
+  });
+
+  testWidgets('subscription selection stays separate and exports source URL',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    const subscriptionUrl = 'https://sub.example/user-token';
+    const subscribed =
+        'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@sub.example:443'
+        '?encryption=none&security=none&type=tcp#Subscribed-node';
+    final source = _ProfilesSubscriptionSource(
+      const SubscriptionFetchResult(
+        body: subscribed,
+        profileTitle: 'Test subscription',
+      ),
+    );
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@manual.example:443'
+      '?encryption=none&security=none&type=tcp#Manual-node',
+    );
+    await profiles.importSubscription(subscriptionUrl);
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    String? clipboardText;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboardText = (call.arguments as Map)['text'] as String?;
+      }
+      return null;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('Test subscription'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Удалить подписки'), findsOneWidget);
+    expect(find.byTooltip('Группа'), findsNothing);
+    expect(find.text('Manual-node'), findsOneWidget);
+    expect(find.byType(Checkbox), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Экспорт'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Скопировать исходную ссылку'));
+    await tester.pump();
+    expect(clipboardText, subscriptionUrl);
+
+    await tester.tap(find.byTooltip('Готово'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Manual-node'));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('Manual-node'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Группа'), findsOneWidget);
+    expect(find.byTooltip('Удалить подписки'), findsNothing);
+  });
+
+  testWidgets('subscription keeps raw provider notices beside structured links',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    const subscribed = '''
+vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@localhost:80?encryption=none&security=none&type=tcp#📅 Осталось: 23 дня
+vless://bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb@127.0.0.1:8443?encryption=none&security=none&type=tcp#🟢 Остаток трафика LTE: 80/80GB
+vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@real.example:443?encryption=none&security=none&type=tcp#Real-node
+''';
+    final source = _ProfilesSubscriptionSource(
+      const SubscriptionFetchResult(
+        body: subscribed,
+        profileTitle: 'Provider subscription',
+        supportUrl: 'https://support.example/help',
+      ),
+    );
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    await profiles.importSubscription('https://sub.example/provider');
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(
+        '📅 Осталось: 23 дня · 🟢 Остаток трафика LTE: 80/80GB',
+      ),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(OutlinedButton, 'Поддержка'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
+
+  testWidgets('selection actions collapse labels before wrapping',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.binding.setSurfaceSize(const Size(430, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@compact.example:443'
+      '?encryption=none&security=none&type=tcp#Compact-actions',
+    );
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('Compact-actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Пинг'), findsNothing);
+    expect(find.text('Экспорт'), findsNothing);
+    final actionFinders = [
+      find.byTooltip('Пинг'),
+      find.byTooltip('Экспорт'),
+      find.byTooltip('Группа'),
+      find.byTooltip('Удалить'),
+      find.byTooltip('Выбрать все'),
+      find.byTooltip('Готово'),
+    ];
+    for (final finder in actionFinders) {
+      expect(finder, findsOneWidget);
+    }
+    final top = tester.getTopLeft(actionFinders.first).dy;
+    for (final finder in actionFinders.skip(1)) {
+      expect(tester.getTopLeft(finder).dy, closeTo(top, 0.5));
+    }
   });
 
   testWidgets('profile tab switches target while VPN is active',
@@ -538,6 +726,19 @@ void main() {
     await tunnel.disconnect();
     await tester.pump();
   });
+}
+
+class _ProfilesSubscriptionSource extends SubscriptionSource {
+  _ProfilesSubscriptionSource(this.response);
+
+  final SubscriptionFetchResult response;
+
+  @override
+  Future<SubscriptionFetchResult> loadUrl(
+    String value, {
+    String userAgent = 'OrexRay/Subscription',
+  }) async =>
+      response;
 }
 
 class _CountingProfilesLatencyProbe extends LatencyProbe {

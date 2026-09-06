@@ -207,29 +207,29 @@ class SubscriptionSource {
   }
 
   SubscriptionMetadataResult _metadataFromHeaders(HttpClientResponse response) {
-    final updateInterval = int.tryParse(
-      response.headers.value('profile-update-interval')?.trim() ?? '',
+    final rawUpdateInterval = _decodeMetadataValue(
+      response.headers.value('profile-update-interval'),
     );
+    final updateInterval = int.tryParse(rawUpdateInterval ?? '');
     return SubscriptionMetadataResult(
-      profileTitle: _decodeTitle(response.headers.value('profile-title')),
-      userInfo: _nonEmpty(response.headers.value('subscription-userinfo')),
+      profileTitle: _decodeMetadataValue(
+        response.headers.value('profile-title'),
+      ),
+      userInfo: _decodeMetadataValue(
+        response.headers.value('subscription-userinfo'),
+      ),
       updateIntervalHours:
           updateInterval != null && updateInterval > 0 ? updateInterval : null,
       supportUrl: _normalizedUrl(response.headers.value('support-url')),
       webPageUrl:
           _normalizedUrl(response.headers.value('profile-web-page-url')),
-      announce: _nonEmpty(response.headers.value('announce')),
+      announce: _decodeMetadataValue(response.headers.value('announce')),
     );
   }
 
-  String? _nonEmpty(String? value) {
-    final normalized = value?.trim() ?? '';
-    return normalized.isEmpty ? null : normalized;
-  }
-
   String? _normalizedUrl(String? value) {
-    final raw = value?.trim() ?? '';
-    if (raw.isEmpty) return null;
+    final raw = _decodeMetadataValue(value);
+    if (raw == null) return null;
     final uri = Uri.tryParse(raw);
     if (uri == null || !uri.hasAuthority) return null;
     if (uri.scheme != 'http' && uri.scheme != 'https') return null;
@@ -249,7 +249,7 @@ class SubscriptionSource {
     return Platform.operatingSystem;
   }
 
-  String? _decodeTitle(String? value) {
+  String? _decodeMetadataValue(String? value) {
     if (value == null) return null;
     final raw = value.trim();
     if (raw.isEmpty) return null;
@@ -264,7 +264,7 @@ class SubscriptionSource {
       final decoded = utf8.decode(base64.decode(payload)).trim();
       return decoded.isEmpty ? null : decoded;
     } on Object {
-      return raw;
+      return null;
     }
   }
 }

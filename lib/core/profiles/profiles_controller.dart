@@ -172,7 +172,7 @@ class ProfilesController extends ChangeNotifier {
         final groupName = profile.groupName.trim();
         if (groupName.isEmpty) {
           key = 'manual:ungrouped';
-          title = 'Без группы';
+          title = 'Серверы';
         } else {
           key = 'manual:group:$groupName';
           title = groupName;
@@ -822,13 +822,17 @@ class ProfilesController extends ChangeNotifier {
       removedIds,
     );
     final title = _firstNonEmpty([
-      fetched.profileTitle,
       parsed.profileTitle,
+      fetched.profileTitle,
       existing?.name,
       Uri.tryParse(url)?.host,
       'Подписка',
     ]);
     _metadataHeadUnsupportedIds.remove(id);
+    // Support is provider metadata, not something OrexRay infers from node
+    // remarks. A full subscription refresh is the source of truth: when the
+    // provider no longer sends support-url, remove any previously stored value.
+    final resolvedSupportUrl = parsed.supportUrl ?? fetched.supportUrl ?? '';
     final subscription = ProxySubscription(
       id: id,
       url: url,
@@ -836,15 +840,14 @@ class ProfilesController extends ChangeNotifier {
       profileIds: List.unmodifiable(imported.map((profile) => profile.id)),
       lastUpdatedEpochMs: DateTime.now().millisecondsSinceEpoch,
       lastMetadataCheckEpochMs: DateTime.now().millisecondsSinceEpoch,
-      updateIntervalHours: fetched.updateIntervalHours ??
-          parsed.updateIntervalHours ??
+      updateIntervalHours: parsed.updateIntervalHours ??
+          fetched.updateIntervalHours ??
           existing?.updateIntervalHours,
-      userInfo: fetched.userInfo ?? parsed.userInfo ?? existing?.userInfo ?? '',
-      supportUrl:
-          fetched.supportUrl ?? parsed.supportUrl ?? existing?.supportUrl ?? '',
+      userInfo: parsed.userInfo ?? fetched.userInfo ?? existing?.userInfo ?? '',
+      supportUrl: resolvedSupportUrl,
       webPageUrl:
-          fetched.webPageUrl ?? parsed.webPageUrl ?? existing?.webPageUrl ?? '',
-      announce: fetched.announce ?? parsed.announce ?? existing?.announce ?? '',
+          parsed.webPageUrl ?? fetched.webPageUrl ?? existing?.webPageUrl ?? '',
+      announce: parsed.announce ?? fetched.announce ?? existing?.announce ?? '',
       notices: List.unmodifiable(parsed.notices),
     );
     final workingSubscriptions = List<ProxySubscription>.from(_subscriptions);

@@ -62,7 +62,9 @@ void main() {
       await tester.drag(find.byType(ListView), const Offset(0, -520));
       await tester.pumpAndSettle();
       expect(find.text('Автообновление подписок'), findsOneWidget);
+      expect(find.text('Метаданные подписок'), findsOneWidget);
       expect(find.text('12 ч'), findsOneWidget);
+      expect(find.text('10 мин'), findsOneWidget);
 
     },
   );
@@ -94,6 +96,7 @@ void main() {
       await tester.drag(find.byType(ListView), const Offset(0, -420));
       await tester.pumpAndSettle();
       expect(find.text('Автообновление подписок'), findsOneWidget);
+      expect(find.text('Метаданные подписок'), findsOneWidget);
     },
   );
 }

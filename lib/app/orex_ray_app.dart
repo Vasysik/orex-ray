@@ -57,6 +57,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
   bool? _lastAndroidBootSetting;
   bool? _lastStatsUiActive;
   int? _lastSubscriptionAutoUpdateHours;
+  int? _lastSubscriptionMetadataRefreshMinutes;
 
   @override
   void initState() {
@@ -92,11 +93,18 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
   void _syncPlatformStartupSettings() {
     final subscriptionInterval =
         widget.connectionSettings.subscriptionAutoUpdateHours;
+    final metadataInterval =
+        widget.connectionSettings.subscriptionMetadataRefreshMinutes;
     final previousSubscriptionInterval = _lastSubscriptionAutoUpdateHours;
+    final previousMetadataInterval = _lastSubscriptionMetadataRefreshMinutes;
     _lastSubscriptionAutoUpdateHours = subscriptionInterval;
-    if (previousSubscriptionInterval != null &&
-        previousSubscriptionInterval != subscriptionInterval &&
-        subscriptionInterval > 0) {
+    _lastSubscriptionMetadataRefreshMinutes = metadataInterval;
+    if ((previousSubscriptionInterval != null &&
+            previousSubscriptionInterval != subscriptionInterval &&
+            subscriptionInterval > 0) ||
+        (previousMetadataInterval != null &&
+            previousMetadataInterval != metadataInterval &&
+            metadataInterval > 0)) {
       _refreshSubscriptionStateIfDue();
     }
 
@@ -129,10 +137,16 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
         minimumIntervalHours: intervalHours,
       );
     }
-    // Full GET refreshes also stamp metadata time, so this HEAD pass becomes
-    // a no-op for subscriptions that were just updated. For the rest it is a
-    // lightweight way to keep quota/expiry/status fresh on foreground.
-    await widget.profiles.refreshSubscriptionMetadataIfDue();
+    final metadataMinutes =
+        widget.connectionSettings.subscriptionMetadataRefreshMinutes;
+    if (metadataMinutes > 0) {
+      // Full GET refreshes also stamp metadata time, so this HEAD pass becomes
+      // a no-op for subscriptions that were just updated. For the rest it is a
+      // lightweight way to keep quota/expiry/status fresh on foreground.
+      await widget.profiles.refreshSubscriptionMetadataIfDue(
+        minimumInterval: Duration(minutes: metadataMinutes),
+      );
+    }
   }
 
   void _syncStatsUiActivity(AppLifecycleState? state) {
