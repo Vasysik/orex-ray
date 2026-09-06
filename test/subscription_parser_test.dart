@@ -58,6 +58,17 @@ $second
     expect(result.profiles.single.name, 'JSON node');
   });
 
+  test('turns loopback subscription nodes into notices', () {
+    const info =
+        'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@localhost:80'
+        '?encryption=none&security=none&type=tcp#📅 Осталось: 23 дня';
+    final result = const SubscriptionParser().parse('$info\n$first');
+
+    expect(result.profiles, hasLength(1));
+    expect(result.profiles.single.name, 'One');
+    expect(result.notices, ['📅 Осталось: 23 дня']);
+  });
+
   test('rejects payload without supported nodes', () {
     expect(
       () => const SubscriptionParser().parse('<html>login</html>'),

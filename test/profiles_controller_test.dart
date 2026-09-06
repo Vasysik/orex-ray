@@ -200,6 +200,80 @@ void main() {
     expect(profiles.subscriptions.single.profileIds, hasLength(2));
   });
 
+
+  test('auto-refresh updates stale subscriptions on app-resume checks', () async {
+    SharedPreferences.setMockInitialValues({});
+    const first =
+        'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
+        '?encryption=none&security=none&type=tcp#One';
+    const second =
+        'vless://bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb@two.example:443'
+        '?encryption=none&security=none&type=tcp#Two';
+    final source = _SequenceSubscriptionSource([
+      const SubscriptionFetchResult(body: first),
+      const SubscriptionFetchResult(body: second),
+    ]);
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+
+    await profiles.importSubscription('https://sub.example/auto');
+    final importedAt = DateTime.fromMillisecondsSinceEpoch(
+      profiles.subscriptions.single.lastUpdatedEpochMs!,
+    );
+    final tooSoon = await profiles.refreshSubscriptionsIfDue(
+      minimumIntervalHours: 12,
+      now: importedAt.add(const Duration(hours: 11)),
+    );
+    expect(tooSoon, isEmpty);
+    expect(source.userAgents, hasLength(1));
+
+    final refreshed = await profiles.refreshSubscriptionsIfDue(
+      minimumIntervalHours: 12,
+      now: importedAt.add(const Duration(hours: 13)),
+    );
+    expect(refreshed, hasLength(1));
+    expect(profiles.profiles.single.name, 'Two');
+    expect(source.userAgents, hasLength(2));
+  });
+
+  test('auto-refresh respects a longer provider interval', () async {
+    SharedPreferences.setMockInitialValues({});
+    const first =
+        'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
+        '?encryption=none&security=none&type=tcp#One';
+    const second =
+        'vless://bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb@two.example:443'
+        '?encryption=none&security=none&type=tcp#Two';
+    final source = _SequenceSubscriptionSource([
+      const SubscriptionFetchResult(body: first, updateIntervalHours: 24),
+      const SubscriptionFetchResult(body: second, updateIntervalHours: 24),
+    ]);
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+
+    await profiles.importSubscription('https://sub.example/provider-interval');
+    final importedAt = DateTime.fromMillisecondsSinceEpoch(
+      profiles.subscriptions.single.lastUpdatedEpochMs!,
+    );
+    expect(
+      await profiles.refreshSubscriptionsIfDue(
+        minimumIntervalHours: 6,
+        now: importedAt.add(const Duration(hours: 12)),
+      ),
+      isEmpty,
+    );
+    expect(source.userAgents, hasLength(1));
+
+    expect(
+      await profiles.refreshSubscriptionsIfDue(
+        minimumIntervalHours: 6,
+        now: importedAt.add(const Duration(hours: 25)),
+      ),
+      hasLength(1),
+    );
+    expect(profiles.profiles.single.name, 'Two');
+  });
+
   test('subscription retries once with a v2rayN-compatible user agent', () async {
     SharedPreferences.setMockInitialValues({});
     const subscribed =
@@ -373,6 +447,198 @@ void main() {
     final reloaded = await ProfilesController.load();
     addTearDown(reloaded.dispose);
     expect(reloaded.profiles.map((item) => item.id), [first.id, second.id]);
+  });
+
+  test('manual groups persist and subscription profiles stay auto-owned', () async {
+    SharedPreferences.setMockInitialValues({});
+    const subscribed =
+        'vless://dddddddd-dddd-4ddd-8ddd-dddddddddddd@sub.example:443'
+        '?encryption=none&security=none&type=tcp#Subscribed';
+    final profiles = await ProfilesController.load(
+      subscriptionSource: _SequenceSubscriptionSource([
+        const SubscriptionFetchResult(body: subscribed),
+      ]),
+    );
+    final manual = await profiles.importVlessLink(link);
+    await profiles.importSubscription('https://sub.example/list');
+    final subscribedId = profiles.subscriptions.single.profileIds.single;
+
+    expect(await profiles.setProfilesGroup([manual.id], 'Личное'), 1);
+    expect(await profiles.setProfilesGroup([subscribedId], 'Личное'), 0);
+    expect(
+      profiles.profiles.singleWhere((item) => item.id == manual.id).groupName,
+      'Личное',
+    );
+    expect(profiles.isSubscriptionProfile(subscribedId), isTrue);
+    profiles.dispose();
+
+    final restored = await ProfilesController.load();
+    addTearDown(restored.dispose);
+    expect(
+      restored.profiles.singleWhere((item) => item.id == manual.id).groupName,
+      'Личное',
+    );
+  });
+
+  test('deleting a manual group can keep or remove its profiles', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+    final keep = await profiles.importVlessLink(link);
+    final remove = await profiles.importVlessLink(
+      'vless://99999999-9999-4999-8999-999999999999@remove.example:443'
+      '?encryption=none&security=none&type=tcp#Remove',
+    );
+    await profiles.setProfilesGroup([keep.id], 'Keep');
+    await profiles.setProfilesGroup([remove.id], 'Remove');
+
+    await profiles.deleteProfileGroup('Keep');
+    expect(profiles.targetById(keep.id), isNotNull);
+    expect(
+      profiles.profiles.singleWhere((item) => item.id == keep.id).groupName,
+      isEmpty,
+    );
+
+    await profiles.deleteProfileGroup(
+      'Remove',
+      deleteProfilesWithGroup: true,
+    );
+    expect(profiles.targetById(remove.id), isNull);
+  });
+
+  test('balancer can be saved with one explicit profile', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+    final first = await profiles.importVlessLink(link);
+
+    final balancer = await profiles.saveBalancer(
+      name: 'Single',
+      memberIds: [first.id],
+      strategy: BalancerStrategy.random,
+      probeUrl: 'https://www.gstatic.com/generate_204',
+      probeIntervalSeconds: 30,
+    );
+
+    expect(profiles.targetById(balancer.id)?.profiles.single.id, first.id);
+  });
+
+  test('balancer supports one profile and dynamic folder membership', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+    final first = await profiles.importVlessLink(link);
+    await profiles.setProfilesGroup([first.id], 'Pool');
+    final groupKey = profiles.profileGroups.single.key;
+
+    final balancer = await profiles.saveBalancer(
+      name: 'Folder pool',
+      memberIds: const [],
+      memberGroupKeys: [groupKey],
+      strategy: BalancerStrategy.random,
+      probeUrl: 'https://www.gstatic.com/generate_204',
+      probeIntervalSeconds: 30,
+    );
+    expect(profiles.targetById(balancer.id)?.profiles.map((e) => e.id), [first.id]);
+
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+    await profiles.setProfilesGroup([second.id], 'Pool');
+
+    expect(
+      profiles.targetById(balancer.id)?.profiles.map((e) => e.id).toSet(),
+      {first.id, second.id},
+    );
+  });
+
+  test('deleting a kept folder preserves balancer members explicitly', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+    final first = await profiles.importVlessLink(link);
+    await profiles.setProfilesGroup([first.id], 'Pool');
+    final groupKey = profiles.profileGroups.single.key;
+    final balancer = await profiles.saveBalancer(
+      name: 'Folder pool',
+      memberIds: const [],
+      memberGroupKeys: [groupKey],
+      strategy: BalancerStrategy.random,
+      probeUrl: 'https://www.gstatic.com/generate_204',
+      probeIntervalSeconds: 30,
+    );
+
+    await profiles.deleteProfileGroup('Pool');
+
+    final stored = profiles.balancers.singleWhere((item) => item.id == balancer.id);
+    expect(stored.memberGroupKeys, isEmpty);
+    expect(stored.memberIds, contains(first.id));
+    expect(profiles.targetById(balancer.id), isNotNull);
+  });
+
+  test('reorders profile groups as persisted profile blocks', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final first = await profiles.importVlessLink(link);
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+    final third = await profiles.importVlessLink(
+      'vless://33333333-3333-4333-8333-333333333333@third.example:443'
+      '?encryption=none&security=none&type=tcp#Third',
+    );
+    await profiles.setProfilesGroup([first.id], 'A');
+    await profiles.setProfilesGroup([second.id], 'B');
+    await profiles.setProfilesGroup([third.id], 'C');
+
+    final before = profiles.profileGroups.map((group) => group.key).toList();
+    expect(before, hasLength(3));
+    await profiles.reorderProfileGroups(before, 0, 2);
+    final after = profiles.profileGroups.map((group) => group.key).toList();
+    expect(after, [before[1], before[2], before[0]]);
+    expect(
+      profiles.manualGroupNames,
+      after.map((key) => key.substring('manual:group:'.length)).toList(),
+    );
+    profiles.dispose();
+
+    final restored = await ProfilesController.load();
+    addTearDown(restored.dispose);
+    expect(
+      restored.profileGroups.map((group) => group.key).toList(),
+      after,
+    );
+  });
+
+  test('reorders profiles only inside the requested group scope', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+    final first = await profiles.importVlessLink(link);
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+    final third = await profiles.importVlessLink(
+      'vless://33333333-3333-4333-8333-333333333333@third.example:443'
+      '?encryption=none&security=none&type=tcp#Third',
+    );
+    await profiles.setProfilesGroup([first.id, third.id], 'Group');
+
+    final before = profiles.profiles.map((item) => item.id).toList();
+    final scoped = before
+        .where((id) => id == first.id || id == third.id)
+        .toList();
+    await profiles.reorderProfilesInScope(scoped, 0, 1);
+    final after = profiles.profiles.map((item) => item.id).toList();
+
+    expect(
+      after.where((id) => id == first.id || id == third.id).toList(),
+      scoped.reversed.toList(),
+    );
+    expect(after.indexOf(second.id), before.indexOf(second.id));
   });
 
   test('in-flight latency result is ignored after controller disposal',

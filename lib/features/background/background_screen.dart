@@ -158,6 +158,42 @@ class BackgroundScreen extends StatelessWidget {
               ],
             ],
           ),
+          const SizedBox(height: 16),
+          SettingsSection(
+            title: 'Подписки',
+            subtitle: 'Без фонового таймера: проверка выполняется при запуске '
+                'и возврате в приложение.',
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.cloud_sync_outlined,
+                  color: OrexColors.copper,
+                ),
+                title: const Text('Автообновление подписок'),
+                subtitle: const Text(
+                  'Обновлять только просроченные подписки. Интервал провайдера, '
+                  'если он указан, тоже учитывается.',
+                ),
+                trailing: DropdownButton<int>(
+                  value: settings.subscriptionAutoUpdateHours,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('Выкл.')),
+                    DropdownMenuItem(value: 1, child: Text('1 ч')),
+                    DropdownMenuItem(value: 6, child: Text('6 ч')),
+                    DropdownMenuItem(value: 12, child: Text('12 ч')),
+                    DropdownMenuItem(value: 24, child: Text('1 день')),
+                    DropdownMenuItem(value: 72, child: Text('3 дня')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      settings.setSubscriptionAutoUpdateHours(value);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
           if (Platform.isWindows) ...[
             const SizedBox(height: 16),
             SettingsSection(

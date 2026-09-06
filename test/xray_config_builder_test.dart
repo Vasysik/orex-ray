@@ -231,6 +231,26 @@ void main() {
     expect(json['observatory'], isA<Map>());
   });
 
+  test('one-member balancer uses the global latency probe URL override', () {
+    final balancer = BalancerProfile(
+      id: 'balancer-single',
+      name: 'Single',
+      memberIds: [profile.id],
+      strategy: BalancerStrategy.leastPing,
+      probeUrl: 'https://legacy.example/probe',
+    );
+    final json = jsonDecode(
+      const XrayConfigBuilder().buildAndroidTun(
+        TunnelTarget.balancer(balancer, [profile]),
+        balancerProbeUrl: 'https://probe.example/health',
+      ),
+    ) as Map<String, dynamic>;
+
+    final outbounds = json['outbounds'] as List<dynamic>;
+    expect(outbounds.where((item) => item['tag'] == 'proxy-0'), hasLength(1));
+    expect((json['observatory'] as Map)['probeURL'], 'https://probe.example/health');
+  });
+
   test('uses official Xray direct fallbackTag for balancers', () {
     final second = profile.copyWith(
       id: 'second-fallback-direct',

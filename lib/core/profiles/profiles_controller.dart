@@ -52,6 +52,23 @@ class _LoadedSubscription {
   final SubscriptionParseResult parsed;
 }
 
+class ProfileGroupInfo {
+  const ProfileGroupInfo({
+    required this.key,
+    required this.title,
+    required this.profileIds,
+    required this.subscription,
+  });
+
+  final String key;
+  final String title;
+  final List<String> profileIds;
+  final ProxySubscription? subscription;
+
+  bool get isSubscription => subscription != null;
+  bool get isManualGroup => key.startsWith('manual:group:');
+}
+
 class ProfilesController extends ChangeNotifier {
   ProfilesController._({
     required ProfileRepository repository,
@@ -82,7 +99,9 @@ class ProfilesController extends ChangeNotifier {
   static const _maxProfiles = 500;
   bool _refreshingLatency = false;
   bool _refreshingSubscriptions = false;
+  bool _autoRefreshInFlight = false;
   final Set<String> _refreshingSubscriptionIds = <String>{};
+  final Map<String, int> _lastAutoRefreshAttemptEpochMs = <String, int>{};
   bool _disposed = false;
 
   static Future<ProfilesController> load({
@@ -120,6 +139,262 @@ class ProfilesController extends ChangeNotifier {
   bool subscriptionRefreshing(String id) =>
       _refreshingSubscriptions || _refreshingSubscriptionIds.contains(id);
 
+  ProxySubscription? subscriptionForProfile(String profileId) {
+    for (final subscription in _subscriptions) {
+      if (subscription.profileIds.contains(profileId)) return subscription;
+    }
+    return null;
+  }
+
+  bool isSubscriptionProfile(String profileId) =>
+      subscriptionForProfile(profileId) != null;
+
+  List<ProfileGroupInfo> get profileGroups {
+    final subscriptionByProfileId = <String, ProxySubscription>{
+      for (final subscription in _subscriptions)
+        for (final profileId in subscription.profileIds) profileId: subscription,
+    };
+    final groupedIds = <String, List<String>>{};
+    final titles = <String, String>{};
+    final subscriptionsByKey = <String, ProxySubscription?>{};
+
+    for (final profile in _profiles) {
+      final subscription = subscriptionByProfileId[profile.id];
+      late final String key;
+      late final String title;
+      if (subscription != null) {
+        key = 'subscription:${subscription.id}';
+        title = subscription.name;
+      } else {
+        final groupName = profile.groupName.trim();
+        if (groupName.isEmpty) {
+          key = 'manual:ungrouped';
+          title = 'Без группы';
+        } else {
+          key = 'manual:group:$groupName';
+          title = groupName;
+        }
+      }
+      groupedIds.putIfAbsent(key, () => <String>[]).add(profile.id);
+      titles[key] = title;
+      subscriptionsByKey[key] = subscription;
+    }
+
+    return List.unmodifiable([
+      for (final entry in groupedIds.entries)
+        ProfileGroupInfo(
+          key: entry.key,
+          title: titles[entry.key]!,
+          profileIds: List.unmodifiable(entry.value),
+          subscription: subscriptionsByKey[entry.key],
+        ),
+    ]);
+  }
+
+  String profileGroupKey(String profileId) {
+    final subscription = subscriptionForProfile(profileId);
+    if (subscription != null) return 'subscription:${subscription.id}';
+    final profile = _profileById(profileId);
+    if (profile == null || profile.groupName.trim().isEmpty) {
+      return 'manual:ungrouped';
+    }
+    return 'manual:group:${profile.groupName.trim()}';
+  }
+
+  List<String> effectiveBalancerMemberIds(BalancerProfile balancer) {
+    final ids = <String>{
+      for (final id in balancer.memberIds)
+        if (_profileById(id) != null) id,
+    };
+    if (balancer.memberGroupKeys.isNotEmpty) {
+      final groupsByKey = <String, ProfileGroupInfo>{
+        for (final group in profileGroups) group.key: group,
+      };
+      for (final key in balancer.memberGroupKeys) {
+        final group = groupsByKey[key];
+        if (group != null) ids.addAll(group.profileIds);
+      }
+    }
+    return List.unmodifiable(ids);
+  }
+
+  List<TunnelProfile> effectiveBalancerMembers(BalancerProfile balancer) {
+    final members = <TunnelProfile>[];
+    for (final id in effectiveBalancerMemberIds(balancer)) {
+      final profile = _profileById(id);
+      if (profile != null) members.add(profile);
+    }
+    return List.unmodifiable(members);
+  }
+
+  List<String> get manualGroupNames => List.unmodifiable(
+        profileGroups
+            .where((group) => group.isManualGroup)
+            .map((group) => group.title),
+      );
+
+  Future<int> setProfilesGroup(
+    Iterable<String> profileIds,
+    String? groupName,
+  ) async {
+    final normalized = groupName?.trim() ?? '';
+    if (normalized.length > 80) {
+      throw const FormatException('Название группы слишком длинное');
+    }
+    final ids = profileIds.toSet();
+    if (ids.isEmpty) return 0;
+    final subscriptionIds = <String>{
+      for (final subscription in _subscriptions) ...subscription.profileIds,
+    };
+    var changed = 0;
+    for (var index = 0; index < _profiles.length; index++) {
+      final profile = _profiles[index];
+      if (!ids.contains(profile.id) || subscriptionIds.contains(profile.id)) {
+        continue;
+      }
+      if (profile.groupName == normalized) continue;
+      _profiles[index] = normalized.isEmpty
+          ? profile.copyWith(clearGroup: true)
+          : profile.copyWith(groupName: normalized);
+      changed += 1;
+    }
+    if (changed == 0) return 0;
+    await _repository.saveProfiles(_profiles);
+    _notifyListeners();
+    return changed;
+  }
+
+  Future<void> renameProfileGroup(String oldName, String newName) async {
+    final oldValue = oldName.trim();
+    final newValue = newName.trim();
+    if (oldValue.isEmpty || newValue.isEmpty) {
+      throw const FormatException('Укажи название группы');
+    }
+    if (newValue.length > 80) {
+      throw const FormatException('Название группы слишком длинное');
+    }
+    if (oldValue == newValue) return;
+    for (var index = 0; index < _profiles.length; index++) {
+      final profile = _profiles[index];
+      if (profile.groupName == oldValue && !isSubscriptionProfile(profile.id)) {
+        _profiles[index] = profile.copyWith(groupName: newValue);
+      }
+    }
+    final oldKey = 'manual:group:$oldValue';
+    final newKey = 'manual:group:$newValue';
+    for (var index = 0; index < _balancers.length; index++) {
+      final balancer = _balancers[index];
+      if (!balancer.memberGroupKeys.contains(oldKey)) continue;
+      _balancers[index] = balancer.copyWith(
+        memberGroupKeys: {
+          for (final key in balancer.memberGroupKeys)
+            if (key == oldKey) newKey else key,
+        }.toList(growable: false),
+      );
+    }
+    await _repository.saveProfiles(_profiles);
+    await _repository.saveBalancers(_balancers);
+    _notifyListeners();
+  }
+
+  Future<void> deleteProfileGroup(
+    String name, {
+    bool deleteProfilesWithGroup = false,
+  }) async {
+    final normalized = name.trim();
+    final ids = _profiles
+        .where(
+          (profile) => profile.groupName == normalized &&
+              !isSubscriptionProfile(profile.id),
+        )
+        .map((profile) => profile.id)
+        .toSet();
+    if (ids.isEmpty) return;
+    final groupKey = 'manual:group:$normalized';
+    for (var index = 0; index < _balancers.length; index++) {
+      final balancer = _balancers[index];
+      if (!balancer.memberGroupKeys.contains(groupKey)) continue;
+      _balancers[index] = balancer.copyWith(
+        memberIds: deleteProfilesWithGroup
+            ? balancer.memberIds
+            : <String>{...balancer.memberIds, ...ids}.toList(growable: false),
+        memberGroupKeys: balancer.memberGroupKeys
+            .where((key) => key != groupKey)
+            .toList(growable: false),
+      );
+    }
+    if (deleteProfilesWithGroup) {
+      await deleteProfiles(ids);
+      return;
+    }
+    await setProfilesGroup(ids, null);
+    await _repository.saveBalancers(_balancers);
+  }
+
+  Future<void> reorderProfileGroups(
+    List<String> sectionKeys,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (oldIndex < 0 || oldIndex >= sectionKeys.length) return;
+    if (newIndex < 0 || newIndex >= sectionKeys.length || oldIndex == newIndex) {
+      return;
+    }
+
+    final reorderedKeys = List<String>.from(sectionKeys);
+    final moved = reorderedKeys.removeAt(oldIndex);
+    reorderedKeys.insert(newIndex, moved);
+    final sectionKeySet = sectionKeys.toSet();
+    final profilesBySection = <String, List<TunnelProfile>>{};
+    final outside = <TunnelProfile>[];
+    for (final profile in _profiles) {
+      final key = profileGroupKey(profile.id);
+      if (!sectionKeySet.contains(key)) {
+        outside.add(profile);
+        continue;
+      }
+      profilesBySection.putIfAbsent(key, () => <TunnelProfile>[]).add(profile);
+    }
+
+    if (outside.isNotEmpty) return;
+    final reordered = <TunnelProfile>[
+      for (final key in reorderedKeys) ...?profilesBySection[key],
+    ];
+    if (reordered.length != _profiles.length) return;
+    _profiles
+      ..clear()
+      ..addAll(reordered);
+    await _repository.saveProfiles(_profiles);
+    _notifyListeners();
+  }
+
+  Future<void> reorderProfilesInScope(
+    List<String> scopeIds,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (oldIndex < 0 || oldIndex >= scopeIds.length) return;
+    if (newIndex < 0 ||
+        newIndex >= scopeIds.length ||
+        newIndex == oldIndex) {
+      return;
+    }
+    final reorderedIds = List<String>.from(scopeIds);
+    final moved = reorderedIds.removeAt(oldIndex);
+    reorderedIds.insert(newIndex, moved);
+    final byId = <String, TunnelProfile>{
+      for (final profile in _profiles) profile.id: profile,
+    };
+    var replacementIndex = 0;
+    for (var index = 0; index < _profiles.length; index++) {
+      if (!scopeIds.contains(_profiles[index].id)) continue;
+      final replacement = byId[reorderedIds[replacementIndex++]];
+      if (replacement != null) _profiles[index] = replacement;
+    }
+    await _repository.saveProfiles(_profiles);
+    _notifyListeners();
+  }
+
   /// Whether the injected direct TCP probe is protected from an active VPN
   /// TUN. See [LatencyProbe.canMeasureWhileVpnActive].
   bool get canMeasureLatencyWhileVpnActive =>
@@ -155,12 +430,8 @@ class ProfilesController extends ChangeNotifier {
   }
 
   TunnelTarget? _resolveBalancer(BalancerProfile balancer) {
-    final members = <TunnelProfile>[];
-    for (final id in balancer.memberIds) {
-      final profile = _profileById(id);
-      if (profile != null) members.add(profile);
-    }
-    if (members.length < 2) return null;
+    final members = effectiveBalancerMembers(balancer);
+    if (members.isEmpty) return null;
     final fallbackProfileId = balancer.fallbackProfileId;
     final fallbackProfile =
         fallbackProfileId == null ? null : _profileById(fallbackProfileId);
@@ -250,8 +521,58 @@ class ProfilesController extends ChangeNotifier {
     throw firstError ?? const FormatException('Не удалось прочитать подписку');
   }
 
+  Future<List<SubscriptionSyncResult>> refreshSubscriptionsIfDue({
+    required int minimumIntervalHours,
+    DateTime? now,
+  }) async {
+    if (_disposed ||
+        minimumIntervalHours <= 0 ||
+        _subscriptions.isEmpty ||
+        _autoRefreshInFlight) {
+      return const [];
+    }
+
+    _autoRefreshInFlight = true;
+    final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    final retryCooldownMs = const Duration(minutes: 15).inMilliseconds;
+    final results = <SubscriptionSyncResult>[];
+    try {
+      for (final subscription
+          in List<ProxySubscription>.from(_subscriptions)) {
+        if (_disposed) break;
+        final providerInterval = subscription.updateIntervalHours ?? 0;
+        final effectiveHours = providerInterval > minimumIntervalHours
+            ? providerInterval
+            : minimumIntervalHours;
+        final intervalMs = Duration(hours: effectiveHours).inMilliseconds;
+        final lastUpdated = subscription.lastUpdatedEpochMs;
+        if (lastUpdated != null && nowMs - lastUpdated < intervalMs) continue;
+
+        final lastAttempt = _lastAutoRefreshAttemptEpochMs[subscription.id];
+        if (lastAttempt != null && nowMs - lastAttempt < retryCooldownMs) {
+          continue;
+        }
+        _lastAutoRefreshAttemptEpochMs[subscription.id] = nowMs;
+
+        try {
+          results.add(await refreshSubscription(subscription.id));
+        } on Object {
+          // Automatic refresh is best-effort. Keep the previous subscription
+          // intact and let a later app resume/start retry after the cooldown.
+        }
+      }
+      return List.unmodifiable(results);
+    } finally {
+      _autoRefreshInFlight = false;
+    }
+  }
+
   Future<List<SubscriptionSyncResult>> refreshAllSubscriptions() async {
-    if (_refreshingSubscriptions || _subscriptions.isEmpty) return const [];
+    if (_refreshingSubscriptions ||
+        _autoRefreshInFlight ||
+        _subscriptions.isEmpty) {
+      return const [];
+    }
     _refreshingSubscriptions = true;
     _notifyListeners();
     final results = <SubscriptionSyncResult>[];
@@ -271,11 +592,21 @@ class ProfilesController extends ChangeNotifier {
     final index = _subscriptions.indexWhere((item) => item.id == id);
     if (index < 0) return;
     final subscription = _subscriptions[index];
+    _lastAutoRefreshAttemptEpochMs.remove(subscription.id);
     final removedIds = subscription.profileIds.toSet();
     final workingProfiles = List<TunnelProfile>.from(_profiles)
       ..removeWhere((profile) => removedIds.contains(profile.id));
+    final subscriptionGroupKey = 'subscription:${subscription.id}';
     final workingBalancers = _rewriteBalancersAfterProfileRemoval(
-      _balancers,
+      _balancers.map(
+        (balancer) => balancer.memberGroupKeys.contains(subscriptionGroupKey)
+            ? balancer.copyWith(
+                memberGroupKeys: balancer.memberGroupKeys
+                    .where((key) => key != subscriptionGroupKey)
+                    .toList(growable: false),
+              )
+            : balancer,
+      ),
       removedIds,
     );
     final workingSubscriptions = List<ProxySubscription>.from(_subscriptions)
@@ -378,6 +709,7 @@ class ProfilesController extends ChangeNotifier {
           parsed.updateIntervalHours ??
           existing?.updateIntervalHours,
       userInfo: fetched.userInfo ?? parsed.userInfo ?? existing?.userInfo ?? '',
+      notices: List.unmodifiable(parsed.notices),
     );
     final workingSubscriptions = List<ProxySubscription>.from(_subscriptions);
     final subscriptionIndex =
@@ -447,7 +779,7 @@ class ProfilesController extends ChangeNotifier {
       final members = balancer.memberIds
           .where((member) => !removedIds.contains(member))
           .toList(growable: false);
-      if (members.length < 2) continue;
+      if (members.isEmpty && balancer.memberGroupKeys.isEmpty) continue;
       final fallbackRemoved = balancer.fallbackProfileId != null &&
           removedIds.contains(balancer.fallbackProfileId);
       result.add(
@@ -493,6 +825,7 @@ class ProfilesController extends ChangeNotifier {
     if (existingIndex >= 0) {
       final old = _profiles[existingIndex];
       _profiles[existingIndex] = profile.copyWith(
+        groupName: old.groupName,
         latencyMs: old.latencyMs,
         pingStatus: old.pingStatus,
       );
@@ -534,6 +867,7 @@ class ProfilesController extends ChangeNotifier {
         final old = working[index];
         working[index] = profile.copyWith(
           id: old.id,
+          groupName: old.groupName,
           latencyMs: old.latencyMs,
           pingStatus: old.pingStatus,
         );
@@ -636,6 +970,7 @@ class ProfilesController extends ChangeNotifier {
     String? id,
     required String name,
     required List<String> memberIds,
+    List<String> memberGroupKeys = const [],
     required BalancerStrategy strategy,
     required String probeUrl,
     required int probeIntervalSeconds,
@@ -645,6 +980,18 @@ class ProfilesController extends ChangeNotifier {
         .toSet()
         .where((value) => _profileById(value) != null)
         .toList(growable: false);
+    final availableGroups = <String, ProfileGroupInfo>{
+      for (final group in profileGroups) group.key: group,
+    };
+    final uniqueGroupKeys = memberGroupKeys
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty && availableGroups.containsKey(value))
+        .toSet()
+        .toList(growable: false);
+    final effectiveMembers = <String>{...uniqueMembers};
+    for (final key in uniqueGroupKeys) {
+      effectiveMembers.addAll(availableGroups[key]!.profileIds);
+    }
     if (name.trim().isEmpty) {
       throw const FormatException('Укажи имя балансировщика');
     }
@@ -657,8 +1004,8 @@ class ProfilesController extends ChangeNotifier {
     if (memberIds.length > _maxProfiles) {
       throw const FormatException('Слишком много участников балансировщика');
     }
-    if (uniqueMembers.length < 2) {
-      throw const FormatException('Выбери минимум два профиля');
+    if (effectiveMembers.isEmpty) {
+      throw const FormatException('Выбери хотя бы один профиль или папку');
     }
     final uri = Uri.tryParse(probeUrl.trim());
     final needsObservation = strategy == BalancerStrategy.leastPing ||
@@ -692,6 +1039,7 @@ class ProfilesController extends ChangeNotifier {
       id: id ?? 'balancer-${DateTime.now().microsecondsSinceEpoch}',
       name: name.trim(),
       memberIds: uniqueMembers,
+      memberGroupKeys: uniqueGroupKeys,
       strategy: strategy,
       probeUrl: probeUrl.trim(),
       probeIntervalSeconds: probeIntervalSeconds.clamp(30, 3600).toInt(),
@@ -753,7 +1101,7 @@ class ProfilesController extends ChangeNotifier {
       _balancers.removeWhere((balancer) {
         final remaining =
             balancer.memberIds.where((member) => member != id).length;
-        return remaining < 2;
+        return remaining == 0 && balancer.memberGroupKeys.isEmpty;
       });
       for (var index = 0; index < _balancers.length; index++) {
         final balancer = _balancers[index];
@@ -801,7 +1149,7 @@ class ProfilesController extends ChangeNotifier {
       final remaining = balancer.memberIds
           .where((member) => !removedIds.contains(member))
           .length;
-      return remaining < 2;
+      return remaining == 0 && balancer.memberGroupKeys.isEmpty;
     });
     for (var index = 0; index < _balancers.length; index++) {
       final balancer = _balancers[index];

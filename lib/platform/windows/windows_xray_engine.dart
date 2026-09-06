@@ -21,6 +21,7 @@ import 'xray_watchdog.dart';
 
 class WindowsXrayEngine implements
     TunnelEngine,
+    TunnelRuntimeSettingsSink,
     TunnelRecoverySink,
     TunnelDiagnosticsProvider,
     TunnelDiagnosticEventSink,
@@ -32,6 +33,7 @@ class WindowsXrayEngine implements
     XrayConfigBuilder? configBuilder,
     WindowsSystemProxyController? systemProxyController,
   })  : _settings = settings,
+        _activeStatsIntervalSeconds = settings.statsIntervalSeconds,
         _coreManager = coreManager ?? XrayCoreManager(appVersion: appVersion),
         _configBuilder = configBuilder ?? const XrayConfigBuilder(),
         _systemProxy =
@@ -80,6 +82,7 @@ class WindowsXrayEngine implements
   Process? _process;
   Timer? _statsTimer;
   Timer? _durationTimer;
+  int _activeStatsIntervalSeconds;
   DateTime? _connectedAt;
   XrayStatsClient? _statsClient;
   bool _statsPollInFlight = false;
@@ -264,6 +267,7 @@ class WindowsXrayEngine implements
             geoProxyRules: _settings.geoProxyRules,
             geoBlockRules: _settings.geoBlockRules,
             logLevel: _settings.logLevel,
+            balancerProbeUrl: _settings.latencyProbeUrl,
             apiPort: statsApiPort,
             outboundInterface: outboundInterface,
           ),
@@ -280,6 +284,7 @@ class WindowsXrayEngine implements
             geoProxyRules: _settings.geoProxyRules,
             geoBlockRules: _settings.geoBlockRules,
             logLevel: _settings.logLevel,
+            balancerProbeUrl: _settings.latencyProbeUrl,
             apiPort: statsApiPort,
           ),
       };
@@ -811,14 +816,41 @@ class WindowsXrayEngine implements
     _statsTimer?.cancel();
     _durationTimer?.cancel();
 
-    final interval = Duration(seconds: _settings.statsIntervalSeconds);
-    _statsTimer = Timer.periodic(interval, (_) => unawaited(_pollStats()));
+    _activeStatsIntervalSeconds = _settings.statsIntervalSeconds;
+    _startStatsTimer(pollImmediately: false);
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final connectedAt = _connectedAt;
       if (_process == null || connectedAt == null) return;
       _updateStatsDurationOnly(DateTime.now().difference(connectedAt));
     });
     unawaited(_pollStats());
+  }
+
+  void _startStatsTimer({bool pollImmediately = true}) {
+    _statsTimer?.cancel();
+    _statsTimer = Timer.periodic(
+      Duration(seconds: _activeStatsIntervalSeconds),
+      (_) => unawaited(_pollStats()),
+    );
+    if (pollImmediately) unawaited(_pollStats());
+  }
+
+  @override
+  Future<void> updateRuntimeSettings({
+    required int statsIntervalSeconds,
+    required int notificationStatsIntervalSeconds,
+    required int pingIntervalSeconds,
+    required bool showNotificationSpeed,
+    required bool showNotificationPing,
+  }) async {
+    if (_activeStatsIntervalSeconds == statsIntervalSeconds) return;
+    _activeStatsIntervalSeconds = statsIntervalSeconds;
+    if (_disposed || _process == null || !_current.isConnected) return;
+
+    // Windows UI statistics are produced by this timer. Ping cadence is
+    // managed by TunnelController; notification-only settings are Android
+    // concerns, so changing them does not restart Xray or the duration timer.
+    _startStatsTimer();
   }
 
   Future<void> _pollStats() async {

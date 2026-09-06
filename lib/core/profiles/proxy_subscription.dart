@@ -11,6 +11,7 @@ class ProxySubscription {
     this.lastUpdatedEpochMs,
     this.updateIntervalHours,
     this.userInfo = '',
+    this.notices = const [],
   });
 
   final String id;
@@ -20,6 +21,7 @@ class ProxySubscription {
   final int? lastUpdatedEpochMs;
   final int? updateIntervalHours;
   final String userInfo;
+  final List<String> notices;
 
   static String idForUrl(String value) {
     final normalized = value.trim();
@@ -36,6 +38,7 @@ class ProxySubscription {
     int? updateIntervalHours,
     bool clearUpdateInterval = false,
     String? userInfo,
+    List<String>? notices,
   }) {
     return ProxySubscription(
       id: id ?? this.id,
@@ -47,6 +50,7 @@ class ProxySubscription {
           ? null
           : (updateIntervalHours ?? this.updateIntervalHours),
       userInfo: userInfo ?? this.userInfo,
+      notices: notices ?? this.notices,
     );
   }
 
@@ -60,6 +64,7 @@ class ProxySubscription {
         if (updateIntervalHours != null)
           'updateIntervalHours': updateIntervalHours,
         if (userInfo.isNotEmpty) 'userInfo': userInfo,
+        if (notices.isNotEmpty) 'notices': notices,
       };
 
   factory ProxySubscription.fromJson(Map<String, Object?> json) {
@@ -72,6 +77,14 @@ class ProxySubscription {
         : <String>[];
     final lastUpdated = json['lastUpdatedEpochMs'];
     final interval = json['updateIntervalHours'];
+    final rawNotices = json['notices'];
+    final notices = rawNotices is List
+        ? rawNotices
+            .whereType<String>()
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false)
+        : const <String>[];
     if (id.isEmpty || url.isEmpty) {
       throw const FormatException('Некорректная сохранённая подписка');
     }
@@ -86,6 +99,7 @@ class ProxySubscription {
       updateIntervalHours:
           interval is num && interval > 0 ? interval.toInt() : null,
       userInfo: json['userInfo'] is String ? json['userInfo'] as String : '',
+      notices: List.unmodifiable(notices),
     );
   }
 }

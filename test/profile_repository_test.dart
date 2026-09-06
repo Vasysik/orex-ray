@@ -59,6 +59,7 @@ void main() {
       profileIds: ['one', 'two'],
       updateIntervalHours: 12,
       userInfo: 'download=1; total=2',
+      notices: ['Осталось: 23 дня'],
     );
 
     await repository.saveSubscriptions([subscription]);
@@ -68,6 +69,21 @@ void main() {
     expect(restored.url, subscription.url);
     expect(restored.profileIds, ['one', 'two']);
     expect(restored.updateIntervalHours, 12);
+    expect(restored.notices, ['Осталось: 23 дня']);
+  });
+
+  test('persists manual profile group name', () async {
+    SharedPreferences.setMockInitialValues({});
+    final repository = await ProfileRepository.load();
+    final profile = const VlessLinkParser().parse(
+      'vless://33333333-3333-4333-8333-333333333333@group.example:443'
+      '?encryption=none&security=none&type=tcp#Grouped',
+    ).copyWith(groupName: 'Работа');
+
+    await repository.saveProfiles([profile]);
+    final reloaded = await ProfileRepository.load();
+
+    expect(reloaded.readProfiles().single.groupName, 'Работа');
   });
 
   test('migrates VLESS JSON written before outbound protocol support', () {

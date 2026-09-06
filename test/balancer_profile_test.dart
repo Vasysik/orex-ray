@@ -40,4 +40,18 @@ void main() {
     expect(updated.memberIds, ['one', 'two']);
     expect(updated.fallbackTarget, isNull);
   });
+
+  test('balancer profile supports one member and group sources', () {
+    const balancer = BalancerProfile(
+      id: 'single-pool',
+      name: 'Single pool',
+      memberIds: ['one'],
+      memberGroupKeys: ['manual:group:Work'],
+    );
+
+    final restored = BalancerProfile.fromJson(balancer.toJson());
+
+    expect(restored.memberIds, ['one']);
+    expect(restored.memberGroupKeys, ['manual:group:Work']);
+  });
 }

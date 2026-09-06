@@ -97,6 +97,80 @@ void main() {
     await refresh;
   });
 
+  testWidgets('quick profile picker groups profiles and opens current group',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final first = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@one.example:443'
+      '?encryption=none&security=none&type=tcp#One',
+    );
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@two.example:443'
+      '?encryption=none&security=none&type=tcp#Two',
+    );
+    await profiles.setProfilesGroup([first.id], 'Работа');
+    await profiles.setProfilesGroup([second.id], 'Личное');
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    final tunnel = TunnelController(
+      engine: const _TestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: HomeScreen(tunnel: tunnel),
+      ),
+    );
+    await tester.pump();
+
+    final currentProfile = find.text('One').first;
+    await tester.ensureVisible(currentProfile);
+    await tester.pumpAndSettle();
+    await tester.tap(currentProfile);
+    await tester.pumpAndSettle();
+    final sheet = find.byType(BottomSheet);
+    expect(sheet, findsOneWidget);
+    expect(
+      find.descendant(of: sheet, matching: find.text('Быстрая смена профиля')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Текущая группа: Работа')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Работа')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Личное')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('One')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.descendant(of: sheet, matching: find.text('Личное')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: sheet, matching: find.text('Two')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('phone layout shows route verification and timeout above button',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

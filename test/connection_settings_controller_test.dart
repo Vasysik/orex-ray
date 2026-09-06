@@ -33,6 +33,30 @@ void main() {
     );
   });
 
+
+  test('subscription auto-update interval persists and validates', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    addTearDown(settings.dispose);
+
+    expect(settings.subscriptionAutoUpdateHours, 12);
+    await settings.setSubscriptionAutoUpdateHours(24);
+    expect(settings.subscriptionAutoUpdateHours, 24);
+
+    final reloaded = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    addTearDown(reloaded.dispose);
+    expect(reloaded.subscriptionAutoUpdateHours, 24);
+
+    await expectLater(
+      settings.setSubscriptionAutoUpdateHours(2),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
   test('ping interval defaults, validates and persists', () async {
     SharedPreferences.setMockInitialValues({});
     final settings = await ConnectionSettingsController.load(

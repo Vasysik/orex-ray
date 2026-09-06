@@ -58,6 +58,12 @@ void main() {
       await tester.tap(find.text('Показывать уведомления'));
       await tester.pump();
       expect(openedSystemSettings, isTrue);
+
+      await tester.drag(find.byType(ListView), const Offset(0, -520));
+      await tester.pumpAndSettle();
+      expect(find.text('Автообновление подписок'), findsOneWidget);
+      expect(find.text('12 ч'), findsOneWidget);
+
     },
   );
   testWidgets(
@@ -85,6 +91,9 @@ void main() {
         find.text('Как часто проверять активный маршрут во время подключения.'),
         findsOneWidget,
       );
+      await tester.drag(find.byType(ListView), const Offset(0, -420));
+      await tester.pumpAndSettle();
+      expect(find.text('Автообновление подписок'), findsOneWidget);
     },
   );
 }

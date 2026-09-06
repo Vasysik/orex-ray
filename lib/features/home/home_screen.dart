@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../core/egress/egress_identity.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
-import '../../shared/widgets/orex_choice_sheet.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../../shared/widgets/status_pill.dart';
 import 'tunnel_controller.dart';
@@ -748,29 +748,187 @@ class _QuickInfo extends StatelessWidget {
 
   Future<void> _showTargetPicker(BuildContext context) async {
     final selectedId = snapshot.profile?.id;
-    final id = await showOrexChoiceSheet<String>(
-      context,
-      title: 'Быстрая смена профиля',
-      options: [
-        for (final target in tunnel.targets)
-          OrexChoiceSheetOption<String>(
-            value: target.id,
-            icon: target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
-            leading: EgressAvatar(
-              identity: tunnel.egressIdentityFor(target.id),
-              fallbackIcon:
-                  target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
-              selected: selectedId == target.id,
-              size: 38,
+    final targetsById = <String, TunnelTarget>{
+      for (final target in tunnel.targets) target.id: target,
+    };
+    final groups = <_QuickTargetGroup>[
+      for (final group in tunnel.profileGroups)
+        _QuickTargetGroup(
+          key: group.key,
+          title: group.title,
+          icon: group.isSubscription
+              ? Icons.cloud_sync_outlined
+              : Icons.folder_outlined,
+          targets: [
+            for (final id in group.profileIds)
+              if (targetsById[id] case final target?) target,
+          ],
+        ),
+    ]..removeWhere((group) => group.targets.isEmpty);
+
+    final balancers = tunnel.targets
+        .where((target) => target.isBalancer)
+        .toList(growable: false);
+    if (balancers.isNotEmpty) {
+      groups.add(
+        _QuickTargetGroup(
+          key: 'balancers',
+          title: 'Балансировщики',
+          icon: Icons.hub_rounded,
+          targets: balancers,
+        ),
+      );
+    }
+    if (groups.isEmpty) return;
+
+    _QuickTargetGroup? selectedGroup;
+    for (final group in groups) {
+      if (group.targets.any((target) => target.id == selectedId)) {
+        selectedGroup = group;
+        break;
+      }
+    }
+    final expanded = <String>{selectedGroup?.key ?? groups.first.key};
+
+    final id = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: GlassPanel(
+              borderRadius: 24,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.72,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                      child: Text(
+                        'Быстрая смена профиля',
+                        style: Theme.of(sheetContext)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    if (selectedGroup != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        child: Text(
+                          'Текущая группа: ${selectedGroup.title}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(sheetContext).textTheme.bodySmall,
+                        ),
+                      )
+                    else
+                      const SizedBox(height: 8),
+                    for (final group in groups) ...[
+                      ListTile(
+                        dense: true,
+                        leading: Icon(group.icon, color: OrexColors.copper),
+                        title: Text(
+                          group.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text('${group.targets.length} серверов'),
+                        trailing: Icon(
+                          expanded.contains(group.key)
+                              ? Icons.expand_less_rounded
+                              : Icons.expand_more_rounded,
+                        ),
+                        onTap: () => setSheetState(() {
+                          if (!expanded.add(group.key)) {
+                            expanded.remove(group.key);
+                          }
+                        }),
+                      ),
+                      if (expanded.contains(group.key))
+                        for (final target in group.targets)
+                          _QuickTargetTile(
+                            target: target,
+                            selected: selectedId == target.id,
+                            latencyMs: tunnel.effectiveLatencyFor(target),
+                            identity: tunnel.egressIdentityFor(target.id),
+                            onTap: () =>
+                                Navigator.of(sheetContext).pop(target.id),
+                          ),
+                      if (group != groups.last) const Divider(height: 1),
+                    ],
+                  ],
+                ),
+              ),
             ),
-            title: target.name,
-            subtitle: '${target.endpoint} · '
-                '${tunnel.effectiveLatencyFor(target) == null ? '- мс' : '${tunnel.effectiveLatencyFor(target)} мс'}',
-            selected: selectedId == target.id,
           ),
-      ],
+        ),
+      ),
     );
     if (id != null) await tunnel.selectTarget(id);
+  }
+}
+
+class _QuickTargetGroup {
+  const _QuickTargetGroup({
+    required this.key,
+    required this.title,
+    required this.icon,
+    required this.targets,
+  });
+
+  final String key;
+  final String title;
+  final IconData icon;
+  final List<TunnelTarget> targets;
+}
+
+class _QuickTargetTile extends StatelessWidget {
+  const _QuickTargetTile({
+    required this.target,
+    required this.selected,
+    required this.latencyMs,
+    required this.identity,
+    required this.onTap,
+  });
+
+  final TunnelTarget target;
+  final bool selected;
+  final int? latencyMs;
+  final EgressIdentity? identity;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.only(left: 20, right: 8),
+      leading: EgressAvatar(
+        identity: identity,
+        fallbackIcon: target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
+        selected: selected,
+        size: 38,
+      ),
+      title: Text(
+        target.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${target.endpoint} · ${latencyMs == null ? '- мс' : '$latencyMs мс'}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: selected
+          ? const Icon(Icons.check_circle, color: OrexColors.copper)
+          : const Icon(Icons.chevron_right),
+      onTap: onTap,
+    );
   }
 }
 

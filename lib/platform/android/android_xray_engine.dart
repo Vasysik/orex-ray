@@ -113,6 +113,7 @@ class AndroidXrayEngine
               geoProxyRules: _settings.geoProxyRules,
               geoBlockRules: _settings.geoBlockRules,
               logLevel: _settings.logLevel,
+              balancerProbeUrl: _settings.latencyProbeUrl,
             )
           : _configBuilder.buildLocalProxy(
               target,
@@ -126,6 +127,7 @@ class AndroidXrayEngine
               geoProxyRules: _settings.geoProxyRules,
               geoBlockRules: _settings.geoBlockRules,
               logLevel: _settings.logLevel,
+              balancerProbeUrl: _settings.latencyProbeUrl,
               enableInboundStats: false,
             );
       await _channel.invokeMethod<void>('start', <String, Object?>{

@@ -11,6 +11,7 @@ class SubscriptionParseResult {
     this.profileTitle,
     this.userInfo,
     this.updateIntervalHours,
+    this.notices = const [],
   });
 
   final List<TunnelProfile> profiles;
@@ -18,6 +19,7 @@ class SubscriptionParseResult {
   final String? profileTitle;
   final String? userInfo;
   final int? updateIntervalHours;
+  final List<String> notices;
 }
 
 class SubscriptionParser {
@@ -62,6 +64,7 @@ class SubscriptionParser {
         profileTitle: metadata.profileTitle,
         userInfo: metadata.userInfo,
         updateIntervalHours: metadata.updateIntervalHours,
+        notices: jsonResult.notices,
       );
     }
 
@@ -73,6 +76,7 @@ class SubscriptionParser {
         profileTitle: metadata.profileTitle,
         userInfo: metadata.userInfo,
         updateIntervalHours: metadata.updateIntervalHours,
+        notices: linkResult.notices,
       );
     }
 
@@ -87,6 +91,7 @@ class SubscriptionParser {
           userInfo: metadata.userInfo ?? nested.userInfo,
           updateIntervalHours:
               metadata.updateIntervalHours ?? nested.updateIntervalHours,
+          notices: nested.notices,
         );
       }
     }
@@ -123,8 +128,8 @@ class SubscriptionParser {
     try {
       final decoded = const XrayJsonCodec().decode(text);
       if (decoded.profiles.isEmpty) return null;
-      return SubscriptionParseResult(
-        profiles: decoded.profiles,
+      return _filterInformationalProfiles(
+        decoded.profiles,
         skippedUnsupported: decoded.skippedUnsupported,
       );
     } on FormatException {
@@ -135,7 +140,9 @@ class SubscriptionParser {
   SubscriptionParseResult _parseLinks(String text) {
     final parser = const ProxyLinkParser();
     final profiles = <TunnelProfile>[];
+    final notices = <String>[];
     final seenIds = <String>{};
+    final seenNotices = <String>{};
     var skipped = 0;
 
     for (final rawLine in const LineSplitter().convert(text)) {
@@ -151,6 +158,11 @@ class SubscriptionParser {
       }
       try {
         final profile = parser.parse(line);
+        if (_isInformationalProfile(profile)) {
+          final notice = profile.name.trim();
+          if (notice.isNotEmpty && seenNotices.add(notice)) notices.add(notice);
+          continue;
+        }
         if (seenIds.add(profile.id)) profiles.add(profile);
       } on Object {
         skipped += 1;
@@ -160,7 +172,38 @@ class SubscriptionParser {
     return SubscriptionParseResult(
       profiles: List.unmodifiable(profiles),
       skippedUnsupported: skipped,
+      notices: List.unmodifiable(notices),
     );
+  }
+
+  SubscriptionParseResult _filterInformationalProfiles(
+    Iterable<TunnelProfile> source, {
+    required int skippedUnsupported,
+  }) {
+    final profiles = <TunnelProfile>[];
+    final notices = <String>[];
+    final seenNotices = <String>{};
+    for (final profile in source) {
+      if (_isInformationalProfile(profile)) {
+        final notice = profile.name.trim();
+        if (notice.isNotEmpty && seenNotices.add(notice)) notices.add(notice);
+      } else {
+        profiles.add(profile);
+      }
+    }
+    return SubscriptionParseResult(
+      profiles: List.unmodifiable(profiles),
+      skippedUnsupported: skippedUnsupported,
+      notices: List.unmodifiable(notices),
+    );
+  }
+
+  bool _isInformationalProfile(TunnelProfile profile) {
+    final address = profile.address.trim().toLowerCase();
+    if (address == 'localhost' || address == '::1' || address == '[::1]') {
+      return true;
+    }
+    return RegExp(r'^127(?:\.\d{1,3}){3}$').hasMatch(address);
   }
 
   String? _tryDecodeBase64(String text) {

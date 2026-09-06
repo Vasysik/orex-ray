@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -26,6 +28,22 @@ enum _ProfileCreateAction {
 }
 
 enum _XrayJsonExportAction { copy, saveFile }
+
+class _ProfileSection {
+  const _ProfileSection({
+    required this.key,
+    required this.title,
+    required this.profiles,
+    this.subscription,
+    this.manualGroupName,
+  });
+
+  final String key;
+  final String title;
+  final List<TunnelProfile> profiles;
+  final ProxySubscription? subscription;
+  final String? manualGroupName;
+}
 
 class ProfilesScreen extends StatelessWidget {
   const ProfilesScreen({
@@ -333,10 +351,10 @@ class ProfilesScreen extends StatelessWidget {
     BuildContext context, {
     BalancerProfile? existing,
   }) async {
-    if (existing == null && profiles.profiles.length < 2) {
+    if (existing == null && profiles.profiles.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Для балансировщика нужны минимум два профиля'),
+          content: Text('Для балансировщика нужен хотя бы один профиль'),
         ),
       );
       return;
@@ -345,6 +363,8 @@ class ProfilesScreen extends StatelessWidget {
       context: context,
       builder: (context) => _BalancerDialog(
         profiles: profiles.profiles,
+        groups: profiles.profileGroups,
+        probeUrl: tunnel.latencyProbeUrl,
         existing: existing,
       ),
     );
@@ -354,8 +374,9 @@ class ProfilesScreen extends StatelessWidget {
         id: existing?.id,
         name: value.name,
         memberIds: value.memberIds,
+        memberGroupKeys: value.memberGroupKeys,
         strategy: value.strategy,
-        probeUrl: value.probeUrl,
+        probeUrl: tunnel.latencyProbeUrl,
         probeIntervalSeconds: value.probeIntervalSeconds,
         fallbackTarget: value.fallbackTarget,
       );
@@ -404,6 +425,8 @@ class _ProfilesBody extends StatefulWidget {
 
 class _ProfilesBodyState extends State<_ProfilesBody> {
   final Set<String> _selectedProfileIds = <String>{};
+  final Set<String> _expandedSectionKeys = <String>{};
+  final Set<String> _collapsedSectionKeys = <String>{};
   String? _draggingProfileId;
 
   ProfilesController get profiles => widget.owner.profiles;
@@ -482,6 +505,211 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     );
   }
 
+  List<_ProfileSection> _buildProfileSections(
+    List<TunnelProfile> currentProfiles,
+  ) {
+    final byId = <String, TunnelProfile>{
+      for (final profile in currentProfiles) profile.id: profile,
+    };
+    final sections = <_ProfileSection>[];
+    for (final group in profiles.profileGroups) {
+      final items = <TunnelProfile>[
+        for (final id in group.profileIds)
+          if (byId[id] case final profile?) profile,
+      ];
+      if (items.isEmpty) continue;
+      sections.add(
+        _ProfileSection(
+          key: group.key,
+          title: group.title,
+          profiles: List.unmodifiable(items),
+          subscription: group.subscription,
+          manualGroupName: group.isManualGroup ? group.title : null,
+        ),
+      );
+    }
+    return sections;
+  }
+
+  bool _sectionExpanded(_ProfileSection section, String? activeId) {
+    if (_expandedSectionKeys.contains(section.key)) return true;
+    if (_collapsedSectionKeys.contains(section.key)) return false;
+    if (section.subscription != null) {
+      return activeId != null &&
+          section.profiles.any((profile) => profile.id == activeId);
+    }
+    return true;
+  }
+
+  void _toggleSection(_ProfileSection section, String? activeId) {
+    final expanded = _sectionExpanded(section, activeId);
+    setState(() {
+      if (expanded) {
+        _expandedSectionKeys.remove(section.key);
+        _collapsedSectionKeys.add(section.key);
+      } else {
+        _collapsedSectionKeys.remove(section.key);
+        _expandedSectionKeys.add(section.key);
+      }
+    });
+  }
+
+  Future<String?> _requestGroupName(
+    BuildContext context, {
+    String initialValue = '',
+    String title = 'Новая группа',
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 80,
+            decoration: const InputDecoration(hintText: 'Например, Работа'),
+            onSubmitted: (value) {
+              final normalized = value.trim();
+              if (normalized.isNotEmpty) {
+                Navigator.of(dialogContext).pop(normalized);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final normalized = controller.text.trim();
+                if (normalized.isNotEmpty) {
+                  Navigator.of(dialogContext).pop(normalized);
+                }
+              },
+              child: const Text('Сохранить'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _assignToGroup(
+    BuildContext context,
+    Iterable<String> profileIds,
+  ) async {
+    final ids = profileIds.toSet();
+    final manualIds = ids
+        .where((id) => !profiles.isSubscriptionProfile(id))
+        .toSet();
+    if (manualIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Серверы подписки автоматически сгруппированы'),
+        ),
+      );
+      return;
+    }
+
+    const createGroup = '__create_group__';
+    const clearGroup = '__clear_group__';
+    final action = await showOrexChoiceSheet<String>(
+      context,
+      title: 'Переместить в группу',
+      options: [
+        const OrexChoiceSheetOption<String>(
+          value: clearGroup,
+          icon: Icons.folder_off_outlined,
+          title: 'Без группы',
+        ),
+        for (final name in profiles.manualGroupNames)
+          OrexChoiceSheetOption<String>(
+            value: name,
+            icon: Icons.folder_outlined,
+            title: name,
+          ),
+        const OrexChoiceSheetOption<String>(
+          value: createGroup,
+          icon: Icons.create_new_folder_outlined,
+          title: 'Новая группа',
+        ),
+      ],
+    );
+    if (action == null || !context.mounted) return;
+
+    String? targetGroup;
+    if (action == createGroup) {
+      targetGroup = await _requestGroupName(context);
+      if (targetGroup == null || !context.mounted) return;
+    } else if (action != clearGroup) {
+      targetGroup = action;
+    }
+
+    final changed = await profiles.setProfilesGroup(manualIds, targetGroup);
+    if (!context.mounted) return;
+    if (ids.length != manualIds.length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Перемещено $changed; серверы подписок оставлены в своих группах',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _renameManualGroup(BuildContext context, String name) async {
+    final next = await _requestGroupName(
+      context,
+      initialValue: name,
+      title: 'Переименовать группу',
+    );
+    if (next == null || next == name || !mounted) return;
+    await profiles.renameProfileGroup(name, next);
+  }
+
+  Future<void> _deleteManualGroup(BuildContext context, String name) async {
+    const detach = 'detach';
+    const deleteWithProfiles = 'delete_with_profiles';
+    final action = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить группу?'),
+        content: Text(
+          'Что сделать с профилями из группы «$name»?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(detach),
+            child: const Text('Удалить только группу'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(deleteWithProfiles),
+            style: FilledButton.styleFrom(
+              backgroundColor: OrexColors.danger,
+            ),
+            child: const Text('Удалить с профилями'),
+          ),
+        ],
+      ),
+    );
+    if (action == null) return;
+    await profiles.deleteProfileGroup(
+      name,
+      deleteProfilesWithGroup: action == deleteWithProfiles,
+    );
+  }
+
   Future<void> _selectFromProfiles(String id) async {
     if (!tunnel.canChangeTarget) return;
     await tunnel.selectTarget(id);
@@ -496,6 +724,63 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
         final validIds = currentProfiles.map((profile) => profile.id).toSet();
         _selectedProfileIds.removeWhere((id) => !validIds.contains(id));
         final activeTarget = profiles.selectedTarget;
+        final sections = _buildProfileSections(currentProfiles);
+        final groupedView = sections.length > 1 ||
+            sections.any(
+              (section) =>
+                  section.subscription != null || section.manualGroupName != null,
+            );
+        final canGroupSelected = _selectedProfileIds.any(
+          (id) => !profiles.isSubscriptionProfile(id),
+        );
+
+        Widget buildProfileCard(
+          TunnelProfile profile,
+          int localIndex,
+          _ProfileSection section,
+        ) {
+          final card = _ProfileCard(
+            profile: profile,
+            identity: tunnel.egressIdentityFor(profile.id),
+            selected: activeTarget?.id == profile.id,
+            multiSelected: _selectedProfileIds.contains(profile.id),
+            selectionMode: _selectionMode,
+            dragging: _draggingProfileId == profile.id,
+            onSelect: () => _selectionMode
+                ? _toggleSelection(profile.id)
+                : _selectFromProfiles(profile.id),
+            onLongPress:
+                _selectionMode ? null : () => _enterSelection(profile.id),
+            latencyMs: profile.latencyMs,
+            onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
+                ? () => tunnel.refreshProfileLatency(profile.id)
+                : null,
+            onEdit: () => widget.owner._showEditProfileDialog(context, profile),
+            onExport: () => widget.owner._showXrayJsonExportMenu(
+              context,
+              profileId: profile.id,
+              suggestedBaseName: profile.name,
+            ),
+            onDelete: () => widget.owner._deleteTarget(
+              context,
+              profile.id,
+              profile.name,
+            ),
+            onGroup: section.subscription == null
+                ? () => _assignToGroup(context, {profile.id})
+                : null,
+          );
+          return Padding(
+            key: ValueKey(profile.id),
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _selectionMode
+                ? ReorderableDelayedDragStartListener(
+                    index: localIndex,
+                    child: card,
+                  )
+                : card,
+          );
+        }
 
         final header = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -515,6 +800,9 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                 onPingSelected: _pingSelected,
                 onExportSelected: () => _exportSelected(context),
                 onDeleteSelected: () => _deleteSelected(context),
+                onGroupSelected: () =>
+                    _assignToGroup(context, _selectedProfileIds),
+                canGroupSelected: canGroupSelected,
               ),
             ),
             if (!_selectionMode && profiles.subscriptions.isNotEmpty) ...[
@@ -552,93 +840,11 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
           ],
         );
 
-        final footer = !_selectionMode && profiles.balancers.isNotEmpty
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 10),
-                  _SectionTitle(
-                    title: 'Балансировщики',
-                    count: profiles.balancers.length,
-                  ),
-                  const SizedBox(height: 10),
-                  for (final balancer in profiles.balancers)
-                    Padding(
-                      key: ValueKey(balancer.id),
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _BalancerCard(
-                        balancer: balancer,
-                        identity: tunnel.egressIdentityFor(balancer.id),
-                        members: [
-                          for (final id in balancer.memberIds)
-                            ...currentProfiles.where((item) => item.id == id),
-                        ],
-                        selected: activeTarget?.id == balancer.id,
-                        latencyMs: profiles.targetById(balancer.id)?.latencyMs,
-                        onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
-                            ? () => tunnel.refreshTargetLatency(balancer.id)
-                            : null,
-                        onSelect: () => _selectFromProfiles(balancer.id),
-                        onEdit: () => widget.owner._showBalancerDialog(
-                          context,
-                          existing: balancer,
-                        ),
-                        onDelete: () => widget.owner._deleteTarget(
-                          context,
-                          balancer.id,
-                          balancer.name,
-                        ),
-                      ),
-                    ),
-                ],
-              )
-            : null;
-
         if (currentProfiles.isEmpty) {
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              AnimatedBuilder(
-                animation: tunnel.profileUiChanges,
-                builder: (context, _) => _ProfilesHeader(
-                  refreshingLatency: tunnel.refreshingLatency,
-                  canRefreshLatency: false,
-                  selectionMode: false,
-                  allSelected: false,
-                  onOpenProfileMenu: () => widget.owner._showProfileMenu(context),
-                  onRefreshLatency: tunnel.refreshAllLatencies,
-                  onCloseSelection: _clearSelection,
-                  onSelectAll: _selectAll,
-                  onPingSelected: _pingSelected,
-                  onExportSelected: () => _exportSelected(context),
-                  onDeleteSelected: () => _deleteSelected(context),
-                ),
-              ),
-              if (profiles.subscriptions.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                _SectionTitle(
-                  title: 'Подписки',
-                  count: profiles.subscriptions.length,
-                ),
-                const SizedBox(height: 10),
-                for (final subscription in profiles.subscriptions)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _SubscriptionCard(
-                      subscription: subscription,
-                      refreshing: profiles.subscriptionRefreshing(subscription.id),
-                      onRefresh: () => widget.owner._refreshSubscription(
-                        context,
-                        subscription,
-                      ),
-                      onDelete: () => widget.owner._deleteSubscription(
-                        context,
-                        subscription,
-                      ),
-                    ),
-                  ),
-              ],
-              const SizedBox(height: 20),
+              header,
               _EmptyProfiles(
                 onImport: () => widget.owner._showProfileMenu(context),
               ),
@@ -646,84 +852,164 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
           );
         }
 
-        return ReorderableListView.builder(
-          padding: const EdgeInsets.all(20),
-          buildDefaultDragHandles: false,
-          header: header,
-          footer: footer,
-          itemCount: currentProfiles.length,
-          onReorderStart: (index) {
-            if (!mounted || index < 0 || index >= currentProfiles.length) return;
-            setState(() => _draggingProfileId = currentProfiles[index].id);
-          },
-          onReorderEnd: (_) {
-            if (mounted && _draggingProfileId != null) {
-              setState(() => _draggingProfileId = null);
-            }
-          },
-          proxyDecorator: (child, index, animation) {
-            return AnimatedBuilder(
-              animation: animation,
-              child: child,
-              builder: (context, child) {
-                final scale = Tween<double>(
-                  begin: 1,
-                  end: 1.015,
-                ).evaluate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                    reverseCurve: Curves.easeInCubic,
+        final slivers = <Widget>[
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            sliver: SliverToBoxAdapter(child: header),
+          ),
+          for (final section in sections) ...[
+            if (groupedView)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverToBoxAdapter(
+                  child: _ProfileGroupDragTarget(
+                    sectionKey: section.key,
+                    enabled: sections.length > 1 && !_selectionMode,
+                    onDropped: (draggedKey) {
+                      final oldIndex = sections.indexWhere(
+                        (item) => item.key == draggedKey,
+                      );
+                      final newIndex = sections.indexWhere(
+                        (item) => item.key == section.key,
+                      );
+                      if (oldIndex < 0 || newIndex < 0 || oldIndex == newIndex) {
+                        return;
+                      }
+                      unawaited(
+                        profiles.reorderProfileGroups(
+                          sections.map((item) => item.key).toList(),
+                          oldIndex,
+                          newIndex,
+                        ),
+                      );
+                    },
+                    child: _ProfileGroupHeader(
+                      title: section.title,
+                      count: section.profiles.length,
+                      expanded: _sectionExpanded(section, activeTarget?.id),
+                      onToggle: () =>
+                          _toggleSection(section, activeTarget?.id),
+                      subscription: section.subscription,
+                      onRename: section.manualGroupName == null
+                          ? null
+                          : () => _renameManualGroup(
+                                context,
+                                section.manualGroupName!,
+                              ),
+                      onDelete: section.manualGroupName == null
+                          ? null
+                          : () => _deleteManualGroup(
+                                context,
+                                section.manualGroupName!,
+                              ),
+                    ),
                   ),
-                );
-                return Transform.scale(scale: scale, child: child);
-              },
-            );
-          },
-          onReorderItem: profiles.reorderProfiles,
-          itemBuilder: (context, index) {
-            final profile = currentProfiles[index];
-            final card = _ProfileCard(
-              profile: profile,
-              identity: tunnel.egressIdentityFor(profile.id),
-              selected: activeTarget?.id == profile.id,
-              multiSelected: _selectedProfileIds.contains(profile.id),
-              selectionMode: _selectionMode,
-              dragging: _draggingProfileId == profile.id,
-              onSelect: () => _selectionMode
-                  ? _toggleSelection(profile.id)
-                  : _selectFromProfiles(profile.id),
-              onLongPress:
-                  _selectionMode ? null : () => _enterSelection(profile.id),
-              latencyMs: profile.latencyMs,
-              onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
-                  ? () => tunnel.refreshProfileLatency(profile.id)
-                  : null,
-              onEdit: () =>
-                  widget.owner._showEditProfileDialog(context, profile),
-              onExport: () => widget.owner._showXrayJsonExportMenu(
-                context,
-                profileId: profile.id,
-                suggestedBaseName: profile.name,
+                ),
               ),
-              onDelete: () => widget.owner._deleteTarget(
-                context,
-                profile.id,
-                profile.name,
+            if (!groupedView || _sectionExpanded(section, activeTarget?.id))
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverReorderableList(
+                  itemCount: section.profiles.length,
+                  itemBuilder: (context, index) => buildProfileCard(
+                    section.profiles[index],
+                    index,
+                    section,
+                  ),
+                  onReorderStart: (index) {
+                    if (!mounted ||
+                        index < 0 ||
+                        index >= section.profiles.length) {
+                      return;
+                    }
+                    setState(
+                      () => _draggingProfileId = section.profiles[index].id,
+                    );
+                  },
+                  onReorderEnd: (_) {
+                    if (mounted && _draggingProfileId != null) {
+                      setState(() => _draggingProfileId = null);
+                    }
+                  },
+                  proxyDecorator: (child, index, animation) {
+                    return AnimatedBuilder(
+                      animation: animation,
+                      child: child,
+                      builder: (context, child) {
+                        final scale = Tween<double>(
+                          begin: 1,
+                          end: 1.015,
+                        ).evaluate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                            reverseCurve: Curves.easeInCubic,
+                          ),
+                        );
+                        return Transform.scale(scale: scale, child: child);
+                      },
+                    );
+                  },
+                  onReorderItem: (oldIndex, newIndex) {
+                    profiles.reorderProfilesInScope(
+                      section.profiles.map((profile) => profile.id).toList(),
+                      oldIndex,
+                      newIndex,
+                    );
+                  },
+                ),
               ),
-            );
-            return Padding(
-              key: ValueKey(profile.id),
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _selectionMode
-                  ? ReorderableDelayedDragStartListener(
-                      index: index,
-                      child: card,
-                    )
-                  : card,
-            );
-          },
-        );
+            if (groupedView)
+              const SliverToBoxAdapter(child: SizedBox(height: 4)),
+          ],
+          if (!_selectionMode && profiles.balancers.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 20),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _SectionTitle(
+                      title: 'Балансировщики',
+                      count: profiles.balancers.length,
+                    ),
+                    const SizedBox(height: 10),
+                    for (final balancer in profiles.balancers)
+                      Padding(
+                        key: ValueKey(balancer.id),
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _BalancerCard(
+                          balancer: balancer,
+                          identity: tunnel.egressIdentityFor(balancer.id),
+                          members:
+                              profiles.effectiveBalancerMembers(balancer),
+                          selected: activeTarget?.id == balancer.id,
+                          latencyMs:
+                              profiles.targetById(balancer.id)?.latencyMs,
+                          onRefreshPing:
+                              tunnel.canRefreshTargetLatency(balancer.id)
+                                  ? () => tunnel.refreshTargetLatency(balancer.id)
+                                  : null,
+                          onSelect: () => _selectFromProfiles(balancer.id),
+                          onEdit: () => widget.owner._showBalancerDialog(
+                            context,
+                            existing: balancer,
+                          ),
+                          onDelete: () => widget.owner._deleteTarget(
+                            context,
+                            balancer.id,
+                            balancer.name,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          const SliverToBoxAdapter(child: SizedBox(height: 8)),
+        ];
+
+        return CustomScrollView(slivers: slivers);
       },
     );
   }
@@ -742,6 +1028,8 @@ class _ProfilesHeader extends StatelessWidget {
     required this.onPingSelected,
     required this.onExportSelected,
     required this.onDeleteSelected,
+    required this.onGroupSelected,
+    required this.canGroupSelected,
   });
 
   final bool refreshingLatency;
@@ -755,6 +1043,8 @@ class _ProfilesHeader extends StatelessWidget {
   final Future<void> Function() onPingSelected;
   final VoidCallback onExportSelected;
   final VoidCallback onDeleteSelected;
+  final VoidCallback onGroupSelected;
+  final bool canGroupSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -784,6 +1074,11 @@ class _ProfilesHeader extends StatelessWidget {
                 onPressed: onExportSelected,
                 icon: const Icon(Icons.ios_share_rounded),
                 label: const Text('Экспорт'),
+              ),
+              _HeaderIconActionButton(
+                tooltip: 'Группа',
+                onPressed: canGroupSelected ? onGroupSelected : null,
+                icon: Icons.folder_outlined,
               ),
               _HeaderIconActionButton(
                 tooltip: 'Удалить',
@@ -924,6 +1219,134 @@ class _SectionTitle extends StatelessWidget {
           Text('$selected', style: Theme.of(context).textTheme.bodySmall),
         ],
       ],
+    );
+  }
+}
+
+class _ProfileGroupDragTarget extends StatelessWidget {
+  const _ProfileGroupDragTarget({
+    required this.sectionKey,
+    required this.enabled,
+    required this.onDropped,
+    required this.child,
+  });
+
+  final String sectionKey;
+  final bool enabled;
+  final ValueChanged<String> onDropped;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return LayoutBuilder(
+      builder: (context, constraints) => DragTarget<String>(
+        onWillAcceptWithDetails: (details) => details.data != sectionKey,
+        onAcceptWithDetails: (details) => onDropped(details.data),
+        builder: (context, candidates, rejected) {
+          final highlighted = candidates.isNotEmpty;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: highlighted
+                  ? Border.all(
+                      color: OrexColors.copper.withValues(alpha: 0.72),
+                    )
+                  : null,
+            ),
+            child: LongPressDraggable<String>(
+              data: sectionKey,
+              feedback: Material(
+                type: MaterialType.transparency,
+                child: SizedBox(
+                  width: constraints.maxWidth,
+                  child: Opacity(opacity: 0.94, child: child),
+                ),
+              ),
+              childWhenDragging: Opacity(opacity: 0.34, child: child),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ProfileGroupHeader extends StatelessWidget {
+  const _ProfileGroupHeader({
+    required this.title,
+    required this.count,
+    required this.expanded,
+    required this.onToggle,
+    this.subscription,
+    this.onRename,
+    this.onDelete,
+  });
+
+  final String title;
+  final int count;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final ProxySubscription? subscription;
+  final VoidCallback? onRename;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSubscription = subscription != null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GlassPanel(
+        borderRadius: 18,
+        blur: 14,
+        opacity: 0.34,
+        child: ListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          onTap: onToggle,
+          leading: Icon(
+            isSubscription ? Icons.cloud_sync_outlined : Icons.folder_outlined,
+            color: OrexColors.copper,
+          ),
+          title: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text('$count серверов'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (onRename != null || onDelete != null)
+                PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'rename') onRename?.call();
+                    if (value == 'delete') onDelete?.call();
+                  },
+                  itemBuilder: (context) => [
+                    if (onRename != null)
+                      const PopupMenuItem(
+                        value: 'rename',
+                        child: Text('Переименовать'),
+                      ),
+                    if (onDelete != null)
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Удалить группу'),
+                      ),
+                  ],
+                ),
+              Icon(
+                expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1078,6 +1501,8 @@ class _SubscriptionCard extends StatelessWidget {
     final details = <String>[
       '${subscription.profileIds.length} серверов',
       host,
+      if (subscription.notices.isNotEmpty)
+        subscription.notices.take(3).join(' · '),
     ];
     return GlassPanel(
       borderRadius: 18,
@@ -1093,7 +1518,7 @@ class _SubscriptionCard extends StatelessWidget {
         ),
         subtitle: Text(
           details.join(' · '),
-          maxLines: 2,
+          maxLines: subscription.notices.isEmpty ? 2 : 3,
           overflow: TextOverflow.ellipsis,
         ),
         trailing: Row(
@@ -1137,6 +1562,7 @@ class _ProfileCard extends StatelessWidget {
     required this.onEdit,
     required this.onExport,
     required this.onDelete,
+    this.onGroup,
   });
 
   final TunnelProfile profile;
@@ -1152,6 +1578,7 @@ class _ProfileCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onExport;
   final VoidCallback onDelete;
+  final VoidCallback? onGroup;
 
   @override
   Widget build(BuildContext context) {
@@ -1210,6 +1637,7 @@ class _ProfileCard extends StatelessWidget {
                         if (value == 'edit') onEdit();
                         if (value == 'ping') onRefreshPing?.call();
                         if (value == 'export') onExport();
+                        if (value == 'group') onGroup?.call();
                         if (value == 'delete') onDelete();
                       },
                       itemBuilder: (context) => [
@@ -1226,6 +1654,11 @@ class _ProfileCard extends StatelessWidget {
                           value: 'export',
                           child: Text('Экспорт JSON Xray'),
                         ),
+                        if (onGroup != null)
+                          const PopupMenuItem(
+                            value: 'group',
+                            child: Text('Группа…'),
+                          ),
                         const PopupMenuDivider(),
                         const PopupMenuItem(
                           value: 'delete',
@@ -2007,24 +2440,31 @@ class _BalancerDraft {
   const _BalancerDraft({
     required this.name,
     required this.memberIds,
+    required this.memberGroupKeys,
     required this.strategy,
-    required this.probeUrl,
     required this.probeIntervalSeconds,
     required this.fallbackTarget,
   });
 
   final String name;
   final List<String> memberIds;
+  final List<String> memberGroupKeys;
   final BalancerStrategy strategy;
-  final String probeUrl;
   final int probeIntervalSeconds;
   final String? fallbackTarget;
 }
 
 class _BalancerDialog extends StatefulWidget {
-  const _BalancerDialog({required this.profiles, this.existing});
+  const _BalancerDialog({
+    required this.profiles,
+    required this.groups,
+    required this.probeUrl,
+    this.existing,
+  });
 
   final List<TunnelProfile> profiles;
+  final List<ProfileGroupInfo> groups;
+  final String probeUrl;
   final BalancerProfile? existing;
 
   @override
@@ -2034,14 +2474,13 @@ class _BalancerDialog extends StatefulWidget {
 class _BalancerDialogState extends State<_BalancerDialog> {
   late final TextEditingController _name =
       TextEditingController(text: widget.existing?.name ?? '');
-  late final TextEditingController _probeUrl = TextEditingController(
-    text: widget.existing?.probeUrl ?? 'https://www.gstatic.com/generate_204',
-  );
   late final TextEditingController _interval = TextEditingController(
     text: '${widget.existing?.probeIntervalSeconds ?? 30}',
   );
   late final Set<String> _members =
       widget.existing?.memberIds.toSet() ?? <String>{};
+  late final Set<String> _memberGroups =
+      widget.existing?.memberGroupKeys.toSet() ?? <String>{};
   late BalancerStrategy _strategy =
       widget.existing?.strategy ?? BalancerStrategy.random;
   String _fallbackValue = 'none';
@@ -2066,10 +2505,23 @@ class _BalancerDialogState extends State<_BalancerDialog> {
   @override
   void dispose() {
     _name.dispose();
-    _probeUrl.dispose();
     _interval.dispose();
     super.dispose();
   }
+
+  List<ProfileGroupInfo> get _selectableGroups => widget.groups
+      .where((group) => group.isManualGroup || group.isSubscription)
+      .toList(growable: false);
+
+  Set<String> get _groupMemberIds => {
+        for (final group in _selectableGroups)
+          if (_memberGroups.contains(group.key)) ...group.profileIds,
+      };
+
+  Set<String> get _effectiveMemberIds => <String>{
+        ..._members,
+        ..._groupMemberIds,
+      };
 
   void _submit() {
     final interval = int.tryParse(_interval.text.trim()) ?? 30;
@@ -2077,8 +2529,8 @@ class _BalancerDialogState extends State<_BalancerDialog> {
       setState(() => _error = 'Укажи имя балансировщика');
       return;
     }
-    if (_members.length < 2) {
-      setState(() => _error = 'Выбери минимум два сервера');
+    if (_effectiveMemberIds.isEmpty) {
+      setState(() => _error = 'Выбери хотя бы один сервер или папку');
       return;
     }
     Navigator.pop(
@@ -2086,8 +2538,8 @@ class _BalancerDialogState extends State<_BalancerDialog> {
       _BalancerDraft(
         name: _name.text.trim(),
         memberIds: _members.toList(growable: false),
+        memberGroupKeys: _memberGroups.toList(growable: false),
         strategy: _strategy,
-        probeUrl: _probeUrl.text.trim(),
         probeIntervalSeconds: interval,
         fallbackTarget: _fallbackValue == 'none' ? null : _fallbackValue,
       ),
@@ -2165,10 +2617,21 @@ class _BalancerDialogState extends State<_BalancerDialog> {
               if (_strategy == BalancerStrategy.leastPing ||
                   _fallbackValue != 'none') ...[
                 const SizedBox(height: 12),
-                TextField(
-                    controller: _probeUrl,
-                    decoration:
-                        const InputDecoration(labelText: 'URL проверки')),
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Адрес проверки задержки',
+                  ),
+                  child: Text(
+                    widget.probeUrl,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Используется общий адрес из «Сеть → Проверка задержки».',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _interval,
@@ -2177,27 +2640,71 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                       labelText: 'Интервал проверки, секунд'),
                 ),
               ],
+              if (_selectableGroups.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text('Папки', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 4),
+                Text(
+                  'Выбранная папка остаётся динамической: новые серверы '
+                  'подписки или профили, добавленные в неё позже, попадут в '
+                  'балансировщик автоматически.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 6),
+                for (final group in _selectableGroups)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _memberGroups.contains(group.key),
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          _memberGroups.add(group.key);
+                        } else {
+                          _memberGroups.remove(group.key);
+                        }
+                      });
+                    },
+                    secondary: Icon(
+                      group.isSubscription
+                          ? Icons.cloud_outlined
+                          : Icons.folder_outlined,
+                      color: OrexColors.copper,
+                    ),
+                    title: Text(group.title),
+                    subtitle: Text('${group.profileIds.length} серверов'),
+                  ),
+              ],
               const SizedBox(height: 16),
               Text('Серверы', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 6),
               for (final profile in widget.profiles)
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _members.contains(profile.id),
-                  onChanged: (value) {
-                    setState(() {
-                      if (value == true) {
-                        _members.add(profile.id);
-                      } else {
-                        _members.remove(profile.id);
-                      }
-                    });
+                Builder(
+                  builder: (context) {
+                    final inheritedFromGroup =
+                        _groupMemberIds.contains(profile.id);
+                    return CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: inheritedFromGroup || _members.contains(profile.id),
+                      onChanged: inheritedFromGroup
+                          ? null
+                          : (value) {
+                              setState(() {
+                                if (value == true) {
+                                  _members.add(profile.id);
+                                } else {
+                                  _members.remove(profile.id);
+                                }
+                              });
+                            },
+                      title: Text(profile.name),
+                      subtitle: Text(
+                        inheritedFromGroup
+                            ? 'Включён через папку · ${profile.endpoint}'
+                            : '${profile.endpoint} · '
+                                '${profile.latencyMs == null ? '- мс' : '${profile.latencyMs} мс'}',
+                      ),
+                    );
                   },
-                  title: Text(profile.name),
-                  subtitle: Text(
-                    '${profile.endpoint} · '
-                    '${profile.latencyMs == null ? '- мс' : '${profile.latencyMs} мс'}',
-                  ),
                 ),
             ],
           ),

@@ -168,6 +168,7 @@ class TunnelProfile {
     this.alpn = const [],
     this.allowInsecure = false,
     this.sourceLink = '',
+    this.groupName = '',
     this.latencyMs,
     PingStatus? pingStatus,
   }) : pingStatus = pingStatus ??
@@ -203,6 +204,10 @@ class TunnelProfile {
   final List<String> alpn;
   final bool allowInsecure;
   final String sourceLink;
+
+  /// Optional user-defined group. Subscription membership is tracked
+  /// separately by the subscription metadata and is not stored here.
+  final String groupName;
   final int? latencyMs;
   final PingStatus pingStatus;
 
@@ -258,6 +263,8 @@ class TunnelProfile {
     List<String>? alpn,
     bool? allowInsecure,
     String? sourceLink,
+    String? groupName,
+    bool clearGroup = false,
     int? latencyMs,
     PingStatus? pingStatus,
     bool clearLatency = false,
@@ -294,6 +301,7 @@ class TunnelProfile {
       alpn: alpn ?? this.alpn,
       allowInsecure: allowInsecure ?? this.allowInsecure,
       sourceLink: sourceLink ?? this.sourceLink,
+      groupName: clearGroup ? '' : (groupName ?? this.groupName),
       latencyMs: nextLatency,
       pingStatus: nextPingStatus,
     );
@@ -327,6 +335,7 @@ class TunnelProfile {
         'alpn': alpn,
         'allowInsecure': allowInsecure,
         'sourceLink': sourceLink,
+        if (groupName.isNotEmpty) 'groupName': groupName,
         'latencyMs': latencyMs,
         'pingStatus': pingStatus.storageValue,
       };
@@ -416,6 +425,7 @@ class TunnelProfile {
       alpn: alpn,
       allowInsecure: boolValue('allowInsecure'),
       sourceLink: stringValue('sourceLink'),
+      groupName: stringValue('groupName').trim(),
       latencyMs: pingStatus == PingStatus.success ? parsedLatency : null,
       pingStatus: pingStatus,
     );
@@ -427,6 +437,7 @@ class BalancerProfile {
     required this.id,
     required this.name,
     required this.memberIds,
+    this.memberGroupKeys = const [],
     this.strategy = BalancerStrategy.leastPing,
     this.probeUrl = 'https://www.gstatic.com/generate_204',
     this.probeIntervalSeconds = 30,
@@ -439,7 +450,11 @@ class BalancerProfile {
 
   final String id;
   final String name;
+  /// Individually selected profiles. Group-backed members are resolved by
+  /// [ProfilesController] at runtime so subscription/group changes are picked
+  /// up without editing the balancer.
   final List<String> memberIds;
+  final List<String> memberGroupKeys;
   final BalancerStrategy strategy;
   final String probeUrl;
   final int probeIntervalSeconds;
@@ -463,6 +478,7 @@ class BalancerProfile {
     String? id,
     String? name,
     List<String>? memberIds,
+    List<String>? memberGroupKeys,
     BalancerStrategy? strategy,
     String? probeUrl,
     int? probeIntervalSeconds,
@@ -473,6 +489,7 @@ class BalancerProfile {
       id: id ?? this.id,
       name: name ?? this.name,
       memberIds: memberIds ?? this.memberIds,
+      memberGroupKeys: memberGroupKeys ?? this.memberGroupKeys,
       strategy: strategy ?? this.strategy,
       probeUrl: probeUrl ?? this.probeUrl,
       probeIntervalSeconds: probeIntervalSeconds ?? this.probeIntervalSeconds,
@@ -485,6 +502,7 @@ class BalancerProfile {
         'id': id,
         'name': name,
         'memberIds': memberIds,
+        if (memberGroupKeys.isNotEmpty) 'memberGroupKeys': memberGroupKeys,
         'strategy': strategy.storageValue,
         'probeUrl': probeUrl,
         'probeIntervalSeconds': probeIntervalSeconds,
@@ -501,8 +519,19 @@ class BalancerProfile {
             .where((value) => value.isNotEmpty)
             .toList(growable: false)
         : const <String>[];
+    final rawGroups = json['memberGroupKeys'];
+    final memberGroupKeys = rawGroups is List
+        ? rawGroups
+            .whereType<String>()
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+        : const <String>[];
     final interval = (json['probeIntervalSeconds'] as num?)?.toInt() ?? 30;
-    if (id.isEmpty || name.isEmpty || members.length < 2) {
+    if (id.isEmpty ||
+        name.isEmpty ||
+        (members.isEmpty && memberGroupKeys.isEmpty)) {
       throw const FormatException('Некорректный балансировщик');
     }
     final fallbackTarget = (json['fallbackTarget'] as String?)?.trim();
@@ -510,6 +539,7 @@ class BalancerProfile {
       id: id,
       name: name,
       memberIds: members,
+      memberGroupKeys: memberGroupKeys,
       strategy: BalancerStrategy.fromStorageValue(json['strategy'] as String?),
       probeUrl: (json['probeUrl'] as String? ??
               'https://www.gstatic.com/generate_204')
