@@ -58,7 +58,11 @@ void main() {
       name: 'Example',
       profileIds: ['one', 'two'],
       updateIntervalHours: 12,
-      userInfo: 'download=1; total=2',
+      userInfo: 'upload=1; download=2; total=10; expire=2000000000',
+      supportUrl: 'https://support.example/help',
+      webPageUrl: 'https://panel.example/user',
+      announce: 'Maintenance tonight',
+      lastMetadataCheckEpochMs: 123456,
       notices: ['Осталось: 23 дня'],
     );
 
@@ -69,6 +73,12 @@ void main() {
     expect(restored.url, subscription.url);
     expect(restored.profileIds, ['one', 'two']);
     expect(restored.updateIntervalHours, 12);
+    expect(restored.supportUrl, 'https://support.example/help');
+    expect(restored.webPageUrl, 'https://panel.example/user');
+    expect(restored.announce, 'Maintenance tonight');
+    expect(restored.lastMetadataCheckEpochMs, 123456);
+    expect(restored.parsedUserInfo?.usedBytes, 3);
+    expect(restored.parsedUserInfo?.remainingBytes, 7);
     expect(restored.notices, ['Осталось: 23 дня']);
   });
 

@@ -100,8 +100,11 @@ class ProfilesController extends ChangeNotifier {
   bool _refreshingLatency = false;
   bool _refreshingSubscriptions = false;
   bool _autoRefreshInFlight = false;
+  bool _metadataRefreshInFlight = false;
   final Set<String> _refreshingSubscriptionIds = <String>{};
   final Map<String, int> _lastAutoRefreshAttemptEpochMs = <String, int>{};
+  final Map<String, int> _lastMetadataRefreshAttemptEpochMs = <String, int>{};
+  final Set<String> _metadataHeadUnsupportedIds = <String>{};
   bool _disposed = false;
 
   static Future<ProfilesController> load({
@@ -331,6 +334,43 @@ class ProfilesController extends ChangeNotifier {
     await _repository.saveBalancers(_balancers);
   }
 
+  Future<void> reorderSubscriptions(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _subscriptions.length) return;
+    if (newIndex < 0 || newIndex >= _subscriptions.length || oldIndex == newIndex) {
+      return;
+    }
+    final moved = _subscriptions.removeAt(oldIndex);
+    _subscriptions.insert(newIndex, moved);
+
+    final subscriptionIds = <String>{
+      for (final subscription in _subscriptions) ...subscription.profileIds,
+    };
+    final slots = <int>[];
+    final profilesBySubscription = <String, List<TunnelProfile>>{
+      for (final subscription in _subscriptions) subscription.id: <TunnelProfile>[],
+    };
+    for (var index = 0; index < _profiles.length; index++) {
+      final profile = _profiles[index];
+      if (!subscriptionIds.contains(profile.id)) continue;
+      slots.add(index);
+      final owner = subscriptionForProfile(profile.id);
+      if (owner != null) profilesBySubscription[owner.id]!.add(profile);
+    }
+    final reorderedProfiles = <TunnelProfile>[
+      for (final subscription in _subscriptions)
+        ...profilesBySubscription[subscription.id]!,
+    ];
+    if (reorderedProfiles.length == slots.length) {
+      for (var index = 0; index < slots.length; index++) {
+        _profiles[slots[index]] = reorderedProfiles[index];
+      }
+    }
+
+    await _repository.saveProfiles(_profiles);
+    await _repository.saveSubscriptions(_subscriptions);
+    _notifyListeners();
+  }
+
   Future<void> reorderProfileGroups(
     List<String> sectionKeys,
     int oldIndex,
@@ -346,24 +386,22 @@ class ProfilesController extends ChangeNotifier {
     reorderedKeys.insert(newIndex, moved);
     final sectionKeySet = sectionKeys.toSet();
     final profilesBySection = <String, List<TunnelProfile>>{};
-    final outside = <TunnelProfile>[];
-    for (final profile in _profiles) {
+    final selectedSlots = <int>[];
+    for (var index = 0; index < _profiles.length; index++) {
+      final profile = _profiles[index];
       final key = profileGroupKey(profile.id);
-      if (!sectionKeySet.contains(key)) {
-        outside.add(profile);
-        continue;
-      }
+      if (!sectionKeySet.contains(key)) continue;
+      selectedSlots.add(index);
       profilesBySection.putIfAbsent(key, () => <TunnelProfile>[]).add(profile);
     }
 
-    if (outside.isNotEmpty) return;
     final reordered = <TunnelProfile>[
       for (final key in reorderedKeys) ...?profilesBySection[key],
     ];
-    if (reordered.length != _profiles.length) return;
-    _profiles
-      ..clear()
-      ..addAll(reordered);
+    if (reordered.length != selectedSlots.length) return;
+    for (var index = 0; index < selectedSlots.length; index++) {
+      _profiles[selectedSlots[index]] = reordered[index];
+    }
     await _repository.saveProfiles(_profiles);
     _notifyListeners();
   }
@@ -521,6 +559,95 @@ class ProfilesController extends ChangeNotifier {
     throw firstError ?? const FormatException('Не удалось прочитать подписку');
   }
 
+  Future<SubscriptionMetadataResult?> _loadSubscriptionMetadata(
+    String url,
+  ) async {
+    const userAgents = <String>[
+      'OrexRay/Subscription',
+      'v2rayN/7.15.2 OrexRay/Subscription',
+    ];
+    SubscriptionMetadataResult? firstResult;
+    FormatException? firstError;
+    for (final userAgent in userAgents) {
+      try {
+        final result = await _subscriptionSource.loadMetadataUrl(
+          url,
+          userAgent: userAgent,
+        );
+        firstResult ??= result;
+        if (result != null && !result.isEmpty) return result;
+      } on FormatException catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstResult != null) return firstResult;
+    if (firstError != null) throw firstError;
+    return null;
+  }
+
+  Future<int> refreshSubscriptionMetadataIfDue({
+    Duration minimumInterval = const Duration(minutes: 10),
+    DateTime? now,
+  }) async {
+    if (_disposed ||
+        _subscriptions.isEmpty ||
+        _metadataRefreshInFlight ||
+        minimumInterval <= Duration.zero) {
+      return 0;
+    }
+
+    _metadataRefreshInFlight = true;
+    final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    final intervalMs = minimumInterval.inMilliseconds;
+    var touched = 0;
+    var changed = false;
+    try {
+      for (final snapshot in List<ProxySubscription>.from(_subscriptions)) {
+        if (_disposed) break;
+        if (_refreshingSubscriptionIds.contains(snapshot.id) ||
+            _metadataHeadUnsupportedIds.contains(snapshot.id)) {
+          continue;
+        }
+        final lastCheck = snapshot.lastMetadataCheckEpochMs;
+        if (lastCheck != null && nowMs - lastCheck < intervalMs) continue;
+        final lastAttempt = _lastMetadataRefreshAttemptEpochMs[snapshot.id];
+        if (lastAttempt != null && nowMs - lastAttempt < intervalMs) continue;
+        _lastMetadataRefreshAttemptEpochMs[snapshot.id] = nowMs;
+
+        try {
+          final metadata = await _loadSubscriptionMetadata(snapshot.url);
+          if (metadata == null) _metadataHeadUnsupportedIds.add(snapshot.id);
+          if (_disposed) break;
+          final index = _subscriptions.indexWhere((item) => item.id == snapshot.id);
+          if (index < 0) continue;
+          final current = _subscriptions[index];
+          final title = metadata?.profileTitle?.trim();
+          _subscriptions[index] = current.copyWith(
+            name: title != null && title.isNotEmpty ? title : null,
+            lastMetadataCheckEpochMs: nowMs,
+            updateIntervalHours: metadata?.updateIntervalHours,
+            userInfo: metadata?.userInfo,
+            supportUrl: metadata?.supportUrl,
+            webPageUrl: metadata?.webPageUrl,
+            announce: metadata?.announce,
+          );
+          touched += 1;
+          changed = true;
+        } on Object {
+          // Metadata refresh is best-effort. A failed HEAD request must not
+          // affect the existing subscription or its server list.
+        }
+      }
+      if (changed) {
+        await _repository.saveSubscriptions(_subscriptions);
+        if (!_disposed) _notifyListeners();
+      }
+      return touched;
+    } finally {
+      _metadataRefreshInFlight = false;
+    }
+  }
+
   Future<List<SubscriptionSyncResult>> refreshSubscriptionsIfDue({
     required int minimumIntervalHours,
     DateTime? now,
@@ -593,6 +720,8 @@ class ProfilesController extends ChangeNotifier {
     if (index < 0) return;
     final subscription = _subscriptions[index];
     _lastAutoRefreshAttemptEpochMs.remove(subscription.id);
+    _lastMetadataRefreshAttemptEpochMs.remove(subscription.id);
+    _metadataHeadUnsupportedIds.remove(subscription.id);
     final removedIds = subscription.profileIds.toSet();
     final workingProfiles = List<TunnelProfile>.from(_profiles)
       ..removeWhere((profile) => removedIds.contains(profile.id));
@@ -699,16 +828,23 @@ class ProfilesController extends ChangeNotifier {
       Uri.tryParse(url)?.host,
       'Подписка',
     ]);
+    _metadataHeadUnsupportedIds.remove(id);
     final subscription = ProxySubscription(
       id: id,
       url: url,
       name: title,
       profileIds: List.unmodifiable(imported.map((profile) => profile.id)),
       lastUpdatedEpochMs: DateTime.now().millisecondsSinceEpoch,
+      lastMetadataCheckEpochMs: DateTime.now().millisecondsSinceEpoch,
       updateIntervalHours: fetched.updateIntervalHours ??
           parsed.updateIntervalHours ??
           existing?.updateIntervalHours,
       userInfo: fetched.userInfo ?? parsed.userInfo ?? existing?.userInfo ?? '',
+      supportUrl:
+          fetched.supportUrl ?? parsed.supportUrl ?? existing?.supportUrl ?? '',
+      webPageUrl:
+          fetched.webPageUrl ?? parsed.webPageUrl ?? existing?.webPageUrl ?? '',
+      announce: fetched.announce ?? parsed.announce ?? existing?.announce ?? '',
       notices: List.unmodifiable(parsed.notices),
     );
     final workingSubscriptions = List<ProxySubscription>.from(_subscriptions);

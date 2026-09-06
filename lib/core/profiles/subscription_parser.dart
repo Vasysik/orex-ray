@@ -11,6 +11,9 @@ class SubscriptionParseResult {
     this.profileTitle,
     this.userInfo,
     this.updateIntervalHours,
+    this.supportUrl,
+    this.webPageUrl,
+    this.announce,
     this.notices = const [],
   });
 
@@ -19,6 +22,9 @@ class SubscriptionParseResult {
   final String? profileTitle;
   final String? userInfo;
   final int? updateIntervalHours;
+  final String? supportUrl;
+  final String? webPageUrl;
+  final String? announce;
   final List<String> notices;
 }
 
@@ -64,6 +70,9 @@ class SubscriptionParser {
         profileTitle: metadata.profileTitle,
         userInfo: metadata.userInfo,
         updateIntervalHours: metadata.updateIntervalHours,
+        supportUrl: metadata.supportUrl ?? jsonResult.supportUrl,
+        webPageUrl: metadata.webPageUrl ?? jsonResult.webPageUrl,
+        announce: metadata.announce ?? jsonResult.announce,
         notices: jsonResult.notices,
       );
     }
@@ -76,6 +85,9 @@ class SubscriptionParser {
         profileTitle: metadata.profileTitle,
         userInfo: metadata.userInfo,
         updateIntervalHours: metadata.updateIntervalHours,
+        supportUrl: metadata.supportUrl ?? linkResult.supportUrl,
+        webPageUrl: metadata.webPageUrl ?? linkResult.webPageUrl,
+        announce: metadata.announce ?? linkResult.announce,
         notices: linkResult.notices,
       );
     }
@@ -91,6 +103,9 @@ class SubscriptionParser {
           userInfo: metadata.userInfo ?? nested.userInfo,
           updateIntervalHours:
               metadata.updateIntervalHours ?? nested.updateIntervalHours,
+          supportUrl: metadata.supportUrl ?? nested.supportUrl,
+          webPageUrl: metadata.webPageUrl ?? nested.webPageUrl,
+          announce: metadata.announce ?? nested.announce,
           notices: nested.notices,
         );
       }
@@ -143,6 +158,7 @@ class SubscriptionParser {
     final notices = <String>[];
     final seenIds = <String>{};
     final seenNotices = <String>{};
+    String? legacySupportUrl;
     var skipped = 0;
 
     for (final rawLine in const LineSplitter().convert(text)) {
@@ -161,6 +177,7 @@ class SubscriptionParser {
         if (_isInformationalProfile(profile)) {
           final notice = profile.name.trim();
           if (notice.isNotEmpty && seenNotices.add(notice)) notices.add(notice);
+          legacySupportUrl ??= _supportUrlFromNotice(notice);
           continue;
         }
         if (seenIds.add(profile.id)) profiles.add(profile);
@@ -172,6 +189,7 @@ class SubscriptionParser {
     return SubscriptionParseResult(
       profiles: List.unmodifiable(profiles),
       skippedUnsupported: skipped,
+      supportUrl: legacySupportUrl,
       notices: List.unmodifiable(notices),
     );
   }
@@ -183,10 +201,12 @@ class SubscriptionParser {
     final profiles = <TunnelProfile>[];
     final notices = <String>[];
     final seenNotices = <String>{};
+    String? legacySupportUrl;
     for (final profile in source) {
       if (_isInformationalProfile(profile)) {
         final notice = profile.name.trim();
         if (notice.isNotEmpty && seenNotices.add(notice)) notices.add(notice);
+        legacySupportUrl ??= _supportUrlFromNotice(notice);
       } else {
         profiles.add(profile);
       }
@@ -194,6 +214,7 @@ class SubscriptionParser {
     return SubscriptionParseResult(
       profiles: List.unmodifiable(profiles),
       skippedUnsupported: skippedUnsupported,
+      supportUrl: legacySupportUrl,
       notices: List.unmodifiable(notices),
     );
   }
@@ -234,6 +255,9 @@ class SubscriptionParser {
     String? title;
     String? userInfo;
     int? updateInterval;
+    String? supportUrl;
+    String? webPageUrl;
+    String? announce;
 
     for (final line in const LineSplitter().convert(text)) {
       final trimmed = line.trim();
@@ -256,6 +280,15 @@ class SubscriptionParser {
           final parsed = int.tryParse(value);
           if (parsed != null && parsed > 0) updateInterval = parsed;
           break;
+        case 'support-url':
+          supportUrl = _normalizedMetadataUrl(value);
+          break;
+        case 'profile-web-page-url':
+          webPageUrl = _normalizedMetadataUrl(value);
+          break;
+        case 'announce':
+          if (value.isNotEmpty) announce = value;
+          break;
       }
     }
 
@@ -264,7 +297,29 @@ class SubscriptionParser {
       profileTitle: title,
       userInfo: userInfo,
       updateIntervalHours: updateInterval,
+      supportUrl: supportUrl,
+      webPageUrl: webPageUrl,
+      announce: announce,
     );
+  }
+
+  String? _supportUrlFromNotice(String value) {
+    final match = RegExp(
+      r'(?:https?://)?(?:www\.)?t\.me/[A-Za-z0-9_+\-/]+',
+      caseSensitive: false,
+    ).firstMatch(value);
+    if (match == null) return null;
+    final raw = match.group(0)!;
+    return raw.startsWith('http') ? raw : 'https://$raw';
+  }
+
+  String? _normalizedMetadataUrl(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return null;
+    final uri = Uri.tryParse(raw);
+    if (uri == null || !uri.hasAuthority) return null;
+    if (uri.scheme != 'http' && uri.scheme != 'https') return null;
+    return uri.toString();
   }
 
   String? _decodeMetadataTitle(String value) {
@@ -292,10 +347,16 @@ class _SubscriptionMetadata {
     this.profileTitle,
     this.userInfo,
     this.updateIntervalHours,
+    this.supportUrl,
+    this.webPageUrl,
+    this.announce,
   });
 
   final String body;
   final String? profileTitle;
   final String? userInfo;
   final int? updateIntervalHours;
+  final String? supportUrl;
+  final String? webPageUrl;
+  final String? announce;
 }

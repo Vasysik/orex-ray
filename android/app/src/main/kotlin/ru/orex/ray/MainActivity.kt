@@ -7,6 +7,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
@@ -177,6 +178,26 @@ class MainActivity : FlutterActivity() {
                                 Log.e(TAG, "Could not start OrexRay", error)
                                 result.error(
                                     "start_failed",
+                                    error.message ?: error.javaClass.simpleName,
+                                    null,
+                                )
+                            }
+                    }
+
+                    "openExternalUrl" -> {
+                        val url = call.argument<String>("url")?.trim().orEmpty()
+                        val uri = runCatching { Uri.parse(url) }.getOrNull()
+                        if (uri == null || (uri.scheme != "http" && uri.scheme != "https")) {
+                            result.error("invalid_url", "Only HTTP/HTTPS URLs are allowed", null)
+                            return@setMethodCallHandler
+                        }
+                        runCatching {
+                            startActivity(Intent(Intent.ACTION_VIEW, uri))
+                        }
+                            .onSuccess { result.success(null) }
+                            .onFailure { error ->
+                                result.error(
+                                    "open_url_failed",
                                     error.message ?: error.javaClass.simpleName,
                                     null,
                                 )

@@ -16,6 +16,9 @@ void main() {
 #profile-title: Test VPN
 #profile-update-interval: 6
 #subscription-userinfo: upload=1; download=2; total=10; expire=0
+#support-url: https://support.example/help
+#profile-web-page-url: https://panel.example/user
+#announce: Maintenance tonight
 happ://routing/onadd/ignored
 $first
 $second
@@ -25,6 +28,9 @@ $second
     expect(result.profileTitle, 'Test VPN');
     expect(result.updateIntervalHours, 6);
     expect(result.userInfo, contains('total=10'));
+    expect(result.supportUrl, 'https://support.example/help');
+    expect(result.webPageUrl, 'https://panel.example/user');
+    expect(result.announce, 'Maintenance tonight');
     expect(result.skippedUnsupported, 1);
   });
 
@@ -62,11 +68,15 @@ $second
     const info =
         'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@localhost:80'
         '?encryption=none&security=none&type=tcp#📅 Осталось: 23 дня';
-    final result = const SubscriptionParser().parse('$info\n$first');
+    const support =
+        'vless://bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb@127.0.0.1:4444'
+        '?encryption=none&security=none&type=tcp#➡️ t.me/TestVpnBot';
+    final result = const SubscriptionParser().parse('$info\n$support\n$first');
 
     expect(result.profiles, hasLength(1));
     expect(result.profiles.single.name, 'One');
-    expect(result.notices, ['📅 Осталось: 23 дня']);
+    expect(result.notices, ['📅 Осталось: 23 дня', '➡️ t.me/TestVpnBot']);
+    expect(result.supportUrl, 'https://t.me/TestVpnBot');
   });
 
   test('rejects payload without supported nodes', () {

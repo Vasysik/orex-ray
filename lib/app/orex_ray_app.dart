@@ -74,7 +74,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     _syncPlatformStartupSettings();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncStatsUiActivity(WidgetsBinding.instance.lifecycleState);
-      _refreshSubscriptionsIfDue();
+      _refreshSubscriptionStateIfDue();
       // One event-driven reachability check for the currently selected target.
       // A VPN that is already running uses its effective Xray route instead of
       // opening a direct socket through the TUN.
@@ -97,7 +97,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     if (previousSubscriptionInterval != null &&
         previousSubscriptionInterval != subscriptionInterval &&
         subscriptionInterval > 0) {
-      _refreshSubscriptionsIfDue();
+      _refreshSubscriptionStateIfDue();
     }
 
     if (!Platform.isAndroid) return;
@@ -113,18 +113,26 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _syncStatsUiActivity(state);
     if (state == AppLifecycleState.resumed) {
-      _refreshSubscriptionsIfDue();
+      _refreshSubscriptionStateIfDue();
     }
   }
 
-  void _refreshSubscriptionsIfDue() {
+  void _refreshSubscriptionStateIfDue() {
+    if (widget.profiles.subscriptions.isEmpty) return;
+    unawaited(_refreshSubscriptionState());
+  }
+
+  Future<void> _refreshSubscriptionState() async {
     final intervalHours = widget.connectionSettings.subscriptionAutoUpdateHours;
-    if (intervalHours <= 0 || widget.profiles.subscriptions.isEmpty) return;
-    unawaited(
-      widget.profiles.refreshSubscriptionsIfDue(
+    if (intervalHours > 0) {
+      await widget.profiles.refreshSubscriptionsIfDue(
         minimumIntervalHours: intervalHours,
-      ),
-    );
+      );
+    }
+    // Full GET refreshes also stamp metadata time, so this HEAD pass becomes
+    // a no-op for subscriptions that were just updated. For the rest it is a
+    // lightweight way to keep quota/expiry/status fresh on foreground.
+    await widget.profiles.refreshSubscriptionMetadataIfDue();
   }
 
   void _syncStatsUiActivity(AppLifecycleState? state) {

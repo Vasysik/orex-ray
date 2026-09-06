@@ -201,6 +201,60 @@ void main() {
     );
   });
 
+  testWidgets('long press on a group selects its profiles and keeps balancers visible',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    final first = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@one.example:443?encryption=none&security=none&type=tcp#One-group',
+    );
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@two.example:443?encryption=none&security=none&type=tcp#Two-group',
+    );
+    await profiles.setProfilesGroup([first.id, second.id], 'Работа');
+    await profiles.saveBalancer(
+      name: 'Pool-visible',
+      memberIds: [first.id],
+      strategy: BalancerStrategy.random,
+      probeUrl: 'https://www.gstatic.com/generate_204',
+      probeIntervalSeconds: 30,
+    );
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('Работа'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ВЫДЕЛЕНО'), findsOneWidget);
+    expect(find.text('Pool-visible'), findsOneWidget);
+    final checked = tester
+        .widgetList<Checkbox>(find.byType(Checkbox))
+        .where((checkbox) => checkbox.value == true)
+        .length;
+    expect(checked, greaterThanOrEqualTo(3));
+  });
+
   testWidgets('profile tab switches target while VPN is active',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

@@ -24,6 +24,93 @@ import '../network/network_screen.dart';
 import '../profiles/profiles_screen.dart';
 import '../settings/more_screen.dart';
 
+
+class _DesktopNavDestination {
+  const _DesktopNavDestination(this.icon, this.label);
+
+  final IconData icon;
+  final String label;
+}
+
+class _DesktopSideNavigation extends StatelessWidget {
+  const _DesktopSideNavigation({
+    required this.selectedIndex,
+    required this.destinations,
+    required this.onSelected,
+  });
+
+  final int selectedIndex;
+  final List<_DesktopNavDestination> destinations;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      itemCount: destinations.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 4),
+      itemBuilder: (context, index) {
+        final destination = destinations[index];
+        final selected = index == selectedIndex;
+        return Semantics(
+          button: true,
+          selected: selected,
+          label: destination.label,
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              key: ValueKey('desktop-nav-${destination.label}'),
+              onTap: () => onSelected(index),
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 58,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? OrexColors.copper.withValues(alpha: 0.14)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        destination.icon,
+                        size: 23,
+                        color: selected
+                            ? OrexColors.copper
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        destination.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: selected
+                                  ? OrexColors.copper
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                              fontWeight:
+                                  selected ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
@@ -141,48 +228,18 @@ class _AppShellState extends State<AppShell> {
                 final desktopPages = [
                   for (final pageIndex in desktopPageIndices) pages[pageIndex],
                 ];
-                final desktopDestinations = <NavigationRailDestination>[
-                  const NavigationRailDestination(
-                    icon: Icon(Icons.power_settings_new_rounded),
-                    label: Text('Главная'),
-                  ),
-                  const NavigationRailDestination(
-                    icon: Icon(Icons.storage_rounded),
-                    label: Text('Профили'),
-                  ),
-                  const NavigationRailDestination(
-                    icon: Icon(Icons.route_rounded),
-                    label: Text('Подключение'),
-                  ),
+                final desktopDestinations = <_DesktopNavDestination>[
+                  const _DesktopNavDestination(Icons.power_settings_new_rounded, 'Главная'),
+                  const _DesktopNavDestination(Icons.storage_rounded, 'Профили'),
+                  const _DesktopNavDestination(Icons.route_rounded, 'Подключение'),
                   if (!Platform.isWindows)
-                    const NavigationRailDestination(
-                      icon: Icon(Icons.apps_rounded),
-                      label: Text('Приложения'),
-                    ),
-                  const NavigationRailDestination(
-                    icon: Icon(Icons.public_rounded),
-                    label: Text('Сеть'),
-                  ),
-                  const NavigationRailDestination(
-                    icon: Icon(Icons.travel_explore_rounded),
-                    label: Text('GeoData'),
-                  ),
-                  const NavigationRailDestination(
-                    icon: Icon(Icons.battery_saver_rounded),
-                    label: Text('Фон'),
-                  ),
-                  const NavigationRailDestination(
-                    icon: Icon(Icons.palette_outlined),
-                    label: Text('Интерфейс'),
-                  ),
-                  const NavigationRailDestination(
-                    icon: Icon(Icons.monitor_heart_outlined),
-                    label: Text('Диагностика'),
-                  ),
-                  const NavigationRailDestination(
-                    icon: Icon(Icons.info_outline_rounded),
-                    label: Text('О приложении'),
-                  ),
+                    const _DesktopNavDestination(Icons.apps_rounded, 'Приложения'),
+                  const _DesktopNavDestination(Icons.public_rounded, 'Сеть'),
+                  const _DesktopNavDestination(Icons.travel_explore_rounded, 'GeoData'),
+                  const _DesktopNavDestination(Icons.battery_saver_rounded, 'Фон'),
+                  const _DesktopNavDestination(Icons.palette_outlined, 'Интерфейс'),
+                  const _DesktopNavDestination(Icons.monitor_heart_outlined, 'Диагностика'),
+                  const _DesktopNavDestination(Icons.info_outline_rounded, 'О приложении'),
                 ];
                 return Padding(
                   padding: const EdgeInsets.all(12),
@@ -192,13 +249,11 @@ class _AppShellState extends State<AppShell> {
                         borderRadius: 24,
                         child: SizedBox(
                           width: 132,
-                          child: NavigationRail(
+                          child: _DesktopSideNavigation(
                             selectedIndex: desktopIndex,
-                            onDestinationSelected: (value) =>
-                                _selectPage(desktopPageIndices[value]),
-                            labelType: NavigationRailLabelType.all,
-                            groupAlignment: -0.85,
                             destinations: desktopDestinations,
+                            onSelected: (value) =>
+                                _selectPage(desktopPageIndices[value]),
                           ),
                         ),
                       ),

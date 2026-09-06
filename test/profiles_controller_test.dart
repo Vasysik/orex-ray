@@ -274,6 +274,58 @@ void main() {
     expect(profiles.profiles.single.name, 'Two');
   });
 
+  test('foreground metadata refresh uses HEAD data without replacing servers', () async {
+    SharedPreferences.setMockInitialValues({});
+    const first =
+        'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
+        '?encryption=none&security=none&type=tcp#One';
+    final source = _SequenceSubscriptionSource(
+      [
+        const SubscriptionFetchResult(
+          body: first,
+          userInfo: 'download=10; total=100',
+        ),
+      ],
+      metadataResponses: const [
+        SubscriptionMetadataResult(
+          userInfo: 'upload=10; download=20; total=100; expire=2000000000',
+          supportUrl: 'https://support.example/help',
+          webPageUrl: 'https://panel.example/user',
+        ),
+      ],
+    );
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+
+    await profiles.importSubscription('https://sub.example/metadata');
+    final imported = profiles.subscriptions.single;
+    final checkedAt = DateTime.fromMillisecondsSinceEpoch(
+      imported.lastMetadataCheckEpochMs!,
+    );
+
+    expect(
+      await profiles.refreshSubscriptionMetadataIfDue(
+        now: checkedAt.add(const Duration(minutes: 11)),
+      ),
+      1,
+    );
+    expect(profiles.profiles.single.name, 'One');
+    expect(profiles.subscriptions.single.parsedUserInfo?.usedBytes, 30);
+    expect(
+      profiles.subscriptions.single.supportUrl,
+      'https://support.example/help',
+    );
+    expect(source.metadataUserAgents, ['OrexRay/Subscription']);
+
+    expect(
+      await profiles.refreshSubscriptionMetadataIfDue(
+        now: checkedAt.add(const Duration(minutes: 15)),
+      ),
+      0,
+    );
+    expect(source.metadataUserAgents, hasLength(1));
+  });
+
   test('subscription retries once with a v2rayN-compatible user agent', () async {
     SharedPreferences.setMockInitialValues({});
     const subscribed =
@@ -292,6 +344,35 @@ void main() {
     expect(source.userAgents.first, 'OrexRay/Subscription');
     expect(source.userAgents.last, startsWith('v2rayN/'));
     expect(profiles.profiles.single.name, 'Fallback');
+  });
+
+  test('subscription groups can be reordered and persist', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load(
+      subscriptionSource: _SequenceSubscriptionSource([
+        const SubscriptionFetchResult(
+          body: 'vless://11111111-1111-4111-8111-111111111111@one.example:443?encryption=none&security=none&type=tcp#One',
+          profileTitle: 'First',
+        ),
+        const SubscriptionFetchResult(
+          body: 'vless://22222222-2222-4222-8222-222222222222@two.example:443?encryption=none&security=none&type=tcp#Two',
+          profileTitle: 'Second',
+        ),
+      ]),
+    );
+    await profiles.importSubscription('https://first.example/sub');
+    await profiles.importSubscription('https://second.example/sub');
+    final before = profiles.subscriptions.map((item) => item.id).toList();
+    expect(before, hasLength(2));
+
+    await profiles.reorderSubscriptions(0, 1);
+    final after = profiles.subscriptions.map((item) => item.id).toList();
+    expect(after, [before[1], before[0]]);
+    profiles.dispose();
+
+    final restored = await ProfilesController.load();
+    addTearDown(restored.dispose);
+    expect(restored.subscriptions.map((item) => item.id).toList(), after);
   });
 
   test('deleting a subscription keeps manually imported profiles', () async {
@@ -612,6 +693,43 @@ void main() {
     );
   });
 
+  test('manual group reorder preserves subscription-owned profiles', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load(
+      subscriptionSource: _SequenceSubscriptionSource([
+        const SubscriptionFetchResult(
+          body: 'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@sub.example:443?encryption=none&security=none&type=tcp#Sub',
+          profileTitle: 'Subscription',
+        ),
+      ]),
+    );
+    addTearDown(profiles.dispose);
+    await profiles.importSubscription('https://sub.example/list');
+    final first = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@one.example:443?encryption=none&security=none&type=tcp#One',
+    );
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@two.example:443?encryption=none&security=none&type=tcp#Two',
+    );
+    await profiles.setProfilesGroup([first.id], 'A');
+    await profiles.setProfilesGroup([second.id], 'B');
+    final manualKeys = profiles.profileGroups
+        .where((group) => group.isManualGroup)
+        .map((group) => group.key)
+        .toList();
+    expect(manualKeys, hasLength(2));
+    final subscribedId = profiles.subscriptions.single.profileIds.single;
+
+    await profiles.reorderProfileGroups(manualKeys, 0, 1);
+
+    final afterManual = profiles.profileGroups
+        .where((group) => group.isManualGroup)
+        .map((group) => group.key)
+        .toList();
+    expect(afterManual, [manualKeys[1], manualKeys[0]]);
+    expect(profiles.targetById(subscribedId), isNotNull);
+  });
+
   test('reorders profiles only inside the requested group scope', () async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();
@@ -835,11 +953,17 @@ void main() {
 }
 
 class _SequenceSubscriptionSource extends SubscriptionSource {
-  _SequenceSubscriptionSource(this.responses);
+  _SequenceSubscriptionSource(
+    this.responses, {
+    this.metadataResponses = const [],
+  });
 
   final List<SubscriptionFetchResult> responses;
+  final List<SubscriptionMetadataResult?> metadataResponses;
   final List<String> userAgents = <String>[];
+  final List<String> metadataUserAgents = <String>[];
   int _index = 0;
+  int _metadataIndex = 0;
 
   @override
   Future<SubscriptionFetchResult> loadUrl(
@@ -851,6 +975,16 @@ class _SequenceSubscriptionSource extends SubscriptionSource {
       throw StateError('No subscription response left for $value');
     }
     return responses[_index++];
+  }
+
+  @override
+  Future<SubscriptionMetadataResult?> loadMetadataUrl(
+    String value, {
+    String userAgent = 'OrexRay/Subscription',
+  }) async {
+    metadataUserAgents.add(userAgent);
+    if (_metadataIndex >= metadataResponses.length) return null;
+    return metadataResponses[_metadataIndex++];
   }
 }
 

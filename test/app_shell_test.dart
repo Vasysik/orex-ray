@@ -89,6 +89,69 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 20)),
   );
+  testWidgets('desktop sidebar hitboxes match their visible fixed rows', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final theme = await ThemeController.load();
+    final appRouting = await AppRoutingController.load();
+    final geoData = (await tester.runAsync(
+      () => GeoDataController.load(directoryOverride: Directory.current),
+    ))!;
+    final tunnel = TunnelController(
+      engine: const _TestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() async {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+      theme.dispose();
+      appRouting.dispose();
+      geoData.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: AppShell(
+          tunnel: tunnel,
+          profiles: profiles,
+          theme: theme,
+          settings: settings,
+          appRouting: appRouting,
+          geoData: geoData,
+          appVersion: OrexAppVersion.fallback,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final home = find.byKey(const ValueKey('desktop-nav-Главная'));
+    final profilesNav = find.byKey(const ValueKey('desktop-nav-Профили'));
+    expect(home, findsOneWidget);
+    expect(profilesNav, findsOneWidget);
+    expect(tester.getRect(home).height, 58);
+    expect(tester.getRect(profilesNav).height, 58);
+    expect(
+      tester.getRect(profilesNav).top - tester.getRect(home).bottom,
+      4,
+    );
+
+    await tester.tap(profilesNav);
+    await tester.pump();
+    expect(find.text('Серверы, пинг и балансировщики Xray'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
 }
 
 Future<void> _tapMobileTab(WidgetTester tester, String label) async {
