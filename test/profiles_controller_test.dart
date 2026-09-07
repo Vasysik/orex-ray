@@ -378,6 +378,37 @@ vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443?encryption=none&sec
     expect(source.metadataUserAgents, hasLength(1));
   });
 
+  test('manual metadata refresh performs HEAD without replacing servers', () async {
+    SharedPreferences.setMockInitialValues({});
+    const first =
+        'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
+        '?encryption=none&security=none&type=tcp#One';
+    final source = _SequenceSubscriptionSource(
+      [const SubscriptionFetchResult(body: first)],
+      metadataResponses: const [
+        SubscriptionMetadataResult(
+          profileTitle: 'Fresh title',
+          userInfo: 'download=25; total=100',
+        ),
+      ],
+    );
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+
+    await profiles.importSubscription('https://sub.example/manual-metadata');
+    final profileId = profiles.profiles.single.id;
+    final updated = await profiles.refreshSubscriptionMetadata(
+      profiles.subscriptions.single.id,
+    );
+
+    expect(updated, isTrue);
+    expect(profiles.profiles.single.id, profileId);
+    expect(profiles.profiles.single.name, 'One');
+    expect(profiles.subscriptions.single.name, 'Fresh title');
+    expect(profiles.subscriptions.single.parsedUserInfo?.usedBytes, 25);
+    expect(source.metadataUserAgents, ['OrexRay/Subscription']);
+  });
+
   test('subscription retries once with a v2rayN-compatible user agent', () async {
     SharedPreferences.setMockInitialValues({});
     const subscribed =
@@ -654,6 +685,37 @@ vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443?encryption=none&sec
     );
 
     expect(profiles.targetById(balancer.id)?.profiles.single.id, first.id);
+  });
+
+  test('ungrouped Servers folder is a dynamic balancer source', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+    final first = await profiles.importVlessLink(link);
+    final servers = profiles.profileGroups.singleWhere(
+      (group) => group.key == 'manual:ungrouped',
+    );
+    expect(servers.isManualFolder, isTrue);
+    expect(servers.isManualGroup, isFalse);
+
+    final balancer = await profiles.saveBalancer(
+      name: 'Servers pool',
+      memberIds: const [],
+      memberGroupKeys: [servers.key],
+      strategy: BalancerStrategy.random,
+      probeUrl: 'https://www.gstatic.com/generate_204',
+      probeIntervalSeconds: 30,
+    );
+    expect(profiles.targetById(balancer.id)?.profiles.map((e) => e.id), [first.id]);
+
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@second.example:443'
+      '?encryption=none&security=none&type=tcp#Second',
+    );
+    expect(
+      profiles.targetById(balancer.id)?.profiles.map((e) => e.id).toSet(),
+      {first.id, second.id},
+    );
   });
 
   test('balancer supports one profile and dynamic folder membership', () async {

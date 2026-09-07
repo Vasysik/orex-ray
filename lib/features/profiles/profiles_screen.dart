@@ -179,6 +179,35 @@ class ProfilesScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _refreshSubscriptionMetadata(
+    BuildContext context,
+    ProxySubscription subscription,
+  ) async {
+    try {
+      final updated = await profiles.refreshSubscriptionMetadata(subscription.id);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            updated
+                ? 'Метаданные «${subscription.name}» обновлены'
+                : 'Провайдер не вернул метаданные через HEAD',
+          ),
+        ),
+      );
+    } on FormatException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message.toString())),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось обновить метаданные: $error')),
+      );
+    }
+  }
+
   Future<void> _deleteSubscription(
     BuildContext context,
     ProxySubscription subscription,
@@ -1109,6 +1138,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                   final card = _SubscriptionCard(
                     subscription: subscription,
                     refreshing: profiles.subscriptionRefreshing(subscription.id),
+                    metadataRefreshing:
+                        profiles.subscriptionMetadataRefreshing(subscription.id),
                     expanded: expanded,
                     selectedCount: selectedCount,
                     selectionMode: _selectingSubscriptions,
@@ -1124,6 +1155,11 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                         ? null
                         : () => _toggleSection(section, activeTarget?.id),
                     onRefresh: () => widget.owner._refreshSubscription(
+                      context,
+                      subscription,
+                    ),
+                    onRefreshMetadata: () =>
+                        widget.owner._refreshSubscriptionMetadata(
                       context,
                       subscription,
                     ),
@@ -2022,6 +2058,7 @@ class _SubscriptionCard extends StatelessWidget {
   const _SubscriptionCard({
     required this.subscription,
     required this.refreshing,
+    required this.metadataRefreshing,
     required this.expanded,
     required this.selectedCount,
     required this.selectionMode,
@@ -2029,6 +2066,7 @@ class _SubscriptionCard extends StatelessWidget {
     required this.onExpandToggle,
     required this.onLongPress,
     required this.onRefresh,
+    required this.onRefreshMetadata,
     required this.onDelete,
     required this.onCopyUrl,
     required this.onExportServers,
@@ -2038,6 +2076,7 @@ class _SubscriptionCard extends StatelessWidget {
 
   final ProxySubscription subscription;
   final bool refreshing;
+  final bool metadataRefreshing;
   final bool expanded;
   final int selectedCount;
   final bool selectionMode;
@@ -2045,6 +2084,7 @@ class _SubscriptionCard extends StatelessWidget {
   final VoidCallback? onExpandToggle;
   final VoidCallback? onLongPress;
   final VoidCallback onRefresh;
+  final VoidCallback onRefreshMetadata;
   final VoidCallback onDelete;
   final VoidCallback onCopyUrl;
   final VoidCallback onExportServers;
@@ -2060,13 +2100,12 @@ class _SubscriptionCard extends StatelessWidget {
     final fullySelected = count > 0 && selectedCount == count;
     final userInfo = subscription.parsedUserInfo;
     final rawNotices = subscription.notices.take(3).toList(growable: false);
-    final summaryLine = [
+    final summaryItems = <String>[
       '$count серверов',
       host,
       if (subscription.lastUpdatedEpochMs case final updated?)
         _relativeSubscriptionUpdate(updated),
-    ].join(' · ');
-    final rawInfoLine = rawNotices.join(' · ');
+    ];
     final hasUsageMetadata = userInfo != null &&
         (userInfo.totalBytes != null || userInfo.expiresAt != null);
 
@@ -2077,29 +2116,31 @@ class _SubscriptionCard extends StatelessWidget {
         blur: 16,
         tint: selectedCount > 0 ? OrexColors.copper : null,
         opacity: selectedCount > 0 ? 0.24 : 0.42,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              onTap: onToggle,
-              onLongPress: onLongPress,
-              leading: const Icon(
-                Icons.cloud_sync_outlined,
-                color: OrexColors.copper,
-              ),
-              title: Text(
-                subscription.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                summaryLine,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: Row(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onToggle,
+          onLongPress: onLongPress,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                leading: const Icon(
+                  Icons.cloud_sync_outlined,
+                  color: OrexColors.copper,
+                ),
+                title: Text(
+                  subscription.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: _DotSeparatedText(
+                  items: summaryItems,
+                  maxLines: 2,
+                  style: null,
+                ),
+                trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (selectionMode)
@@ -2110,8 +2151,9 @@ class _SubscriptionCard extends StatelessWidget {
                     )
                   else ...[
                     IconButton(
-                      tooltip: 'Обновить подписку',
-                      onPressed: refreshing ? null : onRefresh,
+                      tooltip: 'Обновить серверы подписки',
+                      onPressed:
+                          refreshing || metadataRefreshing ? null : onRefresh,
                       icon: refreshing
                           ? const SizedBox(
                               width: 18,
@@ -2120,9 +2162,22 @@ class _SubscriptionCard extends StatelessWidget {
                             )
                           : const Icon(Icons.refresh_rounded),
                     ),
+                    IconButton(
+                      tooltip: 'Обновить метаданные',
+                      onPressed: refreshing || metadataRefreshing
+                          ? null
+                          : onRefreshMetadata,
+                      icon: metadataRefreshing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.info_outline_rounded),
+                    ),
                     PopupMenuButton<String>(
                       tooltip: 'Действия подписки',
-                      enabled: !refreshing,
+                      enabled: !refreshing && !metadataRefreshing,
                       onSelected: (value) {
                         if (value == 'copy-url') onCopyUrl();
                         if (value == 'export-json') onExportServers();
@@ -2169,13 +2224,14 @@ class _SubscriptionCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (rawInfoLine.isNotEmpty)
+            if (rawNotices.isNotEmpty || subscription.announce.isNotEmpty)
+              const Divider(height: 1, indent: 16, endIndent: 16),
+            if (rawNotices.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Text(
-                  rawInfoLine,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                child: _DotSeparatedText(
+                  items: rawNotices,
                   maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -2201,9 +2257,87 @@ class _SubscriptionCard extends StatelessWidget {
                 ),
               ),
             ],
-          ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _DotSeparatedText extends StatelessWidget {
+  const _DotSeparatedText({
+    required this.items,
+    required this.style,
+    this.maxLines = 2,
+  });
+
+  final List<String> items;
+  final TextStyle? style;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanItems = items
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+    if (cleanItems.isEmpty) return const SizedBox.shrink();
+
+    final effectiveStyle = style ?? DefaultTextStyle.of(context).style;
+    final direction = Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    double widthOf(String value) {
+      final painter = TextPainter(
+        text: TextSpan(text: value, style: effectiveStyle),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      return painter.width;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) {
+          return Text(cleanItems.join(' · '), style: effectiveStyle);
+        }
+        final lines = <List<String>>[];
+        var current = <String>[];
+        var consumed = 0;
+        for (final item in cleanItems) {
+          final candidate = [...current, item];
+          if (current.isNotEmpty &&
+              widthOf(candidate.join(' · ')) > constraints.maxWidth) {
+            lines.add(current);
+            if (lines.length >= maxLines) break;
+            current = <String>[item];
+          } else {
+            current = candidate;
+          }
+          consumed += 1;
+        }
+        if (lines.length < maxLines && current.isNotEmpty) {
+          lines.add(current);
+        }
+        final displayed = lines.fold<int>(0, (sum, line) => sum + line.length);
+        final truncated =
+            displayed < cleanItems.length || consumed < cleanItems.length;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var index = 0; index < lines.length; index++)
+              Text(
+                '${lines[index].join(' · ')}${truncated && index == lines.length - 1 ? ' …' : ''}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: effectiveStyle,
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -3307,15 +3441,6 @@ class _BalancerDialogState extends State<_BalancerDialog> {
         knownProfileFallback) {
       _fallbackValue = fallback!;
     }
-    for (final group in widget.groups) {
-      if (_memberGroups.contains(group.key) ||
-          group.profileIds.any(_members.contains)) {
-        _expandedGroups.add(group.key);
-      }
-    }
-    if (_expandedGroups.isEmpty && widget.groups.isNotEmpty) {
-      _expandedGroups.add(widget.groups.first.key);
-    }
   }
 
   @override
@@ -3326,11 +3451,11 @@ class _BalancerDialogState extends State<_BalancerDialog> {
   }
 
   List<ProfileGroupInfo> get _selectableGroups => widget.groups
-      .where((group) => group.isManualGroup || group.isSubscription)
+      .where((group) => group.isManualFolder || group.isSubscription)
       .toList(growable: false);
 
   bool _canSelectWholeGroup(ProfileGroupInfo group) =>
-      group.isManualGroup || group.isSubscription;
+      group.isManualFolder || group.isSubscription;
 
   Set<String> get _groupMemberIds => {
         for (final group in _selectableGroups)
@@ -3483,7 +3608,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                   leading: Icon(
                     group.isSubscription
                         ? Icons.cloud_sync_outlined
-                        : group.isManualGroup
+                        : group.isManualFolder
                             ? Icons.folder_outlined
                             : Icons.folder_open_outlined,
                     color: OrexColors.copper,

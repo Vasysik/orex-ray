@@ -54,6 +54,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
         const val EXTRA_PING_STATUS = "ping_status"
         const val EXTRA_LATENCY_PROBE_URL = "latency_probe_url"
         const val EXTRA_STATS_OUTBOUND_TAGS = "stats_outbound_tags"
+        const val EXTRA_STATS_OUTBOUND_PROFILE_IDS = "stats_outbound_profile_ids"
         const val EXTRA_MTU = "vpn_mtu"
         const val EXTRA_DNS_SERVERS = "vpn_dns_servers"
         const val EXTRA_SOCKS_PORT = "socks_port"
@@ -110,7 +111,11 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
     }
 
-    private data class TrafficDelta(val download: Long, val upload: Long)
+    private data class TrafficDelta(
+        val download: Long,
+        val upload: Long,
+        val activeProfileId: String? = null,
+    )
     private data class PingMeasurement(val latencyMs: Int?, val status: String)
 
     private val worker = Executors.newSingleThreadScheduledExecutor()
@@ -144,6 +149,8 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     @Volatile
     private var activeLatencyProbeUrl = DEFAULT_LATENCY_PROBE_URL
     private var activeStatsOutboundTags = listOf("proxy")
+    private var activeStatsOutboundProfileIds = emptyList<String>()
+    private var activeBalancerMemberId: String? = null
     private var activeMtu = 1500
     private var activeDnsServers = emptyList<String>()
     private var activeSocksPort = 20808
@@ -430,6 +437,15 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     ?.distinct()
                     .orEmpty()
                     .ifEmpty { listOf("proxy") }
+                activeStatsOutboundProfileIds = commandIntent
+                    .getStringArrayListExtra(EXTRA_STATS_OUTBOUND_PROFILE_IDS)
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+                    .orEmpty()
+                if (activeStatsOutboundProfileIds.size != activeStatsOutboundTags.size) {
+                    activeStatsOutboundProfileIds = emptyList()
+                }
+                activeBalancerMemberId = null
                 activeMtu = commandIntent.getIntExtra(EXTRA_MTU, 1500).coerceIn(1280, 9000)
                 activeDnsServers = commandIntent.getStringArrayListExtra(EXTRA_DNS_SERVERS)
                     ?.filter { it.isNotBlank() }
@@ -659,6 +675,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 durationSeconds = elapsedSeconds(),
                 latencyMs = activeLatencyMs,
                 pingStatus = activePingStatus,
+                activeBalancerMemberId = activeBalancerMemberId,
             )
         }
         if (!stopping && activeStartIntent != null) {
@@ -711,6 +728,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             uploadBytes = 0
             downloadBytesPerSecond = 0
             uploadBytesPerSecond = 0
+            activeBalancerMemberId = null
             startedAtElapsedMs = 0
             lastStatsSampleElapsedMs = SystemClock.elapsedRealtime()
 
@@ -939,6 +957,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     return@scheduleAtFixedRate
                 }
                 val delta = queryTrafficDelta(controller)
+                if (delta.activeProfileId != null) {
+                    activeBalancerMemberId = delta.activeProfileId
+                }
                 val now = SystemClock.elapsedRealtime()
                 val elapsedMs = if (lastStatsSampleElapsedMs > 0L) {
                     (now - lastStatsSampleElapsedMs).coerceAtLeast(1L)
@@ -994,15 +1015,26 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     private fun queryTrafficDelta(controller: CoreController): TrafficDelta {
         var download = 0L
         var upload = 0L
-        activeStatsOutboundTags.forEach { tag ->
-            download += runCatching {
+        var busiestBytes = 0L
+        var busiestProfileId: String? = null
+        activeStatsOutboundTags.forEachIndexed { index, tag ->
+            val tagDownload = runCatching {
                 controller.queryStats(tag, "downlink").coerceAtLeast(0)
             }.getOrDefault(0L)
-            upload += runCatching {
+            val tagUpload = runCatching {
                 controller.queryStats(tag, "uplink").coerceAtLeast(0)
             }.getOrDefault(0L)
+            download += tagDownload
+            upload += tagUpload
+
+            val tagBytes = tagDownload + tagUpload
+            val profileId = activeStatsOutboundProfileIds.getOrNull(index)
+            if (profileId != null && tagBytes > busiestBytes) {
+                busiestBytes = tagBytes
+                busiestProfileId = profileId
+            }
         }
-        return TrafficDelta(download, upload)
+        return TrafficDelta(download, upload, busiestProfileId)
     }
 
     private fun emitTunnelEvent(value: Map<String, Any?>) {
@@ -1043,6 +1075,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 durationSeconds = elapsedSeconds(),
                 latencyMs = activeLatencyMs,
                 pingStatus = activePingStatus,
+                activeBalancerMemberId = activeBalancerMemberId,
             ),
         )
     }

@@ -558,26 +558,87 @@ class _MobileStatusCard extends StatelessWidget {
             ],
           ),
           const Divider(height: 26),
-          Row(
-            children: [
-              const Icon(Icons.data_usage_rounded, color: OrexColors.copper),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text('Трафик',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ),
-              Flexible(
-                child: Text(
-                  '${_bytes(snapshot.stats.downloadBytes)} ↓ · '
-                  '${_bytes(snapshot.stats.uploadBytes)} ↑',
-                  textAlign: TextAlign.end,
+          _MobileTrafficRow(
+            value: '${_bytes(snapshot.stats.downloadBytes)} ↓ · '
+                '${_bytes(snapshot.stats.uploadBytes)} ↑',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileTrafficRow extends StatelessWidget {
+  const _MobileTrafficRow({required this.value});
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelStyle = Theme.of(context).textTheme.bodySmall;
+    final valueStyle = Theme.of(context).textTheme.titleSmall;
+    final direction = Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+
+    double measure(String text, TextStyle? style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      return painter.width;
+    }
+
+    final labelWidth = 24 + 10 + measure('Трафик', labelStyle);
+    final valueWidth = measure(value, valueStyle);
+    final label = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.data_usage_rounded, color: OrexColors.copper),
+        const SizedBox(width: 10),
+        Text('Трафик', style: labelStyle),
+      ],
+    );
+
+    return SizedBox(
+      height: 24,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Prefer true card-centered traffic data. If centering would collide
+          // with the unchanged left label, fall back to the old right side.
+          final centeredLeft = (constraints.maxWidth - valueWidth) / 2;
+          final canCenter = centeredLeft >= labelWidth + 8;
+          if (canCenter) {
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                Align(alignment: Alignment.centerLeft, child: label),
+                Text(
+                  value,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall,
+                  style: valueStyle,
+                ),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              label,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  value,
+                  textAlign: TextAlign.end,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: valueStyle,
                 ),
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -641,6 +702,7 @@ class _QuickInfo extends StatelessWidget {
   Widget build(BuildContext context) {
     final profile = snapshot.profile;
     final pingLabel = _pingLabel(tunnel, profile);
+    final activeBalancerMember = tunnel.activeBalancerMemberName(profile);
     return Column(
       children: [
         GlassPanel(
@@ -692,7 +754,11 @@ class _QuickInfo extends StatelessWidget {
                                       ],
                                     ),
                                     Text(
-                                      profile.endpoint,
+                                      snapshot.isConnected &&
+                                              profile.isBalancer &&
+                                              activeBalancerMember != null
+                                          ? '${profile.endpoint} · $activeBalancerMember'
+                                          : profile.endpoint,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style:
@@ -1105,12 +1171,18 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        const Spacer(),
-        Flexible(
+        // The labels keep their original left edge. A fixed label column moves
+        // only the values left and gives protocol/transport/ping more room.
+        SizedBox(
+          width: 86,
+          child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
           child: Text(
             value,
-            textAlign: TextAlign.end,
+            textAlign: TextAlign.start,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium,
           ),

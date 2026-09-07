@@ -50,6 +50,7 @@ class MainActivity : FlutterActivity() {
         val pingStatus: String,
         val latencyProbeUrl: String,
         val statsOutboundTags: List<String>,
+        val statsOutboundProfileIds: List<String>,
         val mtu: Int,
         val dnsServers: List<String>,
         val socksPort: Int,
@@ -127,6 +128,12 @@ class MainActivity : FlutterActivity() {
                                 ?.distinct()
                                 .orEmpty()
                                 .ifEmpty { listOf("proxy") },
+                            statsOutboundProfileIds = call.argument<List<String>>(
+                                "statsOutboundProfileIds",
+                            )
+                                ?.map { it.trim() }
+                                ?.filter { it.isNotEmpty() }
+                                .orEmpty(),
                             mtu = (call.argument<Int>("mtu") ?: 1500)
                                 .coerceIn(1280, 9000),
                             dnsServers = call.argument<List<String>>("dnsServers")
@@ -687,6 +694,10 @@ class MainActivity : FlutterActivity() {
             .putStringArrayListExtra(
                 OrexRayVpnService.EXTRA_STATS_OUTBOUND_TAGS,
                 ArrayList(request.statsOutboundTags),
+            )
+            .putStringArrayListExtra(
+                OrexRayVpnService.EXTRA_STATS_OUTBOUND_PROFILE_IDS,
+                ArrayList(request.statsOutboundProfileIds),
             )
             .putExtra(OrexRayVpnService.EXTRA_MTU, request.mtu)
             .putStringArrayListExtra(

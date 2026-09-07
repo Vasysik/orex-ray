@@ -180,6 +180,18 @@ class TunnelController extends ChangeNotifier {
   }
 
   TunnelTarget? get selectedProfile => _profiles.selectedTarget;
+  String? activeBalancerMemberName(TunnelTarget? target) {
+    if (target == null || !target.isBalancer) return null;
+    final memberId = snapshot.activeBalancerMemberId;
+    if (memberId == null || memberId.isEmpty) return null;
+    for (final profile in target.profiles) {
+      if (profile.id == memberId) return profile.name;
+    }
+    final fallback = target.fallbackProfile;
+    if (fallback?.id == memberId) return fallback!.name;
+    return null;
+  }
+
 
   EgressIdentity? egressIdentityFor(String targetId) =>
       _egressIdentities[targetId];

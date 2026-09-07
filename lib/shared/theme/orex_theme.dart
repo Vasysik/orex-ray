@@ -60,6 +60,9 @@ class OrexTheme {
 
   static ThemeData _build(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
+    final dividerColor =
+        (isDark ? OrexColors.ochreLight : OrexColors.copperBright)
+            .withValues(alpha: isDark ? 0.18 : 0.28);
     final scheme = ColorScheme(
       brightness: brightness,
       primary: OrexColors.copper,
@@ -79,11 +82,9 @@ class OrexTheme {
       scaffoldBackgroundColor: isDark ? OrexColors.darkBg : OrexColors.lightBg,
       splashFactory: InkSparkle.splashFactory,
       textTheme: _textTheme(isDark),
-      dividerColor: (isDark ? OrexColors.ochreLight : OrexColors.copperBright)
-          .withValues(alpha: isDark ? 0.18 : 0.28),
+      dividerColor: dividerColor,
       dividerTheme: DividerThemeData(
-        color: (isDark ? OrexColors.ochreLight : OrexColors.copperBright)
-            .withValues(alpha: isDark ? 0.18 : 0.28),
+        color: dividerColor,
         thickness: 1,
         space: 1,
       ),
@@ -98,6 +99,20 @@ class OrexTheme {
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: Colors.transparent,
         indicatorColor: OrexColors.copper.withValues(alpha: 0.2),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: ButtonStyle(
+          side: WidgetStateProperty.resolveWith((states) {
+            if (!states.contains(WidgetState.disabled)) {
+              return BorderSide(color: dividerColor);
+            }
+            return BorderSide(
+              color: dividerColor.withValues(
+                alpha: (isDark ? 0.18 : 0.28) * 0.55,
+              ),
+            );
+          }),
+        ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(

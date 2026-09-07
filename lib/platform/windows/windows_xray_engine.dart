@@ -22,6 +22,7 @@ import 'xray_watchdog.dart';
 class WindowsXrayEngine implements
     TunnelEngine,
     TunnelRuntimeSettingsSink,
+    TunnelStatsConsumerSink,
     TunnelRecoverySink,
     TunnelDiagnosticsProvider,
     TunnelDiagnosticEventSink,
@@ -86,6 +87,8 @@ class WindowsXrayEngine implements
   DateTime? _connectedAt;
   XrayStatsClient? _statsClient;
   bool _statsPollInFlight = false;
+  bool _statsUiActive = false;
+  final Map<String, int> _lastOutboundTrafficTotals = <String, int>{};
   DateTime? _lastStatsAt;
   int? _lastDownloadValue;
   int? _lastUploadValue;
@@ -131,12 +134,16 @@ class WindowsXrayEngine implements
     String? message,
     String? error,
     TrafficStats? stats,
+    String? activeBalancerMemberId,
   }) {
     _emit(TunnelSnapshot(
       status: status,
       mode: mode ?? _current.mode,
       profile: profile ?? _current.profile,
       stats: stats ?? _current.stats,
+      activeBalancerMemberId: status == TunnelStatus.connected
+          ? (activeBalancerMemberId ?? _current.activeBalancerMemberId)
+          : null,
       message: message,
       errorMessage: error,
     ));
@@ -187,6 +194,7 @@ class WindowsXrayEngine implements
       );
     }
     _activeMode = mode;
+    _lastOutboundTrafficTotals.clear();
     _lastTunRouteSummary =
         mode == ConnectionMode.vpnTun ? 'checking' : 'not applicable';
     _status(
@@ -836,6 +844,15 @@ class WindowsXrayEngine implements
   }
 
   @override
+  Future<void> setStatsUiActive(bool active) async {
+    if (_statsUiActive == active) return;
+    _statsUiActive = active;
+    // Start a fresh baseline when the UI becomes visible. This avoids treating
+    // traffic accumulated while hidden as the "current" balancer member.
+    _lastOutboundTrafficTotals.clear();
+  }
+
+  @override
   Future<void> updateRuntimeSettings({
     required int statsIntervalSeconds,
     required int notificationStatsIntervalSeconds,
@@ -867,6 +884,39 @@ class WindowsXrayEngine implements
     try {
       final totals = await client.queryInboundTotals();
       if (_process == null || _connectedAt != connectedAt) return;
+
+      String? activeBalancerMemberId = _current.activeBalancerMemberId;
+      final target = _current.profile;
+      if (_statsUiActive && target?.isBalancer == true) {
+        try {
+          final outboundTotals = await client.queryOutboundTotals();
+          if (_process == null || _connectedAt != connectedAt) return;
+          var bestDelta = 0;
+          String? bestTag;
+          if (_lastOutboundTrafficTotals.isNotEmpty) {
+            for (final entry in outboundTotals.entries) {
+              final previous = _lastOutboundTrafficTotals[entry.key];
+              if (previous == null) continue;
+              final delta = entry.value - previous;
+              if (delta > bestDelta) {
+                bestDelta = delta;
+                bestTag = entry.key;
+              }
+            }
+          }
+          _lastOutboundTrafficTotals
+            ..clear()
+            ..addAll(outboundTotals);
+          if (bestTag != null) {
+            activeBalancerMemberId = _profileIdForOutboundTag(target!, bestTag);
+          }
+        } catch (error) {
+          _appendAppLog('Balancer outbound stats query failed: $error');
+        }
+      } else if (target?.isBalancer != true) {
+        _lastOutboundTrafficTotals.clear();
+        activeBalancerMemberId = null;
+      }
 
       final now = DateTime.now();
       final seconds = _lastStatsAt == null
@@ -901,12 +951,24 @@ class WindowsXrayEngine implements
           uploadBytesPerSecond: upBps,
           duration: now.difference(connectedAt),
         ),
+        activeBalancerMemberId: activeBalancerMemberId,
       );
     } catch (error) {
       _appendAppLog('Stats API query failed: $error');
     } finally {
       _statsPollInFlight = false;
     }
+  }
+
+  String? _profileIdForOutboundTag(TunnelTarget target, String tag) {
+    if (!target.isBalancer) return null;
+    if (tag == 'fallback-proxy') return target.fallbackProfile?.id;
+    final match = RegExp(r'^proxy-(\d+)$').firstMatch(tag);
+    final index = match == null ? null : int.tryParse(match.group(1)!);
+    if (index == null || index < 0 || index >= target.profiles.length) {
+      return null;
+    }
+    return target.profiles[index].id;
   }
 
   void _updateStatsDurationOnly(Duration duration) {

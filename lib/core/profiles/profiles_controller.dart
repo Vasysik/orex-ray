@@ -67,6 +67,7 @@ class ProfileGroupInfo {
 
   bool get isSubscription => subscription != null;
   bool get isManualGroup => key.startsWith('manual:group:');
+  bool get isManualFolder => key.startsWith('manual:');
 }
 
 class ProfilesController extends ChangeNotifier {
@@ -102,6 +103,7 @@ class ProfilesController extends ChangeNotifier {
   bool _autoRefreshInFlight = false;
   bool _metadataRefreshInFlight = false;
   final Set<String> _refreshingSubscriptionIds = <String>{};
+  final Set<String> _refreshingSubscriptionMetadataIds = <String>{};
   final Map<String, int> _lastAutoRefreshAttemptEpochMs = <String, int>{};
   final Map<String, int> _lastMetadataRefreshAttemptEpochMs = <String, int>{};
   final Set<String> _metadataHeadUnsupportedIds = <String>{};
@@ -141,6 +143,8 @@ class ProfilesController extends ChangeNotifier {
   bool get refreshingSubscriptions => _refreshingSubscriptions;
   bool subscriptionRefreshing(String id) =>
       _refreshingSubscriptions || _refreshingSubscriptionIds.contains(id);
+  bool subscriptionMetadataRefreshing(String id) =>
+      _refreshingSubscriptionMetadataIds.contains(id);
 
   ProxySubscription? subscriptionForProfile(String profileId) {
     for (final subscription in _subscriptions) {
@@ -585,6 +589,51 @@ class ProfilesController extends ChangeNotifier {
     return null;
   }
 
+  Future<bool> refreshSubscriptionMetadata(String id) async {
+    if (_disposed) return false;
+    if (_refreshingSubscriptionIds.contains(id) ||
+        _refreshingSubscriptionMetadataIds.contains(id)) {
+      throw const FormatException('Подписка уже обновляется');
+    }
+    final initialIndex = _subscriptions.indexWhere((item) => item.id == id);
+    if (initialIndex < 0) {
+      throw const FormatException('Подписка не найдена');
+    }
+
+    _refreshingSubscriptionMetadataIds.add(id);
+    _notifyListeners();
+    try {
+      final snapshot = _subscriptions[initialIndex];
+      final metadata = await _loadSubscriptionMetadata(snapshot.url);
+      if (_disposed) return false;
+      if (metadata == null || metadata.isEmpty) {
+        _metadataHeadUnsupportedIds.add(id);
+        return false;
+      }
+      _metadataHeadUnsupportedIds.remove(id);
+
+      final index = _subscriptions.indexWhere((item) => item.id == id);
+      if (index < 0) return false;
+      final current = _subscriptions[index];
+      final title = metadata.profileTitle?.trim();
+      _subscriptions[index] = current.copyWith(
+        name: title != null && title.isNotEmpty ? title : null,
+        lastMetadataCheckEpochMs: DateTime.now().millisecondsSinceEpoch,
+        updateIntervalHours: metadata.updateIntervalHours,
+        userInfo: metadata.userInfo,
+        supportUrl: metadata.supportUrl,
+        webPageUrl: metadata.webPageUrl,
+        announce: metadata.announce,
+      );
+      await _repository.saveSubscriptions(_subscriptions);
+      if (!_disposed) _notifyListeners();
+      return true;
+    } finally {
+      _refreshingSubscriptionMetadataIds.remove(id);
+      if (!_disposed) _notifyListeners();
+    }
+  }
+
   Future<int> refreshSubscriptionMetadataIfDue({
     Duration minimumInterval = const Duration(minutes: 10),
     DateTime? now,
@@ -605,6 +654,7 @@ class ProfilesController extends ChangeNotifier {
       for (final snapshot in List<ProxySubscription>.from(_subscriptions)) {
         if (_disposed) break;
         if (_refreshingSubscriptionIds.contains(snapshot.id) ||
+            _refreshingSubscriptionMetadataIds.contains(snapshot.id) ||
             _metadataHeadUnsupportedIds.contains(snapshot.id)) {
           continue;
         }

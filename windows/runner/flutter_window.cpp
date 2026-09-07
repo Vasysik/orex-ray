@@ -1204,9 +1204,10 @@ void FlutterWindow::SaveWindowPlacement() {
 }
 
 void FlutterWindow::ShowInitialWindow() {
-  HWND window = GetHandle();
-  if (window == nullptr) return;
-  ShowWindow(window, restore_maximized_ ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL);
+  // Restore the saved geometry/maximized state, but do not restore an old
+  // stacking position. A normal launch should surface OrexRay just like a
+  // tray activation, without making it an always-on-top window.
+  ShowAndActivate();
 }
 
 void FlutterWindow::ShowAndActivate() {

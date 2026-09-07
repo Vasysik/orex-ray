@@ -149,6 +149,12 @@ class AndroidXrayEngine
                 if (target.fallbackProfile != null) 'fallback-proxy',
               ]
             : const ['proxy'],
+        'statsOutboundProfileIds': target.isBalancer
+            ? [
+                for (final profile in target.profiles) profile.id,
+                if (target.fallbackProfile case final fallback?) fallback.id,
+              ]
+            : const <String>[],
         'mtu': _settings.mtu,
         'dnsServers': _settings.dnsServers,
         'socksPort': _settings.socksPort,
@@ -381,6 +387,8 @@ class AndroidXrayEngine
         ),
         effectiveLatencyMs: effectiveLatencyMs,
         effectivePingStatus: effectivePingStatus,
+        activeBalancerMemberId:
+            (event['activeBalancerMemberId'] as String?)?.trim(),
         message: event['message'] as String?,
         errorMessage: event['errorMessage'] as String?,
       ),

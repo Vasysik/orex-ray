@@ -651,6 +651,7 @@ class TunnelSnapshot {
     this.profile,
     this.effectiveLatencyMs,
     this.effectivePingStatus = PingStatus.unknown,
+    this.activeBalancerMemberId,
     this.message,
     this.errorMessage,
   });
@@ -661,6 +662,7 @@ class TunnelSnapshot {
   final TrafficStats stats;
   final int? effectiveLatencyMs;
   final PingStatus effectivePingStatus;
+  final String? activeBalancerMemberId;
   final String? message;
   final String? errorMessage;
 
@@ -678,6 +680,8 @@ class TunnelSnapshot {
     int? effectiveLatencyMs,
     bool clearEffectiveLatency = false,
     PingStatus? effectivePingStatus,
+    String? activeBalancerMemberId,
+    bool clearActiveBalancerMember = false,
     String? message,
     bool clearMessage = false,
     String? errorMessage,
@@ -692,6 +696,9 @@ class TunnelSnapshot {
           ? null
           : (effectiveLatencyMs ?? this.effectiveLatencyMs),
       effectivePingStatus: effectivePingStatus ?? this.effectivePingStatus,
+      activeBalancerMemberId: clearActiveBalancerMember
+          ? null
+          : (activeBalancerMemberId ?? this.activeBalancerMemberId),
       message: clearMessage ? null : (message ?? this.message),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
     );

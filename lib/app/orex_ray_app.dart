@@ -150,7 +150,6 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
   }
 
   void _syncStatsUiActivity(AppLifecycleState? state) {
-    if (!Platform.isAndroid) return;
     final active = state == null || state == AppLifecycleState.resumed;
     if (_lastStatsUiActive == active) return;
     _lastStatsUiActive = active;
