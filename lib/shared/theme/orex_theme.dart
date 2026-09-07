@@ -79,8 +79,14 @@ class OrexTheme {
       scaffoldBackgroundColor: isDark ? OrexColors.darkBg : OrexColors.lightBg,
       splashFactory: InkSparkle.splashFactory,
       textTheme: _textTheme(isDark),
-      dividerColor: (isDark ? OrexColors.ochre : OrexColors.walnut)
-          .withValues(alpha: 0.12),
+      dividerColor: (isDark ? OrexColors.ochreLight : OrexColors.copperBright)
+          .withValues(alpha: isDark ? 0.18 : 0.28),
+      dividerTheme: DividerThemeData(
+        color: (isDark ? OrexColors.ochreLight : OrexColors.copperBright)
+            .withValues(alpha: isDark ? 0.18 : 0.28),
+        thickness: 1,
+        space: 1,
+      ),
       iconTheme: IconThemeData(
         color: isDark ? OrexColors.ochreLight : OrexColors.walnut,
       ),

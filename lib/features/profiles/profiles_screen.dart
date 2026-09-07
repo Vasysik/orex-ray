@@ -72,7 +72,7 @@ class ProfilesScreen extends StatelessWidget {
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.subscription,
           icon: Icons.sync_rounded,
-          title: 'Подписка',
+          title: 'Импорт подписки',
           subtitle: 'HTTP/HTTPS URL со списком серверов',
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
@@ -1972,7 +1972,7 @@ class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Добавить подписку'),
+      title: const Text('Импорт подписки'),
       content: SizedBox(
         width: 520,
         child: Column(
@@ -2011,7 +2011,7 @@ class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Добавить'),
+              : const Text('Импортировать'),
         ),
       ],
     );
@@ -2067,10 +2067,8 @@ class _SubscriptionCard extends StatelessWidget {
         _relativeSubscriptionUpdate(updated),
     ].join(' · ');
     final rawInfoLine = rawNotices.join(' · ');
-    final hasMetadata = userInfo != null ||
-        subscription.announce.isNotEmpty ||
-        onOpenSupport != null ||
-        onOpenWebPage != null;
+    final hasUsageMetadata = userInfo != null &&
+        (userInfo.totalBytes != null || userInfo.expiresAt != null);
 
     return Padding(
       padding: EdgeInsets.only(bottom: expanded ? 4 : 10),
@@ -2097,10 +2095,8 @@ class _SubscriptionCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: Text(
-                rawInfoLine.isEmpty
-                    ? summaryLine
-                    : '$summaryLine\n$rawInfoLine',
-                maxLines: rawInfoLine.isEmpty ? 2 : 3,
+                summaryLine,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
               trailing: Row(
@@ -2130,19 +2126,31 @@ class _SubscriptionCard extends StatelessWidget {
                       onSelected: (value) {
                         if (value == 'copy-url') onCopyUrl();
                         if (value == 'export-json') onExportServers();
+                        if (value == 'web-page') onOpenWebPage?.call();
+                        if (value == 'support') onOpenSupport?.call();
                         if (value == 'delete') onDelete();
                       },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
                           value: 'copy-url',
                           child: Text('Скопировать исходную ссылку'),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'export-json',
                           child: Text('Экспорт серверов JSON Xray'),
                         ),
-                        PopupMenuDivider(),
-                        PopupMenuItem(
+                        if (onOpenWebPage != null)
+                          const PopupMenuItem(
+                            value: 'web-page',
+                            child: Text('Кабинет'),
+                          ),
+                        if (onOpenSupport != null)
+                          const PopupMenuItem(
+                            value: 'support',
+                            child: Text('Поддержка'),
+                          ),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem(
                           value: 'delete',
                           child: Text('Удалить подписку'),
                         ),
@@ -2161,16 +2169,38 @@ class _SubscriptionCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (hasMetadata)
+            if (rawInfoLine.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Text(
+                  rawInfoLine,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            if (subscription.announce.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Text(
+                  subscription.announce,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: OrexColors.copper,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+            if (hasUsageMetadata) ...[
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
                 child: _SubscriptionMetadataPanel(
-                  subscription: subscription,
                   userInfo: userInfo,
                   onOpenSupport: onOpenSupport,
                   onOpenWebPage: onOpenWebPage,
                 ),
               ),
+            ],
           ],
         ),
       ),
@@ -2180,13 +2210,11 @@ class _SubscriptionCard extends StatelessWidget {
 
 class _SubscriptionMetadataPanel extends StatelessWidget {
   const _SubscriptionMetadataPanel({
-    required this.subscription,
     required this.userInfo,
     required this.onOpenSupport,
     required this.onOpenWebPage,
   });
 
-  final ProxySubscription subscription;
   final SubscriptionUserInfo? userInfo;
   final VoidCallback? onOpenSupport;
   final VoidCallback? onOpenWebPage;
@@ -2202,16 +2230,6 @@ class _SubscriptionMetadataPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (subscription.announce.isNotEmpty) ...[
-          Text(
-            subscription.announce,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: OrexColors.copper,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 8),
-        ],
         if (info != null && total != null) ...[
           Row(
             children: [

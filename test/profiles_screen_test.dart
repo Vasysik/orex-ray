@@ -384,8 +384,11 @@ vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@real.example:443?encryption=none&se
       ),
       findsOneWidget,
     );
-    expect(find.widgetWithText(OutlinedButton, 'Поддержка'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Поддержка'), findsNothing);
     expect(find.byType(LinearProgressIndicator), findsNothing);
+    await tester.tap(find.byTooltip('Действия подписки'));
+    await tester.pumpAndSettle();
+    expect(find.text('Поддержка'), findsOneWidget);
   });
 
   testWidgets('selection actions collapse labels before wrapping',
