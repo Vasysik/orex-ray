@@ -35,8 +35,10 @@ constexpr UINT kTrayCallbackMessage = WM_APP + 77;
 constexpr UINT kCompleteExitMessage = WM_APP + 78;
 constexpr UINT kNetworkChangedMessage = WM_APP + 79;
 constexpr UINT_PTR kExitFallbackTimerId = 7704;
+constexpr UINT_PTR kInitialForegroundTimerId = 7705;
 constexpr UINT kExitFallbackTimeoutMs = 15000;
 constexpr UINT kUpdateExitFallbackTimeoutMs = 4000;
+constexpr UINT kInitialForegroundHoldMs = 350;
 constexpr wchar_t kWindowPlacementRegistryPath[] = L"Software\\OrexRay";
 constexpr wchar_t kWindowPlacementRegistryValue[] = L"WindowPlacementV1";
 constexpr DWORD kWindowPlacementVersion = 1;
@@ -941,6 +943,7 @@ bool FlutterWindow::OnCreate() {
 
         if (call.method_name() == "completeExit") {
           KillTimer(GetHandle(), kExitFallbackTimerId);
+          KillTimer(GetHandle(), kInitialForegroundTimerId);
           exit_requested_ = true;
           exit_request_pending_ = false;
           result->Success(flutter::EncodableValue());
@@ -975,6 +978,7 @@ bool FlutterWindow::OnCreate() {
 void FlutterWindow::OnDestroy() {
   SaveWindowPlacement();
   KillTimer(GetHandle(), kExitFallbackTimerId);
+  KillTimer(GetHandle(), kInitialForegroundTimerId);
   if (network_change_handle_ != nullptr) {
     CancelMibChangeNotify2(network_change_handle_);
     network_change_handle_ = nullptr;
@@ -1031,6 +1035,14 @@ LRESULT FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
 
   if (message == kCompleteExitMessage) {
     Destroy();
+    return 0;
+  }
+
+  if (message == WM_TIMER && wparam == kInitialForegroundTimerId) {
+    KillTimer(hwnd, kInitialForegroundTimerId);
+    SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    SetForegroundWindow(hwnd);
     return 0;
   }
 
@@ -1204,10 +1216,20 @@ void FlutterWindow::SaveWindowPlacement() {
 }
 
 void FlutterWindow::ShowInitialWindow() {
-  // Restore the saved geometry/maximized state, but do not restore an old
-  // stacking position. A normal launch should surface OrexRay just like a
-  // tray activation, without making it an always-on-top window.
   ShowAndActivate();
+
+  // The post-install launch can race with Setup closing and Explorer taking
+  // foreground back. Hold TOPMOST only for the first few hundred milliseconds,
+  // then immediately return to the normal z-order. Autostart stays hidden.
+  HWND window = GetHandle();
+  if (window == nullptr) return;
+  SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+  if (SetTimer(window, kInitialForegroundTimerId, kInitialForegroundHoldMs,
+               nullptr) == 0) {
+    SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+  }
 }
 
 void FlutterWindow::ShowAndActivate() {

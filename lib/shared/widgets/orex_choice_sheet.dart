@@ -110,6 +110,7 @@ class _OrexChoiceTile extends StatelessWidget {
       trailing: selected
           ? const Icon(Icons.check_circle, color: OrexColors.copper)
           : const Icon(Icons.chevron_right),
+      mouseCursor: SystemMouseCursors.click,
       onTap: onTap,
     );
   }

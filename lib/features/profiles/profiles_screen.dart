@@ -179,35 +179,6 @@ class ProfilesScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _refreshSubscriptionMetadata(
-    BuildContext context,
-    ProxySubscription subscription,
-  ) async {
-    try {
-      final updated = await profiles.refreshSubscriptionMetadata(subscription.id);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            updated
-                ? 'Метаданные «${subscription.name}» обновлены'
-                : 'Провайдер не вернул метаданные через HEAD',
-          ),
-        ),
-      );
-    } on FormatException catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message.toString())),
-      );
-    } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось обновить метаданные: $error')),
-      );
-    }
-  }
-
   Future<void> _deleteSubscription(
     BuildContext context,
     ProxySubscription subscription,
@@ -1138,8 +1109,6 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                   final card = _SubscriptionCard(
                     subscription: subscription,
                     refreshing: profiles.subscriptionRefreshing(subscription.id),
-                    metadataRefreshing:
-                        profiles.subscriptionMetadataRefreshing(subscription.id),
                     expanded: expanded,
                     selectedCount: selectedCount,
                     selectionMode: _selectingSubscriptions,
@@ -1155,11 +1124,6 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                         ? null
                         : () => _toggleSection(section, activeTarget?.id),
                     onRefresh: () => widget.owner._refreshSubscription(
-                      context,
-                      subscription,
-                    ),
-                    onRefreshMetadata: () =>
-                        widget.owner._refreshSubscriptionMetadata(
                       context,
                       subscription,
                     ),
@@ -1450,6 +1414,11 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                           identity: tunnel.egressIdentityFor(balancer.id),
                           members: profiles.effectiveBalancerMembers(balancer),
                           selected: activeTarget?.id == balancer.id,
+                          activeMemberName: activeTarget?.id == balancer.id
+                              ? tunnel.activeBalancerMemberName(
+                                  profiles.targetById(balancer.id),
+                                )
+                              : null,
                           latencyMs: profiles.targetById(balancer.id)?.latencyMs,
                           onRefreshPing:
                               tunnel.canRefreshTargetLatency(balancer.id)
@@ -1526,61 +1495,76 @@ class _ProfilesHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = Column(
+    final title = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Профили', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text(
-          'Серверы, пинг и балансировщики Xray',
-          style: Theme.of(context).textTheme.bodySmall,
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: OrexColors.copper.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Icon(Icons.dns_rounded, color: OrexColors.copper),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Профили', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 4),
+              Text(
+                'Серверы, пинг и балансировщики Xray',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
       ],
     );
 
-    final actions = selectionMode
-        ? _AdaptiveSelectionActions(
-            scope: selectionScope!,
-            refreshingLatency: refreshingLatency,
-            allSelected: allSelected,
-            canGroupSelected: canGroupSelected,
-            onPingSelected: onPingSelected,
-            onExportSelected: onExportSelected,
-            onGroupSelected: onGroupSelected,
-            onDeleteSelected: onDeleteSelected,
-            onSelectAll: onSelectAll,
-            onCloseSelection: onCloseSelection,
-          )
-        : Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              OutlinedButton.icon(
-                onPressed: onOpenProfileMenu,
-                icon: const Icon(Icons.add_rounded),
-                label: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Профиль'),
-                    SizedBox(width: 4),
-                    Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-                  ],
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: refreshingLatency || !canRefreshLatency
-                    ? null
-                    : onRefreshLatency,
-                icon: const Icon(Icons.network_ping_rounded),
-                label: const Text('Проверить пинг'),
-              ),
-            ],
-          );
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        final rowBreakpoint = selectionMode ? 920.0 : 700.0;
-        if (constraints.maxWidth >= rowBreakpoint) {
+        // Compact labels while the actions are still beside the page title.
+        // Only move the actions below the title after the icon-only pills no
+        // longer leave enough room for the title itself.
+        final width = constraints.maxWidth;
+        final serverSelection =
+            selectionScope == _ProfileSelectionScope.servers;
+        final sameRowBreakpoint = selectionMode
+            ? (serverSelection ? 640.0 : 540.0)
+            : 520.0;
+        final sameRow = width >= sameRowBreakpoint;
+
+        final actions = selectionMode
+            ? _AdaptiveSelectionActions(
+                scope: selectionScope!,
+                refreshingLatency: refreshingLatency,
+                allSelected: allSelected,
+                canGroupSelected: canGroupSelected,
+                forceCompactExport:
+                    width < (serverSelection ? 740.0 : 620.0),
+                forceCompactPing: serverSelection && width < 690.0,
+                allowWrap: !sameRow,
+                onPingSelected: onPingSelected,
+                onExportSelected: onExportSelected,
+                onGroupSelected: onGroupSelected,
+                onDeleteSelected: onDeleteSelected,
+                onSelectAll: onSelectAll,
+                onCloseSelection: onCloseSelection,
+              )
+            : _AdaptiveProfileActions(
+                forceCompactProfile: width < 560.0,
+                forceCompactPing: width < 650.0,
+                allowWrap: !sameRow,
+                refreshingLatency: refreshingLatency,
+                canRefreshLatency: canRefreshLatency,
+                onOpenProfileMenu: onOpenProfileMenu,
+                onRefreshLatency: onRefreshLatency,
+              );
+
+        if (sameRow) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -1603,12 +1587,102 @@ class _ProfilesHeader extends StatelessWidget {
   }
 }
 
+class _AdaptiveProfileActions extends StatelessWidget {
+  const _AdaptiveProfileActions({
+    required this.forceCompactProfile,
+    required this.forceCompactPing,
+    required this.allowWrap,
+    required this.refreshingLatency,
+    required this.canRefreshLatency,
+    required this.onOpenProfileMenu,
+    required this.onRefreshLatency,
+  });
+
+  final bool forceCompactProfile;
+  final bool forceCompactPing;
+  final bool allowWrap;
+  final bool refreshingLatency;
+  final bool canRefreshLatency;
+  final VoidCallback onOpenProfileMenu;
+  final Future<void> Function() onRefreshLatency;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final finite = constraints.maxWidth.isFinite;
+        // Collapse the labels before a narrow column has any chance to
+        // overflow. The action group can live either beside the title or below
+        // it, so this threshold must not depend on the parent header mode.
+        final compactPing = forceCompactPing ||
+            (finite && constraints.maxWidth < 420);
+        final compactProfile = forceCompactProfile ||
+            (finite && constraints.maxWidth < 330);
+        final children = <Widget>[
+          compactProfile
+              ? _HeaderIconActionButton(
+                  tooltip: 'Добавить профиль',
+                  onPressed: onOpenProfileMenu,
+                  icon: Icons.add_rounded,
+                )
+              : OutlinedButton.icon(
+                  onPressed: onOpenProfileMenu,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Профиль'),
+                      SizedBox(width: 4),
+                      Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                    ],
+                  ),
+                ),
+          compactPing
+              ? _HeaderIconActionButton(
+                  tooltip: 'Проверить пинг',
+                  onPressed: refreshingLatency || !canRefreshLatency
+                      ? null
+                      : () => onRefreshLatency(),
+                  icon: Icons.network_ping_rounded,
+                )
+              : OutlinedButton.icon(
+                  onPressed: refreshingLatency || !canRefreshLatency
+                      ? null
+                      : onRefreshLatency,
+                  icon: const Icon(Icons.network_ping_rounded),
+                  label: const Text('Проверить пинг'),
+                ),
+        ];
+
+        if (!allowWrap) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              children[0],
+              const SizedBox(width: 10),
+              children[1],
+            ],
+          );
+        }
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: children,
+        );
+      },
+    );
+  }
+}
+
 class _AdaptiveSelectionActions extends StatelessWidget {
   const _AdaptiveSelectionActions({
     required this.scope,
     required this.refreshingLatency,
     required this.allSelected,
     required this.canGroupSelected,
+    required this.forceCompactExport,
+    required this.forceCompactPing,
+    required this.allowWrap,
     required this.onPingSelected,
     required this.onExportSelected,
     required this.onGroupSelected,
@@ -1621,6 +1695,9 @@ class _AdaptiveSelectionActions extends StatelessWidget {
   final bool refreshingLatency;
   final bool allSelected;
   final bool canGroupSelected;
+  final bool forceCompactExport;
+  final bool forceCompactPing;
+  final bool allowWrap;
   final Future<void> Function() onPingSelected;
   final VoidCallback onExportSelected;
   final VoidCallback onGroupSelected;
@@ -1638,8 +1715,9 @@ class _AdaptiveSelectionActions extends StatelessWidget {
         // Keep every action on one line whenever possible. Labels disappear
         // from the end first: Export, then Ping. Icon-only actions retain the
         // same pill height/style as the normal profile actions.
-        final compactExport = finite && width < (serverScope ? 500 : 315);
-        final compactPing = finite && width < 410;
+        final compactExport = forceCompactExport ||
+            (finite && width < (serverScope ? 500 : 315));
+        final compactPing = forceCompactPing || (finite && width < 410);
 
         final children = <Widget>[];
         if (serverScope) {
@@ -1699,8 +1777,7 @@ class _AdaptiveSelectionActions extends StatelessWidget {
             icon: Icons.check_rounded,
           ),
         ]);
-        final minimumOneRowWidth = serverScope ? 362.0 : 238.0;
-        if (!finite || width >= minimumOneRowWidth) {
+        if (!allowWrap) {
           return Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1766,30 +1843,36 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(title.toUpperCase(),
+    return Padding(
+      // Match SettingsSection titles: page padding (20) + section label inset (8).
+      padding: const EdgeInsets.only(left: 8),
+      child: Row(
+        children: [
+          Text(
+            title.toUpperCase(),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: OrexColors.copper,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.1,
-                )),
-        const SizedBox(width: 8),
-        Text('$count', style: Theme.of(context).textTheme.bodySmall),
-        if (selectedCount case final selected?) ...[
-          const SizedBox(width: 14),
-          Text(
-            'ВЫДЕЛЕНО',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: OrexColors.copper,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.7,
                 ),
           ),
           const SizedBox(width: 8),
-          Text('$selected', style: Theme.of(context).textTheme.bodySmall),
+          Text('$count', style: Theme.of(context).textTheme.bodySmall),
+          if (selectedCount case final selected?) ...[
+            const SizedBox(width: 14),
+            Text(
+              'ВЫДЕЛЕНО',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: OrexColors.copper,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.7,
+                  ),
+            ),
+            const SizedBox(width: 8),
+            Text('$selected', style: Theme.of(context).textTheme.bodySmall),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -1867,6 +1950,7 @@ class _ProfileGroupHeader extends StatelessWidget {
         child: ListTile(
           dense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          mouseCursor: SystemMouseCursors.click,
           onTap: onToggle,
           onLongPress: onLongPress,
           leading: const Icon(
@@ -2058,7 +2142,6 @@ class _SubscriptionCard extends StatelessWidget {
   const _SubscriptionCard({
     required this.subscription,
     required this.refreshing,
-    required this.metadataRefreshing,
     required this.expanded,
     required this.selectedCount,
     required this.selectionMode,
@@ -2066,7 +2149,6 @@ class _SubscriptionCard extends StatelessWidget {
     required this.onExpandToggle,
     required this.onLongPress,
     required this.onRefresh,
-    required this.onRefreshMetadata,
     required this.onDelete,
     required this.onCopyUrl,
     required this.onExportServers,
@@ -2076,7 +2158,6 @@ class _SubscriptionCard extends StatelessWidget {
 
   final ProxySubscription subscription;
   final bool refreshing;
-  final bool metadataRefreshing;
   final bool expanded;
   final int selectedCount;
   final bool selectionMode;
@@ -2084,7 +2165,6 @@ class _SubscriptionCard extends StatelessWidget {
   final VoidCallback? onExpandToggle;
   final VoidCallback? onLongPress;
   final VoidCallback onRefresh;
-  final VoidCallback onRefreshMetadata;
   final VoidCallback onDelete;
   final VoidCallback onCopyUrl;
   final VoidCallback onExportServers;
@@ -2118,6 +2198,9 @@ class _SubscriptionCard extends StatelessWidget {
         opacity: selectedCount > 0 ? 0.24 : 0.42,
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
+          mouseCursor: onToggle == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
           onTap: onToggle,
           onLongPress: onLongPress,
           child: Column(
@@ -2151,9 +2234,9 @@ class _SubscriptionCard extends StatelessWidget {
                     )
                   else ...[
                     IconButton(
-                      tooltip: 'Обновить серверы подписки',
+                      tooltip: 'Обновить подписку',
                       onPressed:
-                          refreshing || metadataRefreshing ? null : onRefresh,
+                          refreshing ? null : onRefresh,
                       icon: refreshing
                           ? const SizedBox(
                               width: 18,
@@ -2162,22 +2245,9 @@ class _SubscriptionCard extends StatelessWidget {
                             )
                           : const Icon(Icons.refresh_rounded),
                     ),
-                    IconButton(
-                      tooltip: 'Обновить метаданные',
-                      onPressed: refreshing || metadataRefreshing
-                          ? null
-                          : onRefreshMetadata,
-                      icon: metadataRefreshing
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.info_outline_rounded),
-                    ),
                     PopupMenuButton<String>(
                       tooltip: 'Действия подписки',
-                      enabled: !refreshing && !metadataRefreshing,
+                      enabled: !refreshing,
                       onSelected: (value) {
                         if (value == 'copy-url') onCopyUrl();
                         if (value == 'export-json') onExportServers();
@@ -2537,6 +2607,7 @@ class _ProfileCard extends StatelessWidget {
             horizontal: 16,
             vertical: 8,
           ),
+          mouseCursor: SystemMouseCursors.click,
           onTap: onSelect,
           onLongPress: onLongPress,
           leading: EgressAvatar(
@@ -2634,6 +2705,8 @@ class _PingBadge extends StatelessWidget {
                 : OrexColors.danger;
     return InkWell(
       borderRadius: BorderRadius.circular(999),
+      mouseCursor:
+          onTap == null ? SystemMouseCursors.basic : SystemMouseCursors.click,
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -2657,6 +2730,7 @@ class _BalancerCard extends StatelessWidget {
     required this.identity,
     required this.members,
     required this.selected,
+    required this.activeMemberName,
     required this.latencyMs,
     required this.onRefreshPing,
     required this.onSelect,
@@ -2668,6 +2742,7 @@ class _BalancerCard extends StatelessWidget {
   final EgressIdentity? identity;
   final List<TunnelProfile> members;
   final bool selected;
+  final String? activeMemberName;
   final int? latencyMs;
   final VoidCallback? onRefreshPing;
   final VoidCallback onSelect;
@@ -2681,6 +2756,7 @@ class _BalancerCard extends StatelessWidget {
       opacity: 0.50,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        mouseCursor: SystemMouseCursors.click,
         onTap: onSelect,
         leading: EgressAvatar(
           identity: identity,
@@ -2699,7 +2775,9 @@ class _BalancerCard extends StatelessWidget {
           ],
         ),
         subtitle: Text(
-          '${members.length} серверов · ${balancer.strategy.title}\n${members.map((e) => e.name).join(' · ')}',
+          '${members.length} серверов'
+          '${activeMemberName == null ? '' : ' · $activeMemberName'}'
+          '\n${members.map((e) => e.name).join(' · ')}',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
@@ -3619,6 +3697,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: Text('${group.profileIds.length} серверов'),
+                  mouseCursor: SystemMouseCursors.click,
                   onTap: () => setState(() {
                     if (!_expandedGroups.add(group.key)) {
                       _expandedGroups.remove(group.key);

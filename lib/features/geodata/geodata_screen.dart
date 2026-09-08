@@ -279,6 +279,8 @@ class _RuleTile extends StatelessWidget {
       title: Text(title),
       subtitle: Text(shown, maxLines: 2, overflow: TextOverflow.ellipsis),
       trailing: const Icon(Icons.chevron_right_rounded),
+      mouseCursor:
+          enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onTap: enabled ? onEdit : null,
     );
   }

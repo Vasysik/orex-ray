@@ -378,35 +378,66 @@ vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443?encryption=none&sec
     expect(source.metadataUserAgents, hasLength(1));
   });
 
-  test('manual metadata refresh performs HEAD without replacing servers', () async {
+  test('empty HEAD metadata is marked unsupported until next full GET', () async {
     SharedPreferences.setMockInitialValues({});
     const first =
         'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
         '?encryption=none&security=none&type=tcp#One';
     final source = _SequenceSubscriptionSource(
-      [const SubscriptionFetchResult(body: first)],
+      const [
+        SubscriptionFetchResult(body: first),
+        SubscriptionFetchResult(body: first),
+      ],
       metadataResponses: const [
-        SubscriptionMetadataResult(
-          profileTitle: 'Fresh title',
-          userInfo: 'download=25; total=100',
-        ),
+        SubscriptionMetadataResult(),
+        null,
+        SubscriptionMetadataResult(profileTitle: 'HEAD works again'),
       ],
     );
     final profiles = await ProfilesController.load(subscriptionSource: source);
     addTearDown(profiles.dispose);
 
-    await profiles.importSubscription('https://sub.example/manual-metadata');
-    final profileId = profiles.profiles.single.id;
-    final updated = await profiles.refreshSubscriptionMetadata(
-      profiles.subscriptions.single.id,
+    await profiles.importSubscription('https://sub.example/no-head-metadata');
+    final imported = profiles.subscriptions.single;
+    final checkedAt = DateTime.fromMillisecondsSinceEpoch(
+      imported.lastMetadataCheckEpochMs!,
     );
 
-    expect(updated, isTrue);
-    expect(profiles.profiles.single.id, profileId);
-    expect(profiles.profiles.single.name, 'One');
-    expect(profiles.subscriptions.single.name, 'Fresh title');
-    expect(profiles.subscriptions.single.parsedUserInfo?.usedBytes, 25);
-    expect(source.metadataUserAgents, ['OrexRay/Subscription']);
+    expect(
+      await profiles.refreshSubscriptionMetadataIfDue(
+        now: checkedAt.add(const Duration(minutes: 11)),
+      ),
+      0,
+    );
+    expect(source.metadataUserAgents, hasLength(2));
+    expect(source.metadataUserAgents.first, 'OrexRay/Subscription');
+    expect(source.metadataUserAgents.last, startsWith('v2rayN/'));
+    expect(profiles.subscriptions.single.metadataHeadUnsupported, isTrue);
+
+    expect(
+      await profiles.refreshSubscriptionMetadataIfDue(
+        now: checkedAt.add(const Duration(hours: 2)),
+      ),
+      0,
+    );
+    expect(source.metadataUserAgents, hasLength(2));
+
+    // A successful full GET is the reset point: the provider may have changed
+    // behaviour, so the next due metadata check is allowed to try HEAD again.
+    await profiles.refreshSubscription(imported.id);
+    final refreshed = profiles.subscriptions.single;
+    expect(refreshed.metadataHeadUnsupported, isFalse);
+    final refreshedAt = DateTime.fromMillisecondsSinceEpoch(
+      refreshed.lastMetadataCheckEpochMs!,
+    );
+    expect(
+      await profiles.refreshSubscriptionMetadataIfDue(
+        now: refreshedAt.add(const Duration(minutes: 11)),
+      ),
+      1,
+    );
+    expect(source.metadataUserAgents, hasLength(3));
+    expect(profiles.subscriptions.single.name, 'HEAD works again');
   });
 
   test('subscription retries once with a v2rayN-compatible user agent', () async {

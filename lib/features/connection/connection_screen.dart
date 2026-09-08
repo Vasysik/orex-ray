@@ -82,6 +82,9 @@ class ConnectionScreen extends StatelessWidget {
                     Icons.chevron_right_rounded,
                     color: chevronColor,
                   ),
+                  mouseCursor: locked
+                      ? SystemMouseCursors.basic
+                      : SystemMouseCursors.click,
                   onTap: locked
                       ? null
                       : () => _editNumber(
@@ -104,6 +107,9 @@ class ConnectionScreen extends StatelessWidget {
                     Icons.chevron_right_rounded,
                     color: chevronColor,
                   ),
+                  mouseCursor: locked
+                      ? SystemMouseCursors.basic
+                      : SystemMouseCursors.click,
                   onTap: locked
                       ? null
                       : () => _editNumber(
@@ -157,6 +163,9 @@ class ConnectionScreen extends StatelessWidget {
                     Icons.chevron_right_rounded,
                     color: chevronColor,
                   ),
+                  mouseCursor: locked
+                      ? SystemMouseCursors.basic
+                      : SystemMouseCursors.click,
                   onTap: locked
                       ? null
                       : () => _editNumber(

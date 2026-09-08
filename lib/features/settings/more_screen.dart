@@ -116,6 +116,7 @@ class _MoreTile extends StatelessWidget {
         title: Text(title),
         subtitle: Text(subtitle),
         trailing: const Icon(Icons.chevron_right_rounded),
+        mouseCursor: SystemMouseCursors.click,
         onTap: onTap,
       ),
     );

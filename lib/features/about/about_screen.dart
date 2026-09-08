@@ -48,6 +48,7 @@ class AboutScreen extends StatelessWidget {
               leading: const Icon(Icons.copy_rounded, color: OrexColors.copper),
               title: const Text('Скопировать информацию'),
               subtitle: const Text('Для баг-репорта и диагностики'),
+              mouseCursor: SystemMouseCursors.click,
               onTap: () async {
                 await Clipboard.setData(
                   ClipboardData(text: 'OrexRay ${appVersion.label}'),

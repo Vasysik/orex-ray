@@ -61,6 +61,7 @@ class _DesktopSideNavigation extends StatelessWidget {
             child: InkWell(
               key: ValueKey('desktop-nav-${destination.label}'),
               onTap: () => onSelected(index),
+              mouseCursor: SystemMouseCursors.click,
               borderRadius: BorderRadius.circular(16),
               child: SizedBox(
                 width: double.infinity,

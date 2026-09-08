@@ -58,6 +58,7 @@ void main() {
       name: 'Example',
       profileIds: ['one', 'two'],
       updateIntervalHours: 12,
+      metadataHeadUnsupported: true,
       userInfo: 'upload=1; download=2; total=10; expire=2000000000',
       supportUrl: 'https://support.example/help',
       webPageUrl: 'https://panel.example/user',
@@ -73,6 +74,7 @@ void main() {
     expect(restored.url, subscription.url);
     expect(restored.profileIds, ['one', 'two']);
     expect(restored.updateIntervalHours, 12);
+    expect(restored.metadataHeadUnsupported, isTrue);
     expect(restored.supportUrl, 'https://support.example/help');
     expect(restored.webPageUrl, 'https://panel.example/user');
     expect(restored.announce, 'Maintenance tonight');

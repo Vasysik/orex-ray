@@ -590,9 +590,7 @@ class TunnelTarget {
   TunnelProfile get primaryProfile => profiles.first;
   String get endpoint =>
       isBalancer ? '${profiles.length} серверов' : primaryProfile.endpoint;
-  String get protocol => isBalancer
-      ? 'Балансировщик · ${balancer!.strategy.title}'
-      : primaryProfile.protocol;
+  String get protocol => isBalancer ? 'Балансировщик' : primaryProfile.protocol;
   String get transportLabel =>
       isBalancer ? balancer!.strategy.title : primaryProfile.transportLabel;
   int? get latencyMs {

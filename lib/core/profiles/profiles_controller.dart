@@ -103,10 +103,8 @@ class ProfilesController extends ChangeNotifier {
   bool _autoRefreshInFlight = false;
   bool _metadataRefreshInFlight = false;
   final Set<String> _refreshingSubscriptionIds = <String>{};
-  final Set<String> _refreshingSubscriptionMetadataIds = <String>{};
   final Map<String, int> _lastAutoRefreshAttemptEpochMs = <String, int>{};
   final Map<String, int> _lastMetadataRefreshAttemptEpochMs = <String, int>{};
-  final Set<String> _metadataHeadUnsupportedIds = <String>{};
   bool _disposed = false;
 
   static Future<ProfilesController> load({
@@ -143,8 +141,6 @@ class ProfilesController extends ChangeNotifier {
   bool get refreshingSubscriptions => _refreshingSubscriptions;
   bool subscriptionRefreshing(String id) =>
       _refreshingSubscriptions || _refreshingSubscriptionIds.contains(id);
-  bool subscriptionMetadataRefreshing(String id) =>
-      _refreshingSubscriptionMetadataIds.contains(id);
 
   ProxySubscription? subscriptionForProfile(String profileId) {
     for (final subscription in _subscriptions) {
@@ -578,8 +574,9 @@ class ProfilesController extends ChangeNotifier {
           url,
           userAgent: userAgent,
         );
+        if (result == null) return null;
         firstResult ??= result;
-        if (result != null && !result.isEmpty) return result;
+        if (!result.isEmpty) return result;
       } on FormatException catch (error) {
         firstError ??= error;
       }
@@ -587,51 +584,6 @@ class ProfilesController extends ChangeNotifier {
     if (firstResult != null) return firstResult;
     if (firstError != null) throw firstError;
     return null;
-  }
-
-  Future<bool> refreshSubscriptionMetadata(String id) async {
-    if (_disposed) return false;
-    if (_refreshingSubscriptionIds.contains(id) ||
-        _refreshingSubscriptionMetadataIds.contains(id)) {
-      throw const FormatException('Подписка уже обновляется');
-    }
-    final initialIndex = _subscriptions.indexWhere((item) => item.id == id);
-    if (initialIndex < 0) {
-      throw const FormatException('Подписка не найдена');
-    }
-
-    _refreshingSubscriptionMetadataIds.add(id);
-    _notifyListeners();
-    try {
-      final snapshot = _subscriptions[initialIndex];
-      final metadata = await _loadSubscriptionMetadata(snapshot.url);
-      if (_disposed) return false;
-      if (metadata == null || metadata.isEmpty) {
-        _metadataHeadUnsupportedIds.add(id);
-        return false;
-      }
-      _metadataHeadUnsupportedIds.remove(id);
-
-      final index = _subscriptions.indexWhere((item) => item.id == id);
-      if (index < 0) return false;
-      final current = _subscriptions[index];
-      final title = metadata.profileTitle?.trim();
-      _subscriptions[index] = current.copyWith(
-        name: title != null && title.isNotEmpty ? title : null,
-        lastMetadataCheckEpochMs: DateTime.now().millisecondsSinceEpoch,
-        updateIntervalHours: metadata.updateIntervalHours,
-        userInfo: metadata.userInfo,
-        supportUrl: metadata.supportUrl,
-        webPageUrl: metadata.webPageUrl,
-        announce: metadata.announce,
-      );
-      await _repository.saveSubscriptions(_subscriptions);
-      if (!_disposed) _notifyListeners();
-      return true;
-    } finally {
-      _refreshingSubscriptionMetadataIds.remove(id);
-      if (!_disposed) _notifyListeners();
-    }
   }
 
   Future<int> refreshSubscriptionMetadataIfDue({
@@ -654,8 +606,7 @@ class ProfilesController extends ChangeNotifier {
       for (final snapshot in List<ProxySubscription>.from(_subscriptions)) {
         if (_disposed) break;
         if (_refreshingSubscriptionIds.contains(snapshot.id) ||
-            _refreshingSubscriptionMetadataIds.contains(snapshot.id) ||
-            _metadataHeadUnsupportedIds.contains(snapshot.id)) {
+            snapshot.metadataHeadUnsupported) {
           continue;
         }
         final lastCheck = snapshot.lastMetadataCheckEpochMs;
@@ -666,20 +617,35 @@ class ProfilesController extends ChangeNotifier {
 
         try {
           final metadata = await _loadSubscriptionMetadata(snapshot.url);
-          if (metadata == null) _metadataHeadUnsupportedIds.add(snapshot.id);
+          if (metadata == null || metadata.isEmpty) {
+            // Persist this across app restarts. A provider that rejects HEAD or
+            // returns no useful subscription headers should not be probed again
+            // solely for metadata until a normal GET refresh gives it another
+            // chance and clears the flag.
+            final index =
+                _subscriptions.indexWhere((item) => item.id == snapshot.id);
+            if (index >= 0) {
+              _subscriptions[index] = _subscriptions[index].copyWith(
+                metadataHeadUnsupported: true,
+                lastMetadataCheckEpochMs: nowMs,
+              );
+              changed = true;
+            }
+            continue;
+          }
           if (_disposed) break;
           final index = _subscriptions.indexWhere((item) => item.id == snapshot.id);
           if (index < 0) continue;
           final current = _subscriptions[index];
-          final title = metadata?.profileTitle?.trim();
+          final title = metadata.profileTitle?.trim();
           _subscriptions[index] = current.copyWith(
             name: title != null && title.isNotEmpty ? title : null,
             lastMetadataCheckEpochMs: nowMs,
-            updateIntervalHours: metadata?.updateIntervalHours,
-            userInfo: metadata?.userInfo,
-            supportUrl: metadata?.supportUrl,
-            webPageUrl: metadata?.webPageUrl,
-            announce: metadata?.announce,
+            updateIntervalHours: metadata.updateIntervalHours,
+            userInfo: metadata.userInfo,
+            supportUrl: metadata.supportUrl,
+            webPageUrl: metadata.webPageUrl,
+            announce: metadata.announce,
           );
           touched += 1;
           changed = true;
@@ -771,7 +737,6 @@ class ProfilesController extends ChangeNotifier {
     final subscription = _subscriptions[index];
     _lastAutoRefreshAttemptEpochMs.remove(subscription.id);
     _lastMetadataRefreshAttemptEpochMs.remove(subscription.id);
-    _metadataHeadUnsupportedIds.remove(subscription.id);
     final removedIds = subscription.profileIds.toSet();
     final workingProfiles = List<TunnelProfile>.from(_profiles)
       ..removeWhere((profile) => removedIds.contains(profile.id));
@@ -878,7 +843,6 @@ class ProfilesController extends ChangeNotifier {
       Uri.tryParse(url)?.host,
       'Подписка',
     ]);
-    _metadataHeadUnsupportedIds.remove(id);
     // Support is provider metadata, not something OrexRay infers from node
     // remarks. A full subscription refresh is the source of truth: when the
     // provider no longer sends support-url, remove any previously stored value.
@@ -928,6 +892,14 @@ class ProfilesController extends ChangeNotifier {
     await _repository.saveBalancers(workingBalancers);
     await _repository.saveSubscriptions(workingSubscriptions);
     await _repository.saveSelectedId(selectedId);
+
+    // A successful full GET is the reset point for lightweight HEAD metadata
+    // probing. Drop the in-memory HEAD cooldown together with the persisted
+    // metadataHeadUnsupported flag so a provider can be probed again after a
+    // normal refresh. This also avoids stale cooldown timestamps if the system
+    // clock moves backwards between the HEAD attempt and the full refresh.
+    _lastMetadataRefreshAttemptEpochMs.remove(id);
+
     if (_disposed) {
       return SubscriptionSyncResult(
         subscription: subscription,

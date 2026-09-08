@@ -102,6 +102,10 @@ class OrexTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: ButtonStyle(
+          mouseCursor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.disabled)
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click),
           side: WidgetStateProperty.resolveWith((states) {
             if (!states.contains(WidgetState.disabled)) {
               return BorderSide(color: dividerColor);
@@ -122,6 +126,27 @@ class OrexTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
+        ).copyWith(
+          mouseCursor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.disabled)
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: ButtonStyle(
+          mouseCursor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.disabled)
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: ButtonStyle(
+          mouseCursor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.disabled)
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click),
         ),
       ),
       snackBarTheme: SnackBarThemeData(

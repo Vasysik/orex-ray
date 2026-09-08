@@ -99,6 +99,7 @@ class ProxySubscription {
     this.lastUpdatedEpochMs,
     this.lastMetadataCheckEpochMs,
     this.updateIntervalHours,
+    this.metadataHeadUnsupported = false,
     this.userInfo = '',
     this.supportUrl = '',
     this.webPageUrl = '',
@@ -113,6 +114,7 @@ class ProxySubscription {
   final int? lastUpdatedEpochMs;
   final int? lastMetadataCheckEpochMs;
   final int? updateIntervalHours;
+  final bool metadataHeadUnsupported;
   final String userInfo;
   final String supportUrl;
   final String webPageUrl;
@@ -136,6 +138,7 @@ class ProxySubscription {
     int? lastMetadataCheckEpochMs,
     int? updateIntervalHours,
     bool clearUpdateInterval = false,
+    bool? metadataHeadUnsupported,
     String? userInfo,
     String? supportUrl,
     String? webPageUrl,
@@ -153,6 +156,8 @@ class ProxySubscription {
       updateIntervalHours: clearUpdateInterval
           ? null
           : (updateIntervalHours ?? this.updateIntervalHours),
+      metadataHeadUnsupported:
+          metadataHeadUnsupported ?? this.metadataHeadUnsupported,
       userInfo: userInfo ?? this.userInfo,
       supportUrl: supportUrl ?? this.supportUrl,
       webPageUrl: webPageUrl ?? this.webPageUrl,
@@ -172,6 +177,7 @@ class ProxySubscription {
           'lastMetadataCheckEpochMs': lastMetadataCheckEpochMs,
         if (updateIntervalHours != null)
           'updateIntervalHours': updateIntervalHours,
+        if (metadataHeadUnsupported) 'metadataHeadUnsupported': true,
         if (userInfo.isNotEmpty) 'userInfo': userInfo,
         if (supportUrl.isNotEmpty) 'supportUrl': supportUrl,
         if (webPageUrl.isNotEmpty) 'webPageUrl': webPageUrl,
@@ -211,6 +217,7 @@ class ProxySubscription {
           lastMetadataCheck is num ? lastMetadataCheck.toInt() : null,
       updateIntervalHours:
           interval is num && interval > 0 ? interval.toInt() : null,
+      metadataHeadUnsupported: json['metadataHeadUnsupported'] == true,
       userInfo: json['userInfo'] is String ? json['userInfo'] as String : '',
       supportUrl:
           json['supportUrl'] is String ? (json['supportUrl'] as String).trim() : '',

@@ -125,6 +125,7 @@ class BackgroundScreen extends StatelessWidget {
                     'Видимость меняется в системных настройках Android.',
                   ),
                   trailing: const Icon(Icons.open_in_new_rounded),
+                  mouseCursor: SystemMouseCursors.click,
                   onTap: () => _openAndroidNotificationSettings(context),
                 ),
                 const Divider(height: 1),

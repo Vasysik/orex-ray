@@ -438,9 +438,11 @@ class _ConnectButton extends StatelessWidget {
               : disconnecting
                   ? 'OrexRay отключается'
                   : 'Подключить OrexRay',
-      child: GestureDetector(
-        onTap: canTap ? () => onTap() : null,
-        child: AnimatedOpacity(
+      child: MouseRegion(
+        cursor: canTap ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          onTap: canTap ? () => onTap() : null,
+          child: AnimatedOpacity(
           duration: const Duration(milliseconds: 220),
           opacity: enabled ? 1 : 0.45,
           child: AnimatedContainer(
@@ -507,6 +509,7 @@ class _ConnectButton extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -608,7 +611,11 @@ class _MobileTrafficRow extends StatelessWidget {
           // Prefer true card-centered traffic data. If centering would collide
           // with the unchanged left label, fall back to the old right side.
           final centeredLeft = (constraints.maxWidth - valueWidth) / 2;
-          final canCenter = centeredLeft >= labelWidth + 8;
+          // Keep a comfortable visual gap from the unchanged left label.
+          // Once a centered value would come closer than this, move the value
+          // to the right edge instead of letting the row look cramped.
+          const minimumLabelGap = 64.0;
+          final canCenter = centeredLeft >= labelWidth + minimumLabelGap;
           if (canCenter) {
             return Stack(
               alignment: Alignment.center,
@@ -626,7 +633,7 @@ class _MobileTrafficRow extends StatelessWidget {
           return Row(
             children: [
               label,
-              const SizedBox(width: 12),
+              const SizedBox(width: 64),
               Expanded(
                 child: Text(
                   value,
@@ -686,6 +693,7 @@ class _CompactMetric extends StatelessWidget {
     if (onTap == null) return child;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
+      mouseCursor: busy ? SystemMouseCursors.basic : SystemMouseCursors.click,
       onTap: busy ? null : () => onTap!(),
       child: child,
     );
@@ -717,6 +725,10 @@ class _QuickInfo extends StatelessWidget {
                       color: Colors.transparent,
                       child: InkWell(
                         borderRadius: BorderRadius.circular(16),
+                        mouseCursor:
+                            tunnel.canChangeTarget && tunnel.targets.length > 1
+                                ? SystemMouseCursors.click
+                                : SystemMouseCursors.basic,
                         onTap:
                             tunnel.canChangeTarget && tunnel.targets.length > 1
                                 ? () => _showTargetPicker(context)
@@ -926,6 +938,7 @@ class _QuickInfo extends StatelessWidget {
                                 ? Icons.expand_less_rounded
                                 : Icons.expand_more_rounded,
                           ),
+                          mouseCursor: SystemMouseCursors.click,
                           onTap: () => setSheetState(() {
                             if (!expanded.add(group.key)) {
                               expanded.remove(group.key);
@@ -1009,6 +1022,7 @@ class _QuickTargetTile extends StatelessWidget {
       trailing: selected
           ? const Icon(Icons.check_circle, color: OrexColors.copper)
           : const Icon(Icons.chevron_right),
+      mouseCursor: SystemMouseCursors.click,
       onTap: onTap,
     );
   }
@@ -1136,6 +1150,7 @@ class _Metric extends StatelessWidget {
     if (onTap == null) return child;
     return InkWell(
       borderRadius: BorderRadius.circular(16),
+      mouseCursor: busy ? SystemMouseCursors.basic : SystemMouseCursors.click,
       onTap: busy ? null : () => onTap!(),
       child: child,
     );
