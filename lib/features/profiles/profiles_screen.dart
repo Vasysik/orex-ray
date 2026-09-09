@@ -1516,6 +1516,8 @@ class _ProfilesHeader extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 'Серверы, пинг и балансировщики Xray',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -1533,8 +1535,8 @@ class _ProfilesHeader extends StatelessWidget {
         final serverSelection =
             selectionScope == _ProfileSelectionScope.servers;
         final sameRowBreakpoint = selectionMode
-            ? (serverSelection ? 640.0 : 540.0)
-            : 520.0;
+            ? (serverSelection ? 600.0 : 500.0)
+            : 480.0;
         final sameRow = width >= sameRowBreakpoint;
 
         final actions = selectionMode
@@ -1543,9 +1545,10 @@ class _ProfilesHeader extends StatelessWidget {
                 refreshingLatency: refreshingLatency,
                 allSelected: allSelected,
                 canGroupSelected: canGroupSelected,
-                forceCompactExport:
-                    width < (serverSelection ? 740.0 : 620.0),
-                forceCompactPing: serverSelection && width < 690.0,
+                forceCompactExport: sameRow &&
+                    width < (serverSelection ? 710.0 : 540.0),
+                forceCompactPing:
+                    sameRow && serverSelection && width < 650.0,
                 allowWrap: !sameRow,
                 onPingSelected: onPingSelected,
                 onExportSelected: onExportSelected,
@@ -1555,8 +1558,8 @@ class _ProfilesHeader extends StatelessWidget {
                 onCloseSelection: onCloseSelection,
               )
             : _AdaptiveProfileActions(
-                forceCompactProfile: width < 560.0,
-                forceCompactPing: width < 650.0,
+                forceCompactProfile: sameRow && width < 520.0,
+                forceCompactPing: sameRow && width < 560.0,
                 allowWrap: !sameRow,
                 refreshingLatency: refreshingLatency,
                 canRefreshLatency: canRefreshLatency,
@@ -1611,13 +1614,12 @@ class _AdaptiveProfileActions extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final finite = constraints.maxWidth.isFinite;
-        // Collapse the labels before a narrow column has any chance to
-        // overflow. The action group can live either beside the title or below
-        // it, so this threshold must not depend on the parent header mode.
-        final compactPing = forceCompactPing ||
-            (finite && constraints.maxWidth < 420);
-        final compactProfile = forceCompactProfile ||
-            (finite && constraints.maxWidth < 330);
+        // Collapse labels progressively both beside the page title and, after
+        // wrapping below it, when the lower action row becomes narrow again.
+        final compactPing =
+            forceCompactPing || (finite && constraints.maxWidth < 300);
+        final compactProfile =
+            forceCompactProfile || (finite && constraints.maxWidth < 220);
         final children = <Widget>[
           compactProfile
               ? _HeaderIconActionButton(
@@ -1712,12 +1714,12 @@ class _AdaptiveSelectionActions extends StatelessWidget {
         final width = constraints.maxWidth;
         final finite = width.isFinite;
         final serverScope = scope == _ProfileSelectionScope.servers;
-        // Keep every action on one line whenever possible. Labels disappear
-        // from the end first: Export, then Ping. Icon-only actions retain the
-        // same pill height/style as the normal profile actions.
+        // Labels disappear from the end first: Export, then Ping. Below the
+        // title, compact them before Wrap has to create another action row.
         final compactExport = forceCompactExport ||
-            (finite && width < (serverScope ? 500 : 315));
-        final compactPing = forceCompactPing || (finite && width < 410);
+            (finite && width < (serverScope ? 470 : 240));
+        final compactPing = forceCompactPing ||
+            (finite && width < (serverScope ? 410 : 320));
 
         final children = <Widget>[];
         if (serverScope) {
@@ -1843,34 +1845,48 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final primary = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title.toUpperCase(),
+          style: textTheme.bodySmall?.copyWith(
+            color: OrexColors.copper,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text('$count', style: textTheme.bodySmall),
+      ],
+    );
+    final selected = selectedCount;
     return Padding(
       // Match SettingsSection titles: page padding (20) + section label inset (8).
       padding: const EdgeInsets.only(left: 8),
-      child: Row(
+      child: Wrap(
+        spacing: 14,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text(
-            title.toUpperCase(),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: OrexColors.copper,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.1,
-                ),
-          ),
-          const SizedBox(width: 8),
-          Text('$count', style: Theme.of(context).textTheme.bodySmall),
-          if (selectedCount case final selected?) ...[
-            const SizedBox(width: 14),
-            Text(
-              'ВЫДЕЛЕНО',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          primary,
+          if (selected != null)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'ВЫДЕЛЕНО',
+                  style: textTheme.bodySmall?.copyWith(
                     color: OrexColors.copper,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.7,
                   ),
+                ),
+                const SizedBox(width: 8),
+                Text('$selected', style: textTheme.bodySmall),
+              ],
             ),
-            const SizedBox(width: 8),
-            Text('$selected', style: Theme.of(context).textTheme.bodySmall),
-          ],
         ],
       ),
     );
@@ -2180,9 +2196,11 @@ class _SubscriptionCard extends StatelessWidget {
     final fullySelected = count > 0 && selectedCount == count;
     final userInfo = subscription.parsedUserInfo;
     final rawNotices = subscription.notices.take(3).toList(growable: false);
+    final normalizedName = subscription.name.trim().toLowerCase();
+    final normalizedHost = host.trim().toLowerCase();
     final summaryItems = <String>[
       '$count серверов',
-      host,
+      if (normalizedHost.isNotEmpty && normalizedHost != normalizedName) host,
       if (subscription.lastUpdatedEpochMs case final updated?)
         _relativeSubscriptionUpdate(updated),
     ];
@@ -2517,7 +2535,12 @@ String _formatSubscriptionExpiry(DateTime expiry) {
   final difference = expiry.difference(now);
   if (difference <= Duration.zero) return 'Срок действия истёк';
   final days = (difference.inSeconds / Duration.secondsPerDay).ceil();
-  return 'До ${_formatSubscriptionDate(expiry)} · ${_daysLabel(days)}';
+  return 'До ${_formatSubscriptionDate(expiry)} · ${_russianCountLabel(
+    days,
+    one: 'день',
+    few: 'дня',
+    many: 'дней',
+  )}';
 }
 
 String _formatSubscriptionDate(DateTime date) {
@@ -2538,23 +2561,51 @@ String _formatSubscriptionDate(DateTime date) {
   return '${date.day} ${months[date.month - 1]}';
 }
 
-String _daysLabel(int days) {
-  final mod100 = days % 100;
-  final mod10 = days % 10;
-  if (mod100 >= 11 && mod100 <= 14) return '$days дней';
-  if (mod10 == 1) return '$days день';
-  if (mod10 >= 2 && mod10 <= 4) return '$days дня';
-  return '$days дней';
+String _russianCountLabel(
+  int value, {
+  required String one,
+  required String few,
+  required String many,
+}) {
+  final mod100 = value % 100;
+  final mod10 = value % 10;
+  final unit = mod100 >= 11 && mod100 <= 14
+      ? many
+      : mod10 == 1
+          ? one
+          : mod10 >= 2 && mod10 <= 4
+              ? few
+              : many;
+  return '$value $unit';
 }
 
 String _relativeSubscriptionUpdate(int epochMs) {
   final elapsed = DateTime.now().difference(
     DateTime.fromMillisecondsSinceEpoch(epochMs),
   );
-  if (elapsed.isNegative || elapsed.inMinutes < 1) return 'серверы обновлены сейчас';
-  if (elapsed.inHours < 1) return 'серверы обновлены ${elapsed.inMinutes} мин назад';
-  if (elapsed.inDays < 1) return 'серверы обновлены ${elapsed.inHours} ч назад';
-  return 'серверы обновлены ${_daysLabel(elapsed.inDays)} назад';
+  if (elapsed.isNegative || elapsed.inMinutes < 1) return 'обновлено сейчас';
+  if (elapsed.inHours < 1) {
+    return 'обновлено ${_russianCountLabel(
+      elapsed.inMinutes,
+      one: 'минута',
+      few: 'минуты',
+      many: 'минут',
+    )} назад';
+  }
+  if (elapsed.inDays < 1) {
+    return 'обновлено ${_russianCountLabel(
+      elapsed.inHours,
+      one: 'час',
+      few: 'часа',
+      many: 'часов',
+    )} назад';
+  }
+  return 'обновлено ${_russianCountLabel(
+    elapsed.inDays,
+    one: 'день',
+    few: 'дня',
+    many: 'дней',
+  )} назад';
 }
 
 class _ProfileCard extends StatelessWidget {
@@ -2614,20 +2665,26 @@ class _ProfileCard extends StatelessWidget {
             identity: identity,
             selected: selected,
           ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  profile.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              _PingBadge(
-                latencyMs: latencyMs,
-                onTap: onRefreshPing,
-              ),
-            ],
+          title: LayoutBuilder(
+            builder: (context, constraints) {
+              final showPingBadge = constraints.maxWidth >= 92;
+              return Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      profile.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (showPingBadge)
+                    _PingBadge(
+                      latencyMs: latencyMs,
+                      onTap: onRefreshPing,
+                    ),
+                ],
+              );
+            },
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 5),
