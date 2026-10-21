@@ -11,6 +11,7 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/theme/theme_controller.dart';
+import '../../shared/widgets/responsive_breakpoints.dart';
 import '../../shared/widgets/responsive_motion.dart';
 import '../about/about_screen.dart';
 import '../appearance/appearance_screen.dart';
@@ -214,7 +215,8 @@ class _AppShellState extends State<AppShell> {
         body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final desktop = constraints.maxWidth >= 900;
+              final desktop = constraints.maxWidth >=
+                  OrexBreakpoints.shellSideNavigation;
               final desktopPageIndices = Platform.isWindows
                   ? const [0, 1, 2, 4, 5, 6, 7, 8, 9]
                   : const [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];

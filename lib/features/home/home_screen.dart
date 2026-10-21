@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/egress/egress_identity.dart';
 import '../../core/tunnel/tunnel_models.dart';
@@ -6,6 +7,7 @@ import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
 import '../../shared/widgets/orex_modal_sheet_surface.dart';
+import '../../shared/widgets/responsive_breakpoints.dart';
 import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../../shared/widgets/status_pill.dart';
@@ -30,32 +32,37 @@ class HomeScreen extends StatelessWidget {
         final snapshot = tunnel.snapshot;
         return LayoutBuilder(
           builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 920;
+            final wide = constraints.maxWidth >= OrexBreakpoints.homeSplitCards;
             final responsiveBody = wide
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 5,
-                            child: _ConnectionHero(
-                              tunnel: tunnel,
-                              snapshot: snapshot,
-                              onTap: tunnel.toggle,
-                              showStatusText: true,
+                      // Match the connection card's bottom edge to the
+                      // second right-hand card, regardless of their content.
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: _ConnectionHero(
+                                tunnel: tunnel,
+                                snapshot: snapshot,
+                                onTap: tunnel.toggle,
+                                showStatusText: true,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            flex: 4,
-                            child: _QuickInfo(
-                              tunnel: tunnel,
-                              snapshot: snapshot,
+                            const SizedBox(width: 16),
+                            Expanded(
+                              flex: 4,
+                              child: _QuickInfo(
+                                tunnel: tunnel,
+                                snapshot: snapshot,
+                                stretchProxyCard: true,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
                       _TrafficCard(tunnel: tunnel, snapshot: snapshot),
@@ -393,6 +400,9 @@ class _ConnectionHero extends StatelessWidget {
       borderRadius: 28,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       child: Column(
+        mainAxisAlignment: showStatusText
+            ? MainAxisAlignment.center
+            : MainAxisAlignment.start,
         children: [
           if (showStatusText) ...[
             Text(
@@ -741,10 +751,15 @@ class _CompactMetric extends StatelessWidget {
 }
 
 class _QuickInfo extends StatelessWidget {
-  const _QuickInfo({required this.tunnel, required this.snapshot});
+  const _QuickInfo({
+    required this.tunnel,
+    required this.snapshot,
+    this.stretchProxyCard = false,
+  });
 
   final TunnelController tunnel;
   final TunnelSnapshot snapshot;
+  final bool stretchProxyCard;
 
   @override
   Widget build(BuildContext context) {
@@ -752,6 +767,7 @@ class _QuickInfo extends StatelessWidget {
     final pingLabel = _pingLabel(tunnel, profile);
     final activeBalancerMember = tunnel.activeBalancerMemberName(profile);
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         GlassPanel(
           borderRadius: 24,
@@ -759,107 +775,100 @@ class _QuickInfo extends StatelessWidget {
           child: profile == null
               ? const _NoProfileCard()
               : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        mouseCursor:
-                            tunnel.canChangeTarget && tunnel.targets.length > 1
-                                ? SystemMouseCursors.click
-                                : SystemMouseCursors.basic,
-                        onTap:
-                            tunnel.canChangeTarget && tunnel.targets.length > 1
-                                ? () => _showTargetPicker(context)
-                                : null,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Row(
-                            children: [
-                              EgressAvatar(
-                                identity: tunnel.egressIdentityFor(profile.id),
-                                fallbackIcon: profile.isBalancer
-                                    ? Icons.hub_rounded
-                                    : Icons.public_rounded,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            profile.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleMedium,
-                                          ),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      mouseCursor:
+                          tunnel.canChangeTarget && tunnel.targets.length > 1
+                              ? SystemMouseCursors.click
+                              : SystemMouseCursors.basic,
+                      onTap:
+                          tunnel.canChangeTarget && tunnel.targets.length > 1
+                              ? () => _showTargetPicker(context)
+                              : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            EgressAvatar(
+                              identity: tunnel.egressIdentityFor(profile.id),
+                              fallbackIcon: profile.isBalancer
+                                  ? Icons.hub_rounded
+                                  : Icons.public_rounded,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          profile.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium,
                                         ),
-                                        if (tunnel.targets.length > 1)
-                                          const Icon(Icons
-                                              .keyboard_arrow_down_rounded),
-                                      ],
-                                    ),
-                                    Text(
-                                      snapshot.isConnected &&
-                                              profile.isBalancer &&
-                                              activeBalancerMember != null
-                                          ? '${profile.endpoint} · $activeBalancerMember'
-                                          : profile.endpoint,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
+                                      ),
+                                      if (tunnel.targets.length > 1)
+                                        const Icon(Icons
+                                            .keyboard_arrow_down_rounded),
+                                    ],
+                                  ),
+                                  Text(
+                                    snapshot.isConnected &&
+                                            profile.isBalancer &&
+                                            activeBalancerMember != null
+                                        ? '${profile.endpoint} · $activeBalancerMember'
+                                        : profile.endpoint,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    const Divider(height: 1),
-                    const SizedBox(height: 18),
-                    _InfoRow(label: 'Протокол', value: profile.protocol),
-                    const SizedBox(height: 12),
-                    _InfoRow(label: 'Транспорт', value: profile.transportLabel),
-                    const SizedBox(height: 12),
-                    _InfoRow(
-                      label: 'Задержка',
-                      value: pingLabel,
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Divider(height: 1),
+                  const SizedBox(height: 18),
+                  _InfoRow(label: 'Протокол', value: profile.protocol),
+                  const SizedBox(height: 12),
+                  _InfoRow(label: 'Транспорт', value: profile.transportLabel),
+                  const SizedBox(height: 12),
+                  _InfoRow(
+                    label: 'Задержка',
+                    value: pingLabel,
+                  ),
+                ],
+              ),
         ),
         const SizedBox(height: 16),
-        GlassPanel(
-          borderRadius: 24,
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              _CardIcon(icon: _modeIcon(snapshot.mode)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Текущий режим'),
-                    const SizedBox(height: 3),
-                    Text(snapshot.mode.description),
-                  ],
-                ),
-              ),
-              const Icon(Icons.lock_rounded, color: OrexColors.copper),
-            ],
+        if (stretchProxyCard)
+          Expanded(
+            child: GlassPanel(
+              borderRadius: 24,
+              padding: const EdgeInsets.all(20),
+              child: _ProxyDetails(tunnel: tunnel),
+            ),
+          )
+        else
+          GlassPanel(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(20),
+            child: _ProxyDetails(tunnel: tunnel),
           ),
-        ),
       ],
     );
   }
@@ -1191,21 +1200,120 @@ class _Metric extends StatelessWidget {
   }
 }
 
-class _CardIcon extends StatelessWidget {
-  const _CardIcon({required this.icon});
+/// Read-only shortcut for local inbound listeners.  The actual ports and
+/// exposure policy are still configured on the Connection page.
+class _ProxyDetails extends StatelessWidget {
+  const _ProxyDetails({required this.tunnel});
 
-  final IconData icon;
+  final TunnelController tunnel;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: OrexColors.copper.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
+    final status = tunnel.localProxyExpectedAvailable
+        ? 'Доступен'
+        : tunnel.localProxyDisabledInVpn
+            ? 'Отключён в TUN'
+            : 'Неактивен';
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.settings_ethernet_rounded,
+                size: 18, color: OrexColors.copper),
+            const SizedBox(width: 8),
+            Expanded(
+              // In a split home layout this card may be only ~280 px wide.
+              // A fixed-width heading plus a status label can overflow even
+              // before the home layout reaches its compact breakpoint.
+              // Wrap keeps both labels readable without changing the split
+              // threshold or relying on magic widths.
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Text('Локальный прокси', style: textTheme.titleSmall),
+                  Text(status, style: textTheme.bodySmall),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _ProxyAddressChip(
+              protocol: 'SOCKS5',
+              port: tunnel.socksProxyPort,
+              uriScheme: 'socks5',
+            ),
+            _ProxyAddressChip(
+              protocol: 'HTTP',
+              port: tunnel.httpProxyPort,
+              uriScheme: 'http',
+            ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        Text(
+          tunnel.proxyAllowsLan
+              ? 'Доступ из локальной сети разрешён в настройках'
+              : '127.0.0.1 · только это устройство',
+          style: textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+}
+
+class _ProxyAddressChip extends StatelessWidget {
+  const _ProxyAddressChip({
+    required this.protocol,
+    required this.port,
+    required this.uriScheme,
+  });
+
+  final String protocol;
+  final int port;
+  final String uriScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final address = '$uriScheme://127.0.0.1:$port';
+    return Tooltip(
+      message: 'Скопировать $address',
+      child: Material(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () async {
+            await Clipboard.setData(ClipboardData(text: address));
+            if (!context.mounted) return;
+            ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+              SnackBar(content: Text('$protocol-адрес скопирован')),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('$protocol :$port',
+                    style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(width: 6),
+                const Icon(Icons.copy_rounded, size: 14),
+              ],
+            ),
+          ),
+        ),
       ),
-      child: Icon(icon, color: OrexColors.copper),
     );
   }
 }

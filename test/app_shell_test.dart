@@ -89,8 +89,8 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 20)),
   );
-  testWidgets('desktop sidebar hitboxes match their visible fixed rows', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
+  testWidgets('sidebar remains at 660 and moves below at 659', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(820, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     SharedPreferences.setMockInitialValues({});
@@ -147,6 +147,34 @@ void main() {
     await tester.tap(profilesNav);
     await tester.pump();
     expect(find.text('Серверы, пинг и балансировщики Xray'), findsOneWidget);
+
+    await tester.binding.setSurfaceSize(const Size(660, 800));
+    await tester.pumpAndSettle();
+    // At exactly 660 px the home cards already stack, but side navigation is
+    // still interactive.  The app should not waste horizontal space by
+    // switching to bottom navigation yet.
+    await tester.tap(home);
+    await tester.pumpAndSettle();
+    final hero = find.text('Белочка пока без маршрута');
+    final profile = find.text('Нет активного профиля');
+    expect(hero, findsOneWidget);
+    expect(profile, findsOneWidget);
+    expect((tester.getCenter(hero).dx - tester.getCenter(profile).dx).abs(),
+        lessThan(10));
+    await tester.tap(profilesNav);
+    await tester.pumpAndSettle();
+    expect(find.text('Серверы, пинг и балансировщики Xray'), findsOneWidget);
+
+    await tester.binding.setSurfaceSize(const Size(659, 800));
+    await tester.pumpAndSettle();
+    // Desktop destinations stay mounted for animation, but bottom navigation
+    // becomes the interactive navigation surface below the shell breakpoint.
+    final bottom = find.byType(NavigationBar);
+    expect(bottom, findsOneWidget);
+    await _tapMobileTab(tester, 'Главная');
+    expect(_mobileNavigationBar(tester).selectedIndex, 0);
+    await _tapMobileTab(tester, 'Профили');
+    expect(_mobileNavigationBar(tester).selectedIndex, 1);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();

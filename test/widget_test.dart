@@ -10,6 +10,7 @@ import 'package:orex_ray/core/tunnel/tunnel_engine.dart';
 import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:orex_ray/features/home/home_screen.dart';
 import 'package:orex_ray/features/home/tunnel_controller.dart';
+import 'package:orex_ray/shared/theme/glass.dart';
 import 'package:orex_ray/shared/theme/orex_theme.dart';
 import 'package:orex_ray/shared/widgets/squirrel_mascot.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -43,10 +44,9 @@ void main() {
       await tester.pump();
 
       expect(find.text('OrexRay'), findsOneWidget);
-      // The adaptive header keeps the disconnected status pill whenever it
-      // actually fits at this width. Empty state only means there is no
-      // selected route; it does not hide the global connection status.
-      expect(find.text('Не подключено'), findsOneWidget);
+      // The disconnected state may appear in both the header status pill
+      // and the connection card; the exact count depends on layout width.
+      expect(find.text('Не подключено'), findsWidgets);
       expect(find.text('Белочка пока без маршрута'), findsOneWidget);
       expect(find.byType(SquirrelMascot), findsWidgets);
 
@@ -55,6 +55,190 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 15)),
   );
+
+  testWidgets('home keeps split cards longer and removes redundant mode card',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    final tunnel = TunnelController(
+      engine: const _TestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.binding.setSurfaceSize(const Size(740, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark,
+      home: HomeScreen(tunnel: tunnel),
+    ));
+    await tester.pumpAndSettle();
+
+    // With 740 logical pixels available, both primary cards remain side by side.
+    final hero = find.text('Белочка пока без маршрута');
+    final profile = find.text('Нет активного профиля');
+    expect(hero, findsOneWidget);
+    expect(profile, findsOneWidget);
+    expect(tester.getCenter(hero).dx + 100,
+        lessThan(tester.getCenter(profile).dx));
+    expect(find.text('Текущий режим'), findsNothing);
+
+    // A split layout must form a single rectangle: the connection card on
+    // the left is exactly as tall as profile + gap + proxy on the right.
+    final heroPanel = find.ancestor(
+      of: hero,
+      matching: find.byType(GlassPanel),
+    );
+    final profilePanel = find.ancestor(
+      of: profile,
+      matching: find.byType(GlassPanel),
+    );
+    final proxyPanel = find.ancestor(
+      of: find.text('Локальный прокси'),
+      matching: find.byType(GlassPanel),
+    );
+    expect(heroPanel, findsOneWidget);
+    expect(profilePanel, findsOneWidget);
+    expect(proxyPanel, findsOneWidget);
+    final leftRect = tester.getRect(heroPanel);
+    final upperRightRect = tester.getRect(profilePanel);
+    final lowerRightRect = tester.getRect(proxyPanel);
+    expect(leftRect.top, closeTo(upperRightRect.top, 0.5));
+    expect(leftRect.bottom, closeTo(lowerRightRect.bottom, 0.5));
+    expect(
+      lowerRightRect.top - upperRightRect.bottom,
+      closeTo(16, 0.5),
+    );
+
+    // Check the narrowest split width, where the proxy header may wrap.
+    // Both columns must still share their top and bottom edges.
+    await tester.binding.setSurfaceSize(const Size(700, 900));
+    await tester.pumpAndSettle();
+    final narrowLeft = tester.getRect(heroPanel);
+    final narrowTopRight = tester.getRect(profilePanel);
+    final narrowBottomRight = tester.getRect(proxyPanel);
+    expect(narrowLeft.top, closeTo(narrowTopRight.top, 0.5));
+    expect(narrowLeft.bottom, closeTo(narrowBottomRight.bottom, 0.5));
+    expect(find.text('Локальный прокси'), findsOneWidget);
+
+    await tester.binding.setSurfaceSize(const Size(680, 900));
+    await tester.pumpAndSettle();
+    // The compact layout stacks the two cards and centers both.
+    expect((tester.getCenter(hero).dx - tester.getCenter(profile).dx).abs(),
+        lessThan(10));
+    expect(tester.getCenter(hero).dy, lessThan(tester.getCenter(profile).dy));
+    expect(find.text('Текущий режим'), findsNothing);
+  });
+
+  testWidgets('home shows accurate local proxy configuration and status',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Proxy-Test',
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final tunnel = TunnelController(
+      engine: const _TestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark,
+      home: HomeScreen(tunnel: tunnel),
+    ));
+    await tester.pump();
+
+    expect(find.text('Локальный прокси'), findsOneWidget);
+    // The proxy has its own glass card, not a section inside profile info.
+    final proxyCard = find.ancestor(
+      of: find.text('Локальный прокси'),
+      matching: find.byType(GlassPanel),
+    );
+    final profileCard = find.ancestor(
+      of: find.text('Протокол'),
+      matching: find.byType(GlassPanel),
+    );
+    expect(proxyCard, findsOneWidget);
+    expect(profileCard, findsOneWidget);
+    expect(proxyCard.evaluate().single, isNot(same(profileCard.evaluate().single)));
+    expect(find.text('Неактивен'), findsOneWidget);
+    expect(find.text('SOCKS5 :20808'), findsOneWidget);
+    expect(find.text('HTTP :20809'), findsOneWidget);
+    expect(find.text('127.0.0.1 · только это устройство'), findsOneWidget);
+
+    await settings.setSocksPort(20818);
+    await tester.pump();
+    expect(find.text('SOCKS5 :20818'), findsOneWidget);
+    expect(find.text('SOCKS5 :20808'), findsNothing);
+  });
+
+  testWidgets('split main cards align with a configured profile',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@example.com:443'
+      '?encryption=none&security=none&type=tcp#Layout-Test',
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'windows',
+    );
+    final tunnel = TunnelController(
+      engine: const _TestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+    await tester.binding.setSurfaceSize(const Size(1000, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark,
+      home: HomeScreen(tunnel: tunnel),
+    ));
+    await tester.pumpAndSettle();
+
+    final connection = find.ancestor(
+      of: find.text('Готовы подключить Layout-Test'),
+      matching: find.byType(GlassPanel),
+    );
+    final profile = find.ancestor(
+      of: find.text('Протокол'),
+      matching: find.byType(GlassPanel),
+    );
+    final proxy = find.ancestor(
+      of: find.text('Локальный прокси'),
+      matching: find.byType(GlassPanel),
+    );
+    expect(connection, findsOneWidget);
+    expect(profile, findsOneWidget);
+    expect(proxy, findsOneWidget);
+    expect(tester.getRect(connection).top,
+        closeTo(tester.getRect(profile).top, 0.5));
+    expect(tester.getRect(connection).bottom,
+        closeTo(tester.getRect(proxy).bottom, 0.5));
+  });
 
   testWidgets('busy ping check keeps the static icon on home', (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -91,6 +275,10 @@ void main() {
     await tester.pump();
 
     expect(find.byIcon(Icons.network_ping_rounded), findsOneWidget);
+    expect(find.text('Протокол'), findsOneWidget);
+    expect(find.text('Транспорт'), findsOneWidget);
+    expect(find.text('Задержка'), findsOneWidget);
+    expect(find.text('Текущий режим'), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
     probe.complete(const LatencyProbeResult.success(123));

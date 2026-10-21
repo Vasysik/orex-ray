@@ -155,6 +155,24 @@ class TunnelController extends ChangeNotifier {
 
   ConnectionMode get mode => _settings.mode;
 
+  /// Local inbound addresses remain configurable even while disconnected.
+  int get socksProxyPort => _settings.socksPort;
+  int get httpProxyPort => _settings.httpPort;
+  bool get proxyAllowsLan => _settings.allowLan;
+
+  /// A running tunnel exposes local HTTP/SOCKS listeners except in VPN/TUN
+  /// mode when the parallel proxy option is disabled.  This is a configured
+  /// state, not an independent socket-health probe.
+  bool get localProxyExpectedAvailable =>
+      _engineSnapshot.isConnected &&
+      (_engineSnapshot.mode != ConnectionMode.vpnTun ||
+          _settings.localProxyInVpn);
+
+  bool get localProxyDisabledInVpn =>
+      _engineSnapshot.isConnected &&
+      _engineSnapshot.mode == ConnectionMode.vpnTun &&
+      !_settings.localProxyInVpn;
+
   bool get canChangeMode =>
       !_engineSnapshot.isBusy && !_engineSnapshot.isConnected;
 
