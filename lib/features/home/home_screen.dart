@@ -5,6 +5,7 @@ import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
+import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../../shared/widgets/status_pill.dart';
 import 'tunnel_controller.dart';
@@ -29,60 +30,83 @@ class HomeScreen extends StatelessWidget {
         return LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= 920;
+            final responsiveBody = wide
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: _ConnectionHero(
+                              tunnel: tunnel,
+                              snapshot: snapshot,
+                              onTap: tunnel.toggle,
+                              showStatusText: true,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 4,
+                            child: _QuickInfo(
+                              tunnel: tunnel,
+                              snapshot: snapshot,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _TrafficCard(tunnel: tunnel, snapshot: snapshot),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ConnectionHero(
+                        tunnel: tunnel,
+                        snapshot: snapshot,
+                        onTap: tunnel.toggle,
+                        showStatusText: false,
+                      ),
+                      const SizedBox(height: 12),
+                      _MobileStatusCard(tunnel: tunnel, snapshot: snapshot),
+                      const SizedBox(height: 16),
+                      _QuickInfo(tunnel: tunnel, snapshot: snapshot),
+                    ],
+                  );
+
             return SingleChildScrollView(
-              padding: EdgeInsets.all(wide ? 24 : 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _Header(
-                    tunnel: tunnel,
-                    snapshot: snapshot,
-                  ),
-                  const SizedBox(height: 20),
-                  if (snapshot.errorMessage != null) ...[
-                    _ErrorCard(message: snapshot.errorMessage!),
-                    const SizedBox(height: 16),
-                  ],
-                  _ModeSelector(tunnel: tunnel),
-                  const SizedBox(height: 16),
-                  if (wide) ...[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: _ConnectionHero(
-                            tunnel: tunnel,
-                            snapshot: snapshot,
-                            onTap: tunnel.toggle,
-                            showStatusText: true,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          flex: 4,
-                          child: _QuickInfo(
-                            tunnel: tunnel,
-                            snapshot: snapshot,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _TrafficCard(tunnel: tunnel, snapshot: snapshot),
-                  ] else ...[
-                    _ConnectionHero(
+              child: AnimatedPadding(
+                duration: OrexMotion.duration(context),
+                curve: OrexMotion.curve,
+                padding: EdgeInsets.all(wide ? 24 : 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Header(
                       tunnel: tunnel,
                       snapshot: snapshot,
-                      onTap: tunnel.toggle,
-                      showStatusText: false,
                     ),
-                    const SizedBox(height: 12),
-                    _MobileStatusCard(tunnel: tunnel, snapshot: snapshot),
+                    const SizedBox(height: 20),
+                    if (snapshot.errorMessage != null) ...[
+                      _ErrorCard(message: snapshot.errorMessage!),
+                      const SizedBox(height: 16),
+                    ],
+                    _ModeSelector(tunnel: tunnel),
                     const SizedBox(height: 16),
-                    _QuickInfo(tunnel: tunnel, snapshot: snapshot),
+                    AnimatedSize(
+                      duration: OrexMotion.duration(context),
+                      curve: OrexMotion.curve,
+                      alignment: Alignment.topCenter,
+                      child: OrexResponsiveReveal(
+                        layoutKey: wide ? 'home-wide' : 'home-compact',
+                        alignment: Alignment.topCenter,
+                        child: responsiveBody,
+                      ),
+                    ),
                   ],
-                ],
+                ),
               ),
             );
           },
@@ -175,17 +199,28 @@ class _Header extends StatelessWidget {
         final fitsStatus = constraints.maxWidth >=
             brandNaturalWidth + 16 + pillNaturalWidth;
 
-        if (!fitsStatus) return brand;
-        return Row(
-          children: [
-            Expanded(child: brand),
-            const SizedBox(width: 16),
-            StatusPill(
-              label: label,
-              active: snapshot.isConnected && routeConfirmed,
-              color: routeFailed ? OrexColors.danger : null,
-            ),
-          ],
+        final content = fitsStatus
+            ? Row(
+                children: [
+                  Expanded(child: brand),
+                  const SizedBox(width: 16),
+                  StatusPill(
+                    label: label,
+                    active: snapshot.isConnected && routeConfirmed,
+                    color: routeFailed ? OrexColors.danger : null,
+                  ),
+                ],
+              )
+            : brand;
+        return AnimatedSize(
+          duration: OrexMotion.duration(context, OrexMotion.compact),
+          curve: OrexMotion.curve,
+          alignment: Alignment.centerLeft,
+          child: OrexResponsiveReveal(
+            layoutKey: fitsStatus ? 'header-status' : 'header-brand',
+            alignment: Alignment.centerLeft,
+            child: content,
+          ),
         );
       },
     );
@@ -616,34 +651,38 @@ class _MobileTrafficRow extends StatelessWidget {
           // to the right edge instead of letting the row look cramped.
           const minimumLabelGap = 64.0;
           final canCenter = centeredLeft >= labelWidth + minimumLabelGap;
-          if (canCenter) {
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                Align(alignment: Alignment.centerLeft, child: label),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: valueStyle,
-                ),
-              ],
-            );
-          }
-          return Row(
-            children: [
-              label,
-              const SizedBox(width: 64),
-              Expanded(
-                child: Text(
-                  value,
-                  textAlign: TextAlign.end,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: valueStyle,
-                ),
-              ),
-            ],
+          final content = canCenter
+              ? Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Align(alignment: Alignment.centerLeft, child: label),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: valueStyle,
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    label,
+                    const SizedBox(width: 64),
+                    Expanded(
+                      child: Text(
+                        value,
+                        textAlign: TextAlign.end,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: valueStyle,
+                      ),
+                    ),
+                  ],
+                );
+          return OrexResponsiveReveal(
+            layoutKey: canCenter ? 'traffic-centered' : 'traffic-trailing',
+            alignment: Alignment.center,
+            child: content,
           );
         },
       ),

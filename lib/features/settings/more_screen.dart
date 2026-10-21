@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/responsive_motion.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({
@@ -30,13 +31,23 @@ class MoreScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        Text('Ещё', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text(
-          showApps
-              ? 'Приложения, сеть, GeoData и поведение OrexRay'
-              : 'Сеть, GeoData и поведение OrexRay',
-          style: Theme.of(context).textTheme.bodySmall,
+        AnimatedSize(
+          duration: OrexMotion.duration(context),
+          curve: OrexMotion.curve,
+          alignment: Alignment.topLeft,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Ещё', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 4),
+              Text(
+                showApps
+                    ? 'Приложения, сеть, GeoData и поведение OrexRay'
+                    : 'Сеть, GeoData и поведение OrexRay',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 20),
         if (showApps) ...[
@@ -109,15 +120,20 @@ class _MoreTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassPanel(
-      borderRadius: 20,
-      child: ListTile(
-        leading: Icon(icon, color: OrexColors.copper),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        mouseCursor: SystemMouseCursors.click,
-        onTap: onTap,
+    return AnimatedSize(
+      duration: OrexMotion.duration(context),
+      curve: OrexMotion.curve,
+      alignment: Alignment.topLeft,
+      child: GlassPanel(
+        borderRadius: 20,
+        child: ListTile(
+          leading: Icon(icon, color: OrexColors.copper),
+          title: Text(title),
+          subtitle: Text(subtitle),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          mouseCursor: SystemMouseCursors.click,
+          onTap: onTap,
+        ),
       ),
     );
   }

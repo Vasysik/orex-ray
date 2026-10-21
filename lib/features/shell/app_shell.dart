@@ -11,6 +11,7 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/theme/theme_controller.dart';
+import '../../shared/widgets/responsive_motion.dart';
 import '../about/about_screen.dart';
 import '../appearance/appearance_screen.dart';
 import '../apps/apps_screen.dart';
@@ -214,120 +215,200 @@ class _AppShellState extends State<AppShell> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final desktop = constraints.maxWidth >= 900;
-              if (desktop) {
-                final desktopPageIndices = Platform.isWindows
-                    ? const [0, 1, 2, 4, 5, 6, 7, 8, 9]
-                    : const [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-                final requestedPageIndex =
-                    _index == _moreIndex ? _networkIndex : _index;
-                final normalizedPageIndex =
-                    desktopPageIndices.contains(requestedPageIndex)
-                        ? requestedPageIndex
-                        : _networkIndex;
-                final desktopIndex =
-                    desktopPageIndices.indexOf(normalizedPageIndex);
-                final desktopPages = [
-                  for (final pageIndex in desktopPageIndices) pages[pageIndex],
-                ];
-                final desktopDestinations = <_DesktopNavDestination>[
-                  const _DesktopNavDestination(Icons.power_settings_new_rounded, 'Главная'),
-                  const _DesktopNavDestination(Icons.storage_rounded, 'Профили'),
-                  const _DesktopNavDestination(Icons.route_rounded, 'Подключение'),
-                  if (!Platform.isWindows)
-                    const _DesktopNavDestination(Icons.apps_rounded, 'Приложения'),
-                  const _DesktopNavDestination(Icons.public_rounded, 'Сеть'),
-                  const _DesktopNavDestination(Icons.travel_explore_rounded, 'GeoData'),
-                  const _DesktopNavDestination(Icons.battery_saver_rounded, 'Фон'),
-                  const _DesktopNavDestination(Icons.palette_outlined, 'Интерфейс'),
-                  const _DesktopNavDestination(Icons.monitor_heart_outlined, 'Диагностика'),
-                  const _DesktopNavDestination(Icons.info_outline_rounded, 'О приложении'),
-                ];
-                return Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      GlassPanel(
-                        borderRadius: 24,
-                        child: SizedBox(
-                          width: 132,
-                          child: _DesktopSideNavigation(
-                            selectedIndex: desktopIndex,
-                            destinations: desktopDestinations,
-                            onSelected: (value) =>
-                                _selectPage(desktopPageIndices[value]),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: GlassPanel(
-                          borderRadius: 24,
-                          opacity: 0.30,
-                          child: IndexedStack(
-                            index: desktopIndex,
-                            children: desktopPages,
-                          ),
-                        ),
-                      ),
-                    ],
+              final desktopPageIndices = Platform.isWindows
+                  ? const [0, 1, 2, 4, 5, 6, 7, 8, 9]
+                  : const [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+              final requestedPageIndex =
+                  _index == _moreIndex ? _networkIndex : _index;
+              final normalizedPageIndex =
+                  desktopPageIndices.contains(requestedPageIndex)
+                      ? requestedPageIndex
+                      : _networkIndex;
+              final desktopIndex =
+                  desktopPageIndices.indexOf(normalizedPageIndex);
+              final desktopDestinations = <_DesktopNavDestination>[
+                const _DesktopNavDestination(
+                  Icons.power_settings_new_rounded,
+                  'Главная',
+                ),
+                const _DesktopNavDestination(Icons.storage_rounded, 'Профили'),
+                const _DesktopNavDestination(
+                  Icons.route_rounded,
+                  'Подключение',
+                ),
+                if (!Platform.isWindows)
+                  const _DesktopNavDestination(
+                    Icons.apps_rounded,
+                    'Приложения',
                   ),
-                );
-              }
-
+                const _DesktopNavDestination(Icons.public_rounded, 'Сеть'),
+                const _DesktopNavDestination(
+                  Icons.travel_explore_rounded,
+                  'GeoData',
+                ),
+                const _DesktopNavDestination(
+                  Icons.battery_saver_rounded,
+                  'Фон',
+                ),
+                const _DesktopNavDestination(
+                  Icons.palette_outlined,
+                  'Интерфейс',
+                ),
+                const _DesktopNavDestination(
+                  Icons.monitor_heart_outlined,
+                  'Диагностика',
+                ),
+                const _DesktopNavDestination(
+                  Icons.info_outline_rounded,
+                  'О приложении',
+                ),
+              ];
               final mobileSelected = _index <= 2 ? _index : 3;
+              final visiblePageIndex = desktop ? normalizedPageIndex : _index;
+              final pageStack = IndexedStack(
+                index: visiblePageIndex,
+                children: pages,
+              );
+              final content = OrexResponsiveReveal(
+                layoutKey: desktop
+                    ? 'shell-desktop-content'
+                    : 'shell-mobile-content',
+                child: desktop
+                    ? GlassPanel(
+                        borderRadius: 24,
+                        opacity: 0.30,
+                        child: pageStack,
+                      )
+                    : pageStack,
+              );
+              final navigationDuration =
+                  OrexMotion.duration(context, OrexMotion.navigation);
+
               return PopScope(
-                canPop: _index == 0,
+                canPop: desktop || _index == 0,
                 onPopInvokedWithResult: (didPop, _) {
-                  if (didPop || _index == 0) return;
+                  if (desktop || didPop || _index == 0) return;
                   _selectPage(0);
                 },
-                child: Column(
+                child: Stack(
+                  fit: StackFit.expand,
+                  clipBehavior: Clip.hardEdge,
                   children: [
-                    Expanded(
-                        child: IndexedStack(index: _index, children: pages)),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                      child: GlassPanel(
-                        borderRadius: 22,
-                        child: NavigationBar(
-                          selectedIndex: mobileSelected,
-                          onDestinationSelected: (value) {
-                            _selectPage(value == 3 ? _moreIndex : value);
-                          },
-                          destinations: const [
-                            NavigationDestination(
-                              icon: Icon(Icons.power_settings_new_rounded),
-                              selectedIcon: Icon(
-                                Icons.power_settings_new_rounded,
-                                color: OrexColors.copper,
+                    AnimatedPadding(
+                      duration: navigationDuration,
+                      curve: OrexMotion.curve,
+                      padding: desktop
+                          ? const EdgeInsets.fromLTRB(156, 12, 12, 12)
+                          : const EdgeInsets.fromLTRB(0, 0, 0, 90),
+                      child: content,
+                    ),
+                    Positioned(
+                      left: 12,
+                      top: 12,
+                      bottom: 12,
+                      width: 132,
+                      child: ExcludeSemantics(
+                        excluding: !desktop,
+                        child: IgnorePointer(
+                          ignoring: !desktop,
+                          child: AnimatedSlide(
+                            duration: navigationDuration,
+                            curve: OrexMotion.curve,
+                            offset: desktop
+                                ? Offset.zero
+                                : const Offset(-1.16, 0),
+                            child: AnimatedOpacity(
+                              duration: navigationDuration,
+                              curve: OrexMotion.curve,
+                              opacity: desktop ? 1 : 0,
+                              child: GlassPanel(
+                                key: const ValueKey(
+                                  'desktop-side-navigation-panel',
+                                ),
+                                borderRadius: 24,
+                                child: _DesktopSideNavigation(
+                                  selectedIndex: desktopIndex,
+                                  destinations: desktopDestinations,
+                                  onSelected: (value) => _selectPage(
+                                    desktopPageIndices[value],
+                                  ),
+                                ),
                               ),
-                              label: 'Главная',
                             ),
-                            NavigationDestination(
-                              icon: Icon(Icons.storage_rounded),
-                              selectedIcon: Icon(
-                                Icons.storage_rounded,
-                                color: OrexColors.copper,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 10,
+                      right: 10,
+                      bottom: 10,
+                      child: ExcludeSemantics(
+                        excluding: desktop,
+                        child: IgnorePointer(
+                          ignoring: desktop,
+                          child: AnimatedSlide(
+                            duration: navigationDuration,
+                            curve: OrexMotion.curve,
+                            offset: desktop
+                                ? const Offset(0, 1.18)
+                                : Offset.zero,
+                            child: AnimatedOpacity(
+                              duration: navigationDuration,
+                              curve: OrexMotion.curve,
+                              opacity: desktop ? 0 : 1,
+                              child: GlassPanel(
+                                key: const ValueKey(
+                                  'mobile-bottom-navigation-panel',
+                                ),
+                                borderRadius: 22,
+                                child: NavigationBar(
+                                  selectedIndex: mobileSelected,
+                                  onDestinationSelected: (value) {
+                                    _selectPage(
+                                      value == 3 ? _moreIndex : value,
+                                    );
+                                  },
+                                  destinations: const [
+                                    NavigationDestination(
+                                      icon: Icon(
+                                        Icons.power_settings_new_rounded,
+                                      ),
+                                      selectedIcon: Icon(
+                                        Icons.power_settings_new_rounded,
+                                        color: OrexColors.copper,
+                                      ),
+                                      label: 'Главная',
+                                    ),
+                                    NavigationDestination(
+                                      icon: Icon(Icons.storage_rounded),
+                                      selectedIcon: Icon(
+                                        Icons.storage_rounded,
+                                        color: OrexColors.copper,
+                                      ),
+                                      label: 'Профили',
+                                    ),
+                                    NavigationDestination(
+                                      icon: Icon(Icons.route_rounded),
+                                      selectedIcon: Icon(
+                                        Icons.route_rounded,
+                                        color: OrexColors.copper,
+                                      ),
+                                      label: 'Подключение',
+                                    ),
+                                    NavigationDestination(
+                                      icon: Icon(Icons.more_horiz_rounded),
+                                      selectedIcon: Icon(
+                                        Icons.more_horiz_rounded,
+                                        color: OrexColors.copper,
+                                      ),
+                                      label: 'Ещё',
+                                    ),
+                                  ],
+                                ),
                               ),
-                              label: 'Профили',
                             ),
-                            NavigationDestination(
-                              icon: Icon(Icons.route_rounded),
-                              selectedIcon: Icon(
-                                Icons.route_rounded,
-                                color: OrexColors.copper,
-                              ),
-                              label: 'Подключение',
-                            ),
-                            NavigationDestination(
-                              icon: Icon(Icons.more_horiz_rounded),
-                              selectedIcon: Icon(
-                                Icons.more_horiz_rounded,
-                                color: OrexColors.copper,
-                              ),
-                              label: 'Ещё',
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),

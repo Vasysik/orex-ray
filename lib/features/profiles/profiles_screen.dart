@@ -17,6 +17,7 @@ import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
 import '../../shared/widgets/orex_choice_sheet.dart';
+import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
 
@@ -1558,8 +1559,8 @@ class _ProfilesHeader extends StatelessWidget {
                 onCloseSelection: onCloseSelection,
               )
             : _AdaptiveProfileActions(
-                forceCompactProfile: sameRow && width < 520.0,
-                forceCompactPing: sameRow && width < 560.0,
+                forceCompactProfile: sameRow && width < 530.0,
+                forceCompactPing: sameRow && width < 580.0,
                 allowWrap: !sameRow,
                 refreshingLatency: refreshingLatency,
                 canRefreshLatency: canRefreshLatency,
@@ -1567,23 +1568,34 @@ class _ProfilesHeader extends StatelessWidget {
                 onRefreshLatency: onRefreshLatency,
               );
 
-        if (sameRow) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(child: title),
-              const SizedBox(width: 20),
-              actions,
-            ],
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            title,
-            const SizedBox(height: 14),
-            actions,
-          ],
+        final content = sameRow
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 20),
+                  actions,
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  title,
+                  const SizedBox(height: 14),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: actions,
+                  ),
+                ],
+              );
+        return AnimatedSize(
+          duration: OrexMotion.duration(context, OrexMotion.compact),
+          curve: OrexMotion.curve,
+          alignment: Alignment.topLeft,
+          child: OrexResponsiveReveal(
+            layoutKey: sameRow ? 'profiles-header-row' : 'profiles-header-stack',
+            child: content,
+          ),
         );
       },
     );
@@ -1617,20 +1629,17 @@ class _AdaptiveProfileActions extends StatelessWidget {
         // Collapse labels progressively both beside the page title and, after
         // wrapping below it, when the lower action row becomes narrow again.
         final compactPing =
-            forceCompactPing || (finite && constraints.maxWidth < 300);
+            forceCompactPing || (finite && constraints.maxWidth < 170);
         final compactProfile =
-            forceCompactProfile || (finite && constraints.maxWidth < 220);
+            forceCompactProfile || (finite && constraints.maxWidth < 130);
         final children = <Widget>[
-          compactProfile
-              ? _HeaderIconActionButton(
-                  tooltip: 'Добавить профиль',
-                  onPressed: onOpenProfileMenu,
-                  icon: Icons.add_rounded,
-                )
-              : OutlinedButton.icon(
-                  onPressed: onOpenProfileMenu,
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Row(
+          _HeaderIconActionButton(
+            tooltip: 'Добавить профиль',
+            onPressed: onOpenProfileMenu,
+            icon: Icons.add_rounded,
+            label: compactProfile
+                ? null
+                : const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('Профиль'),
@@ -1638,22 +1647,15 @@ class _AdaptiveProfileActions extends StatelessWidget {
                       Icon(Icons.keyboard_arrow_down_rounded, size: 18),
                     ],
                   ),
-                ),
-          compactPing
-              ? _HeaderIconActionButton(
-                  tooltip: 'Проверить пинг',
-                  onPressed: refreshingLatency || !canRefreshLatency
-                      ? null
-                      : () => onRefreshLatency(),
-                  icon: Icons.network_ping_rounded,
-                )
-              : OutlinedButton.icon(
-                  onPressed: refreshingLatency || !canRefreshLatency
-                      ? null
-                      : onRefreshLatency,
-                  icon: const Icon(Icons.network_ping_rounded),
-                  label: const Text('Проверить пинг'),
-                ),
+          ),
+          _HeaderIconActionButton(
+            tooltip: 'Проверить пинг',
+            onPressed: refreshingLatency || !canRefreshLatency
+                ? null
+                : () => onRefreshLatency(),
+            icon: Icons.network_ping_rounded,
+            label: compactPing ? null : const Text('Проверить пинг'),
+          ),
         ];
 
         if (!allowWrap) {
@@ -1666,10 +1668,16 @@ class _AdaptiveProfileActions extends StatelessWidget {
             ],
           );
         }
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: children,
+        return AnimatedSize(
+          duration: OrexMotion.duration(context, OrexMotion.compact),
+          curve: OrexMotion.curve,
+          alignment: Alignment.topRight,
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 10,
+            runSpacing: 10,
+            children: children,
+          ),
         );
       },
     );
@@ -1715,40 +1723,31 @@ class _AdaptiveSelectionActions extends StatelessWidget {
         final finite = width.isFinite;
         final serverScope = scope == _ProfileSelectionScope.servers;
         // Labels disappear from the end first: Export, then Ping. Below the
-        // title, compact them before Wrap has to create another action row.
+        // title, wrapping is preferred; compact labels only once the available
+        // width is genuinely narrow.
         final compactExport = forceCompactExport ||
-            (finite && width < (serverScope ? 470 : 240));
+            (finite && width < (serverScope ? 320 : 210));
         final compactPing = forceCompactPing ||
-            (finite && width < (serverScope ? 410 : 320));
+            (finite && width < (serverScope ? 250 : 180));
 
         final children = <Widget>[];
         if (serverScope) {
           children.add(
-            compactPing
-                ? _HeaderIconActionButton(
-                    tooltip: 'Пинг',
-                    onPressed: refreshingLatency ? null : () => onPingSelected(),
-                    icon: Icons.network_ping_rounded,
-                  )
-                : OutlinedButton.icon(
-                    onPressed: refreshingLatency ? null : () => onPingSelected(),
-                    icon: const Icon(Icons.network_ping_rounded),
-                    label: const Text('Пинг'),
-                  ),
+            _HeaderIconActionButton(
+              tooltip: 'Пинг',
+              onPressed: refreshingLatency ? null : () => onPingSelected(),
+              icon: Icons.network_ping_rounded,
+              label: compactPing ? null : const Text('Пинг'),
+            ),
           );
         }
         children.add(
-          compactExport
-              ? _HeaderIconActionButton(
-                  tooltip: 'Экспорт',
-                  onPressed: onExportSelected,
-                  icon: Icons.ios_share_rounded,
-                )
-              : OutlinedButton.icon(
-                  onPressed: onExportSelected,
-                  icon: const Icon(Icons.ios_share_rounded),
-                  label: const Text('Экспорт'),
-                ),
+          _HeaderIconActionButton(
+            tooltip: 'Экспорт',
+            onPressed: onExportSelected,
+            icon: Icons.ios_share_rounded,
+            label: compactExport ? null : const Text('Экспорт'),
+          ),
         );
         if (serverScope) {
           children.add(
@@ -1790,10 +1789,16 @@ class _AdaptiveSelectionActions extends StatelessWidget {
             ],
           );
         }
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: children,
+        return AnimatedSize(
+          duration: OrexMotion.duration(context, OrexMotion.compact),
+          curve: OrexMotion.curve,
+          alignment: Alignment.topRight,
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 10,
+            runSpacing: 10,
+            children: children,
+          ),
         );
       },
     );
@@ -1805,28 +1810,55 @@ class _HeaderIconActionButton extends StatelessWidget {
     required this.tooltip,
     required this.onPressed,
     required this.icon,
+    this.label,
     this.color,
   });
 
   final String tooltip;
   final VoidCallback? onPressed;
   final IconData icon;
+  final Widget? label;
   final Color? color;
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
-      child: OutlinedButton(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(0, 40),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          foregroundColor: color,
-          shape: const StadiumBorder(),
+      child: SizedBox(
+        height: 40,
+        child: OutlinedButton(
+          onPressed: onPressed,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            foregroundColor: color,
+            shape: const StadiumBorder(),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon),
+              Flexible(
+                fit: FlexFit.loose,
+                child: ClipRect(
+                  child: AnimatedSize(
+                    duration:
+                        OrexMotion.duration(context, OrexMotion.compact),
+                    curve: OrexMotion.curve,
+                    alignment: Alignment.centerLeft,
+                    child: label == null
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: label,
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        child: Icon(icon),
       ),
     );
   }
@@ -1865,29 +1897,34 @@ class _SectionTitle extends StatelessWidget {
     return Padding(
       // Match SettingsSection titles: page padding (20) + section label inset (8).
       padding: const EdgeInsets.only(left: 8),
-      child: Wrap(
-        spacing: 14,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          primary,
-          if (selected != null)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'ВЫДЕЛЕНО',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: OrexColors.copper,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.7,
+      child: AnimatedSize(
+        duration: OrexMotion.duration(context, OrexMotion.compact),
+        curve: OrexMotion.curve,
+        alignment: Alignment.topLeft,
+        child: Wrap(
+          spacing: 14,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            primary,
+            if (selected != null)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'ВЫДЕЛЕНО',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: OrexColors.copper,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.7,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text('$selected', style: textTheme.bodySmall),
-              ],
-            ),
-        ],
+                  const SizedBox(width: 8),
+                  Text('$selected', style: textTheme.bodySmall),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -2412,18 +2449,23 @@ class _DotSeparatedText extends StatelessWidget {
         final truncated =
             displayed < cleanItems.length || consumed < cleanItems.length;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var index = 0; index < lines.length; index++)
-              Text(
-                '${lines[index].join(' · ')}${truncated && index == lines.length - 1 ? ' …' : ''}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: effectiveStyle,
-              ),
-          ],
+        return AnimatedSize(
+          duration: OrexMotion.duration(context, OrexMotion.compact),
+          curve: OrexMotion.curve,
+          alignment: Alignment.topLeft,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < lines.length; index++)
+                Text(
+                  '${lines[index].join(' · ')}${truncated && index == lines.length - 1 ? ' …' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: effectiveStyle,
+                ),
+            ],
+          ),
         );
       },
     );
@@ -2677,11 +2719,27 @@ class _ProfileCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (showPingBadge)
-                    _PingBadge(
-                      latencyMs: latencyMs,
-                      onTap: onRefreshPing,
+                  ClipRect(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: constraints.maxWidth,
+                      ),
+                      child: AnimatedSize(
+                        duration: OrexMotion.duration(
+                          context,
+                          OrexMotion.compact,
+                        ),
+                        curve: OrexMotion.curve,
+                        alignment: Alignment.centerRight,
+                        child: showPingBadge
+                            ? _PingBadge(
+                                latencyMs: latencyMs,
+                                onTap: onRefreshPing,
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                     ),
+                  ),
                 ],
               );
             },

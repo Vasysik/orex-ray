@@ -10,6 +10,7 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/settings_section.dart';
 import '../home/tunnel_controller.dart';
 
@@ -311,23 +312,32 @@ class _DiagnosticsHeader extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= 700) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(child: title),
-              const SizedBox(width: 20),
-              actions,
-            ],
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            title,
-            const SizedBox(height: 14),
-            actions,
-          ],
+        final wide = constraints.maxWidth >= 700;
+        final content = wide
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 20),
+                  actions,
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  title,
+                  const SizedBox(height: 14),
+                  actions,
+                ],
+              );
+        return AnimatedSize(
+          duration: OrexMotion.duration(context),
+          curve: OrexMotion.curve,
+          alignment: Alignment.topLeft,
+          child: OrexResponsiveReveal(
+            layoutKey: wide ? 'diagnostics-wide' : 'diagnostics-stacked',
+            child: content,
+          ),
         );
       },
     );

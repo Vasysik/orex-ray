@@ -434,6 +434,58 @@ vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@real.example:443?encryption=none&se
     expect(find.text('Поддержка'), findsOneWidget);
   });
 
+  testWidgets('profile header action height stays stable on Android selection',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.binding.setSurfaceSize(const Size(800, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@height.example:443'
+      '?encryption=none&security=none&type=tcp#Header-height',
+    );
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark.copyWith(platform: TargetPlatform.android),
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Size actionSize(String tooltip) => tester.getSize(
+          find.descendant(
+            of: find.byTooltip(tooltip),
+            matching: find.byType(OutlinedButton),
+          ),
+        );
+
+    expect(actionSize('Добавить профиль').height, 40);
+    expect(actionSize('Проверить пинг').height, 40);
+
+    await tester.longPress(find.text('Header-height'));
+    await tester.pumpAndSettle();
+
+    for (final tooltip in ['Пинг', 'Экспорт', 'Группа']) {
+      expect(actionSize(tooltip).height, 40);
+    }
+  });
+
   testWidgets('primary profile action labels collapse one by one on title row',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -522,14 +574,19 @@ vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@real.example:443?encryption=none&se
 
     await pumpAt(320);
     expect(find.text('Профиль'), findsOneWidget);
-    expect(find.text('Проверить пинг'), findsNothing);
-    expect(find.byTooltip('Проверить пинг'), findsOneWidget);
+    expect(find.text('Проверить пинг'), findsOneWidget);
+
+    await pumpAt(280);
+    expect(find.text('Профиль'), findsOneWidget);
+    expect(find.text('Проверить пинг'), findsOneWidget);
+    final profileActionRect = tester.getRect(find.byTooltip('Добавить профиль'));
+    final latencyActionRect = tester.getRect(find.byTooltip('Проверить пинг'));
+    expect(profileActionRect.right, closeTo(260, 1));
+    expect(latencyActionRect.right, closeTo(260, 1));
 
     await pumpAt(240);
-    expect(find.text('Профиль'), findsNothing);
-    expect(find.text('Проверить пинг'), findsNothing);
-    expect(find.byTooltip('Добавить профиль'), findsOneWidget);
-    expect(find.byTooltip('Проверить пинг'), findsOneWidget);
+    expect(find.text('Профиль'), findsOneWidget);
+    expect(find.text('Проверить пинг'), findsOneWidget);
   });
 
   testWidgets('selection action labels collapse one by one on title row',
@@ -648,10 +705,32 @@ vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@real.example:443?encryption=none&se
     await tester.binding.setSurfaceSize(const Size(500, 700));
     await tester.pumpAndSettle();
     expect(find.text('Пинг'), findsOneWidget);
+    expect(find.text('Экспорт'), findsOneWidget);
+
+    await tester.binding.setSurfaceSize(const Size(440, 700));
+    await tester.pumpAndSettle();
+    expect(find.text('Пинг'), findsOneWidget);
+    expect(find.text('Экспорт'), findsOneWidget);
+    final lowerActions = [
+      find.byTooltip('Пинг'),
+      find.byTooltip('Экспорт'),
+      find.byTooltip('Группа'),
+      find.byTooltip('Удалить'),
+      find.byTooltip('Выбрать все'),
+      find.byTooltip('Готово'),
+    ];
+    for (final finder in lowerActions) {
+      expect(finder, findsOneWidget);
+    }
+    expect(tester.getRect(lowerActions.last).right, closeTo(420, 1));
+
+    await tester.binding.setSurfaceSize(const Size(340, 700));
+    await tester.pumpAndSettle();
+    expect(find.text('Пинг'), findsOneWidget);
     expect(find.text('Экспорт'), findsNothing);
     expect(find.byTooltip('Экспорт'), findsOneWidget);
 
-    await tester.binding.setSurfaceSize(const Size(440, 700));
+    await tester.binding.setSurfaceSize(const Size(280, 700));
     await tester.pumpAndSettle();
     expect(find.text('Пинг'), findsNothing);
     expect(find.text('Экспорт'), findsNothing);
@@ -666,26 +745,7 @@ vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@real.example:443?encryption=none&se
     for (final finder in compactActions) {
       expect(finder, findsOneWidget);
     }
-    final compactRowY = tester.getTopLeft(compactActions.first).dy;
-    for (final finder in compactActions.skip(1)) {
-      expect(tester.getTopLeft(finder).dy, compactRowY);
-    }
-
-    await tester.binding.setSurfaceSize(const Size(240, 700));
-    await tester.pumpAndSettle();
-    expect(find.text('Пинг'), findsNothing);
-    expect(find.text('Экспорт'), findsNothing);
-    final iconOnlyActionFinders = [
-      find.byTooltip('Пинг'),
-      find.byTooltip('Экспорт'),
-      find.byTooltip('Группа'),
-      find.byTooltip('Удалить'),
-      find.byTooltip('Выбрать все'),
-      find.byTooltip('Готово'),
-    ];
-    for (final finder in iconOnlyActionFinders) {
-      expect(finder, findsOneWidget);
-    }
+    expect(tester.getRect(compactActions.last).right, closeTo(260, 1));
   });
 
   testWidgets('profile tab switches target while VPN is active',
