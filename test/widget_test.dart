@@ -184,7 +184,7 @@ void main() {
     expect(find.text('Неактивен'), findsOneWidget);
     expect(find.text('SOCKS5 :20808'), findsOneWidget);
     expect(find.text('HTTP :20809'), findsOneWidget);
-    expect(find.text('Доступ из локальной сети'), findsOneWidget);
+    expect(find.text('Доступ из локальной сети:'), findsOneWidget);
     expect(find.text('Запрещён'), findsOneWidget);
     expect(
       tester.widget<Text>(find.text('Запрещён')).style?.fontWeight,
@@ -486,6 +486,10 @@ void main() {
     );
     await tester.pump();
     expect(find.text('Проверяем маршрут…'), findsOneWidget);
+    expect(find.text('Доступен'), findsOneWidget);
+    final availableStatus = tester.widget<Text>(find.text('Доступен'));
+    expect(availableStatus.style?.color, OrexColors.online);
+    expect(availableStatus.style?.fontWeight, FontWeight.w700);
 
     engine.emit(
       engine.current.copyWith(effectivePingStatus: PingStatus.timeout),

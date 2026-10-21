@@ -149,6 +149,18 @@ class OrexTheme {
                   : SystemMouseCursors.click),
         ),
       ),
+      // Consistent width and corners for all standard editors and dialogs.
+      dialogTheme: DialogThemeData(
+        constraints: const BoxConstraints(maxWidth: 720),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        backgroundColor:
+            isDark ? OrexColors.darkSurface : OrexColors.lightSurface,
+        surfaceTintColor: Colors.transparent,
+        iconColor: OrexColors.copper,
+      ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: OrexColors.walnutDeep,

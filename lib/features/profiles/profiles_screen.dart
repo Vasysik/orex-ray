@@ -16,8 +16,10 @@ import '../../platform/external_url_launcher.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
-import '../../shared/widgets/orex_choice_sheet.dart';
 import '../../shared/widgets/orex_adaptive_header.dart';
+import '../../shared/widgets/orex_choice_sheet.dart';
+import '../../shared/widgets/orex_confirm_dialog.dart';
+import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
@@ -124,7 +126,8 @@ class ProfilesScreen extends StatelessWidget {
       builder: (context) => _ImportLinkDialog(profiles: profiles),
     );
     if (profile == null || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       SnackBar(content: Text('Профиль «${profile.name}» импортирован')),
     );
   }
@@ -142,7 +145,8 @@ class ProfilesScreen extends StatelessWidget {
       if (result.skippedUnsupported > 0)
         'пропущено ${result.skippedUnsupported}',
     ];
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       SnackBar(
         content: Text(
           parts.isEmpty
@@ -160,7 +164,8 @@ class ProfilesScreen extends StatelessWidget {
     try {
       final result = await profiles.refreshSubscription(subscription.id);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(
           content: Text(
             '«${result.subscription.name}» обновлена: '
@@ -170,12 +175,14 @@ class ProfilesScreen extends StatelessWidget {
       );
     } on FormatException catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(content: Text(error.message.toString())),
       );
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(content: Text('Не удалось обновить подписку: $error')),
       );
     }
@@ -187,22 +194,14 @@ class ProfilesScreen extends StatelessWidget {
   ) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Удалить подписку?'),
+      builder: (_) => OrexConfirmDialog(
+        title: 'Удалить подписку?',
         content: Text(
           '«${subscription.name}» и ${subscription.profileIds.length} '
           'серверов этой подписки будут удалены.',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Удалить'),
-          ),
-        ],
+        confirmLabel: 'Удалить',
+        icon: Icons.delete_outline_rounded,
       ),
     );
     if (confirmed == true) await profiles.deleteSubscription(subscription.id);
@@ -220,7 +219,8 @@ class ProfilesScreen extends StatelessWidget {
       if (result.skippedUnsupported > 0)
         'пропущено неподдерживаемых ${result.skippedUnsupported}',
     ];
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       SnackBar(
         content: Text(
           parts.isEmpty ? 'JSON импортирован' : 'JSON Xray: ${parts.join(', ')}',
@@ -239,7 +239,8 @@ class ProfilesScreen extends StatelessWidget {
     if (profileId == null &&
         (selectedIds == null || selectedIds.isEmpty) &&
         profiles.profiles.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         const SnackBar(content: Text('Нет профилей для экспорта')),
       );
       return;
@@ -278,7 +279,8 @@ class ProfilesScreen extends StatelessWidget {
         case _XrayJsonExportAction.copy:
           await Clipboard.setData(ClipboardData(text: payload));
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
+          OrexNotice.show(
+            context,
             SnackBar(
               content: Text(
                 exportingMultiple
@@ -297,14 +299,16 @@ class ProfilesScreen extends StatelessWidget {
             suggestedName: '$baseName.json',
           );
           if (!context.mounted || !saved) return;
-          ScaffoldMessenger.of(context).showSnackBar(
+          OrexNotice.show(
+            context,
             const SnackBar(content: Text('JSON Xray экспортирован')),
           );
           break;
       }
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(content: Text('Не удалось экспортировать JSON: $error')),
       );
     }
@@ -355,7 +359,8 @@ class ProfilesScreen extends StatelessWidget {
     BalancerProfile? existing,
   }) async {
     if (existing == null && profiles.profiles.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         const SnackBar(
           content: Text('Для балансировщика нужен хотя бы один профиль'),
         ),
@@ -385,7 +390,8 @@ class ProfilesScreen extends StatelessWidget {
       );
     } on FormatException catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(content: Text(error.message.toString())),
       );
     }
@@ -398,19 +404,11 @@ class ProfilesScreen extends StatelessWidget {
   ) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Удалить?'),
+      builder: (_) => OrexConfirmDialog(
+        title: 'Удалить?',
         content: Text('«$name» будет удалён с этого устройства.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Удалить'),
-          ),
-        ],
+        confirmLabel: 'Удалить',
+        icon: Icons.delete_outline_rounded,
       ),
     );
     if (confirmed == true) await profiles.delete(id);
@@ -513,25 +511,15 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
       if (selectedSubscriptions.isEmpty) return;
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(
-            selectedSubscriptions.length == 1
-                ? 'Удалить подписку?'
-                : 'Удалить ${selectedSubscriptions.length} подписки?',
-          ),
+        builder: (_) => OrexConfirmDialog(
+          title: selectedSubscriptions.length == 1
+              ? 'Удалить подписку?'
+              : 'Удалить ${selectedSubscriptions.length} подписки?',
           content: const Text(
             'Подписки и все принадлежащие им серверы будут удалены с устройства.',
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Удалить'),
-            ),
-          ],
+          confirmLabel: 'Удалить',
+          icon: Icons.delete_outline_rounded,
         ),
       );
       if (confirmed != true || !mounted) return;
@@ -547,21 +535,13 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     if (manualIds.isEmpty) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Удалить ${manualIds.length} профилей?'),
+      builder: (_) => OrexConfirmDialog(
+        title: 'Удалить ${manualIds.length} профилей?',
         content: const Text(
           'Выбранные серверы будут удалены с этого устройства.',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Удалить'),
-          ),
-        ],
+        confirmLabel: 'Удалить',
+        icon: Icons.delete_outline_rounded,
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -606,7 +586,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
           ),
         );
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        OrexNotice.show(
+          context,
           SnackBar(
             content: Text(
               selectedSubscriptions.length == 1
@@ -790,7 +771,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
         .where((id) => !profiles.isSubscriptionProfile(id))
         .toSet();
     if (manualIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         const SnackBar(
           content: Text('Серверы подписки автоматически сгруппированы'),
         ),
@@ -835,7 +817,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     final changed = await profiles.setProfilesGroup(manualIds, targetGroup);
     if (!context.mounted) return;
     if (ids.length != manualIds.length) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(
           content: Text(
             'Перемещено $changed; серверы подписок оставлены в своих группах',
@@ -858,21 +841,11 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
   Future<void> _deleteManualGroup(BuildContext context, String name) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Расформировать группу?'),
-        content: Text(
-          'Профили из группы «$name» останутся в разделе «Серверы».',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Расформировать'),
-          ),
-        ],
+      builder: (_) => OrexConfirmDialog(
+        title: 'Расформировать группу?',
+        content: Text('Профили из группы «$name» останутся в разделе «Серверы».'),
+        confirmLabel: 'Расформировать',
+        icon: Icons.folder_off_outlined,
       ),
     );
     if (confirmed != true) return;
@@ -887,7 +860,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
       await ExternalUrlLauncher.open(url);
     } on Object catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(content: Text('Не удалось открыть ссылку: $error')),
       );
     }
@@ -899,7 +873,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
   ) async {
     await Clipboard.setData(ClipboardData(text: subscription.url));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       const SnackBar(content: Text('Ссылка подписки скопирована')),
     );
   }

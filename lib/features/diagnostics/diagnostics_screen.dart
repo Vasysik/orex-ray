@@ -11,6 +11,8 @@ import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/orex_adaptive_header.dart';
+import '../../shared/widgets/orex_confirm_dialog.dart';
+import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
 import '../home/tunnel_controller.dart';
 
@@ -93,7 +95,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     if (value == null) return;
     await Clipboard.setData(ClipboardData(text: _report(value)));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       const SnackBar(content: Text('Диагностический отчёт скопирован')),
     );
   }
@@ -102,24 +105,15 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     if (value == 'info' || value == 'debug') {
       final confirmed = await showDialog<bool>(
             context: context,
-            builder: (dialogContext) => AlertDialog(
-              icon: const Icon(Icons.visibility_outlined),
-              title: const Text('Подробные сетевые логи'),
-              content: const Text(
+            builder: (dialogContext) => const OrexConfirmDialog(
+              icon: Icons.visibility_outlined,
+              title: 'Подробные сетевые логи',
+              content: Text(
                 'На уровнях «Информация» и «Отладка» Xray может писать адреса '
                 'назначения и другую сетевую диагностику. Используй эти '
                 'режимы только временно при поиске проблемы.',
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Отмена'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Включить'),
-                ),
-              ],
+              confirmLabel: 'Включить',
             ),
           ) ??
           false;

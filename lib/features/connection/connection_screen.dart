@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_confirm_dialog.dart';
 import '../../shared/widgets/orex_edit_dialog.dart';
 import '../../shared/widgets/orex_proxy_copy.dart';
 import '../../shared/widgets/settings_section.dart';
@@ -253,25 +254,16 @@ Future<void> _setAllowLan(
 
   final confirmed = await showDialog<bool>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          icon: const Icon(Icons.warning_amber_rounded),
-          title: const Text('Открыть прокси в локальную сеть?'),
-          content: const Text(
+        builder: (dialogContext) => const OrexConfirmDialog(
+          icon: Icons.warning_amber_rounded,
+          title: 'Открыть прокси в локальную сеть?',
+          content: Text(
             'SOCKS5 и HTTP-прокси OrexRay сейчас не требуют пароль. '
             'После включения другие устройства в этой локальной сети смогут '
             'использовать твой прокси, если соединение не блокирует firewall. '
             'Включай это только в доверенной сети.',
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Открыть доступ'),
-            ),
-          ],
+          confirmLabel: 'Открыть доступ',
         ),
       ) ??
       false;

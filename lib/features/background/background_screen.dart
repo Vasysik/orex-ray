@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../platform/android/android_startup_controller.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
 
 class BackgroundScreen extends StatelessWidget {
@@ -340,7 +341,8 @@ Future<void> _openAndroidNotificationSettings(BuildContext context) async {
     await AndroidStartupController.openNotificationSettings();
   } catch (_) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       const SnackBar(content: Text('Не удалось открыть настройки уведомлений')),
     );
   }

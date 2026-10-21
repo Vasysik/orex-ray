@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import '../../core/app_version.dart';
 import '../../platform/windows/windows_elevation_controller.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_confirm_dialog.dart';
+import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
@@ -54,7 +56,8 @@ class AboutScreen extends StatelessWidget {
                   ClipboardData(text: 'OrexRay ${appVersion.label}'),
                 );
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  OrexNotice.show(
+                    context,
                     const SnackBar(content: Text('Информация скопирована')),
                   );
                 }
@@ -100,7 +103,8 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
   Future<void> _reinstall() async {
     if (_repairing) return;
     if (!widget.tunnel.canReinstallXrayCore) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         const SnackBar(content: Text('Сначала отключи активное соединение.')),
       );
       return;
@@ -111,24 +115,15 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
       if (!mounted) return;
       final restart = await showDialog<bool>(
             context: context,
-            builder: (dialogContext) => AlertDialog(
-              icon: const Icon(Icons.admin_panel_settings_outlined),
-              title: const Text('Нужны права администратора'),
-              content: const Text(
+            builder: (dialogContext) => const OrexConfirmDialog(
+              icon: Icons.admin_panel_settings_outlined,
+              title: 'Нужны права администратора',
+              content: Text(
                 'Xray Core установлен в Program Files. OrexRay перезапустится '
                 'с правами администратора; после перезапуска снова открой '
                 '«О приложении» и нажми «Переустановить Xray Core».',
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Отмена'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Перезапустить'),
-                ),
-              ],
+              confirmLabel: 'Перезапустить',
             ),
           ) ??
           false;
@@ -149,12 +144,14 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
         },
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         const SnackBar(content: Text('Xray Core переустановлен и проверен.')),
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(content: Text('Не удалось переустановить Xray Core: $error')),
       );
     } finally {

@@ -6,6 +6,7 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/orex_edit_dialog.dart';
+import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
 
 class GeoDataScreen extends StatelessWidget {
@@ -214,7 +215,8 @@ class GeoDataScreen extends StatelessWidget {
     if (file == null) return;
     await controller.importCustomAsset(targetFileName, file);
     if (!context.mounted || controller.error != null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       SnackBar(content: Text('$targetFileName импортирован')),
     );
   }

@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'orex_notice.dart';
+
 /// Common clipboard and interface-selection policy for proxy links.
 ///
 /// 0.0.0.0 is a bind address, never a usable client URL. The localhost URL
@@ -19,9 +21,7 @@ class OrexProxyCopy {
     await Clipboard.setData(ClipboardData(text: address));
     if (!context.mounted) return;
     if (Scaffold.maybeOf(context) != null) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('$protocol: адрес скопирован')),
-      );
+      OrexNotice.copied(context, '$protocol: адрес скопирован');
     }
   }
 

@@ -1209,7 +1209,8 @@ class _ProxyDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = tunnel.localProxyExpectedAvailable
+    final available = tunnel.localProxyExpectedAvailable;
+    final status = available
         ? 'Доступен'
         : tunnel.localProxyDisabledInVpn
             ? 'Отключён в TUN'
@@ -1236,6 +1237,7 @@ class _ProxyDetails extends StatelessWidget {
                     status,
                     style: textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w700,
+                      color: available ? OrexColors.online : null,
                     ),
                   ),
                 ],
@@ -1268,7 +1270,7 @@ class _ProxyDetails extends StatelessWidget {
           spacing: 8,
           runSpacing: 6,
           children: [
-            Text('Доступ из локальной сети', style: textTheme.bodySmall),
+            Text('Доступ из локальной сети:', style: textTheme.bodySmall),
             Text(
               tunnel.proxyAllowsLan ? 'Разрешён' : 'Запрещён',
               style: textTheme.bodySmall?.copyWith(
