@@ -1247,7 +1247,7 @@ class _ProxyDetails extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Wrap(
-          spacing: 8,
+          spacing: 4,
           runSpacing: 8,
           children: [
             _ProxyAddressChip(
