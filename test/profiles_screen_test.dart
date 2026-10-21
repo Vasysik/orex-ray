@@ -113,7 +113,7 @@ void main() {
     expect(find.text('ВЫДЕЛЕНО'), findsOneWidget);
     expect(find.byTooltip('Готово'), findsOneWidget);
     expect(find.byTooltip('Удалить'), findsOneWidget);
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Экспорт'));
+    await tester.tap(find.byTooltip('Экспорт'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Копировать массив JSON'));
     await tester.pump();
@@ -171,8 +171,8 @@ void main() {
     expect(find.text('ВЫДЕЛЕНО'), findsOneWidget);
     expect(find.byTooltip('Готово'), findsOneWidget);
     expect(find.byTooltip('Удалить'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Пинг'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Экспорт'), findsOneWidget);
+    expect(find.byTooltip('Пинг'), findsOneWidget);
+    expect(find.byTooltip('Экспорт'), findsOneWidget);
     expect(find.byTooltip('Удалить'), findsOneWidget);
     expect(find.byTooltip('Выбрать все'), findsOneWidget);
     expect(find.byTooltip('Готово'), findsOneWidget);
@@ -321,7 +321,7 @@ void main() {
     expect(find.text('Manual-node'), findsOneWidget);
     expect(find.byType(Checkbox), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Экспорт'));
+    await tester.tap(find.byTooltip('Экспорт'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Скопировать исходную ссылку'));
     await tester.pump();

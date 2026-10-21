@@ -17,6 +17,7 @@ import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
 import '../../shared/widgets/orex_choice_sheet.dart';
+import '../../shared/widgets/orex_adaptive_header.dart';
 import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
@@ -1496,353 +1497,77 @@ class _ProfilesHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: OrexColors.copper.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: const Icon(Icons.dns_rounded, color: OrexColors.copper),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Профили', style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 4),
-              Text(
-                'Серверы, пинг и балансировщики Xray',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Measure typography instead of guessing when to break at 480/600px.
-        // Reserve room for the actual heading and its description.
-        final width = constraints.maxWidth;
-        final serverSelection =
-            selectionScope == _ProfileSelectionScope.servers;
-        final typography = Theme.of(context).textTheme;
-        final headingWidth = 62 +
-            _headerTextWidth(context, 'Профили', typography.headlineSmall);
-        final subtitleWidth = 62 + _headerTextWidth(
-          context, 'Серверы, пинг и балансировщики Xray', typography.bodySmall);
-        final titleWidth = headingWidth > subtitleWidth
-            ? headingWidth
-            : subtitleWidth;
-        const iconButtonWidth = 52.0;
-        const actionGap = 10.0;
-        const headerGap = 20.0;
-        final actionCount = selectionMode ? (serverSelection ? 6 : 4) : 2;
-        final compactActionsWidth =
-            actionCount * iconButtonWidth + (actionCount - 1) * actionGap;
-        final sameRow = width >= titleWidth + headerGap + compactActionsWidth;
-        final availableActionsWidth =
-            sameRow ? width - titleWidth - headerGap : width;
-
-        // Labels disappear from right to left. Neither action layout uses Wrap,
-        // so button rows stay intact at every intermediate window width.
-        final labelStyle = typography.labelLarge;
-        final profileExtra = 8 +
-            _headerTextWidth(context, 'Профиль', labelStyle) + 4 + 18;
-        final checkPingExtra = 8 +
-            _headerTextWidth(context, 'Проверить пинг', labelStyle);
-        final exportExtra =
-            8 + _headerTextWidth(context, 'Экспорт', labelStyle);
-        final selectedPingExtra =
-            8 + _headerTextWidth(context, 'Пинг', labelStyle);
-        final compactProfile = availableActionsWidth <
-            compactActionsWidth + profileExtra;
-        final compactCheckPing = availableActionsWidth <
-            compactActionsWidth + profileExtra + checkPingExtra;
-        final compactExport = availableActionsWidth <
-            compactActionsWidth + selectedPingExtra + exportExtra;
-        final compactSelectedPing = availableActionsWidth <
-            compactActionsWidth + selectedPingExtra;
-
-        final actions = selectionMode
-            ? _AdaptiveSelectionActions(
-                scope: selectionScope!,
-                refreshingLatency: refreshingLatency,
-                allSelected: allSelected,
-                canGroupSelected: canGroupSelected,
-                forceCompactExport: compactExport,
-                forceCompactPing: compactSelectedPing,
-                onPingSelected: onPingSelected,
-                onExportSelected: onExportSelected,
-                onGroupSelected: onGroupSelected,
-                onDeleteSelected: onDeleteSelected,
-                onSelectAll: onSelectAll,
-                onCloseSelection: onCloseSelection,
-              )
-            : _AdaptiveProfileActions(
-                forceCompactProfile: compactProfile,
-                forceCompactPing: compactCheckPing,
-                refreshingLatency: refreshingLatency,
-                canRefreshLatency: canRefreshLatency,
-                onOpenProfileMenu: onOpenProfileMenu,
-                onRefreshLatency: onRefreshLatency,
-              );
-
-        final content = sameRow
-            ? Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(child: title),
-                  const SizedBox(width: headerGap),
-                  actions,
-                ],
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  title,
-                  const SizedBox(height: 14),
-                  // Narrow mobile layouts can scroll horizontally instead of
-                  // cramming six selection buttons into two uneven rows.
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    reverse: true,
-                    child: actions,
-                  ),
-                ],
-              );
-        return AnimatedSize(
-          duration: OrexMotion.duration(context, OrexMotion.compact),
-          curve: OrexMotion.curve,
-          alignment: Alignment.topLeft,
-          child: OrexResponsiveReveal(
-            layoutKey: sameRow ? 'profiles-header-row' : 'profiles-header-stack',
-            child: content,
-          ),
-        );
-      },
-    );
-  }
-}
-
-double _headerTextWidth(BuildContext context, String text, TextStyle? style) {
-  final painter = TextPainter(
-    text: TextSpan(text: text, style: style),
-    maxLines: 1,
-    textDirection: Directionality.of(context),
-    textScaler: MediaQuery.textScalerOf(context),
-  )..layout();
-  final width = painter.width;
-  painter.dispose();
-  return width;
-}
-
-class _AdaptiveProfileActions extends StatelessWidget {
-  const _AdaptiveProfileActions({
-    required this.forceCompactProfile,
-    required this.forceCompactPing,
-    required this.refreshingLatency,
-    required this.canRefreshLatency,
-    required this.onOpenProfileMenu,
-    required this.onRefreshLatency,
-  });
-
-  final bool forceCompactProfile;
-  final bool forceCompactPing;
-  final bool refreshingLatency;
-  final bool canRefreshLatency;
-  final VoidCallback onOpenProfileMenu;
-  final Future<void> Function() onRefreshLatency;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _HeaderIconActionButton(
+    final serverSelection = selectionScope == _ProfileSelectionScope.servers;
+    final actions = <OrexHeaderAction>[];
+    if (!selectionMode) {
+      actions.addAll([
+        OrexHeaderAction(
           tooltip: 'Добавить профиль',
-          onPressed: onOpenProfileMenu,
+          label: 'Профиль',
           icon: Icons.add_rounded,
-          label: forceCompactProfile
-              ? null
-              : const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Профиль'),
-                    SizedBox(width: 4),
-                    Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-                  ],
-                ),
+          trailingIcon: Icons.keyboard_arrow_down_rounded,
+          onPressed: onOpenProfileMenu,
         ),
-        const SizedBox(width: 10),
-        _HeaderIconActionButton(
+        OrexHeaderAction(
           tooltip: 'Проверить пинг',
+          label: 'Проверить пинг',
+          icon: Icons.network_ping_rounded,
           onPressed: refreshingLatency || !canRefreshLatency
-              ? null
-              : () => onRefreshLatency(),
-          icon: Icons.network_ping_rounded,
-          label: forceCompactPing ? null : const Text('Проверить пинг'),
+              ? null : () => onRefreshLatency(),
         ),
-      ],
-    );
-  }
-}
-
-class _AdaptiveSelectionActions extends StatelessWidget {
-  const _AdaptiveSelectionActions({
-    required this.scope,
-    required this.refreshingLatency,
-    required this.allSelected,
-    required this.canGroupSelected,
-    required this.forceCompactExport,
-    required this.forceCompactPing,
-    required this.onPingSelected,
-    required this.onExportSelected,
-    required this.onGroupSelected,
-    required this.onDeleteSelected,
-    required this.onSelectAll,
-    required this.onCloseSelection,
-  });
-
-  final _ProfileSelectionScope scope;
-  final bool refreshingLatency;
-  final bool allSelected;
-  final bool canGroupSelected;
-  final bool forceCompactExport;
-  final bool forceCompactPing;
-  final Future<void> Function() onPingSelected;
-  final VoidCallback onExportSelected;
-  final VoidCallback onGroupSelected;
-  final VoidCallback onDeleteSelected;
-  final VoidCallback onSelectAll;
-  final VoidCallback onCloseSelection;
-
-  @override
-  Widget build(BuildContext context) {
-    final serverScope = scope == _ProfileSelectionScope.servers;
-    final children = <Widget>[];
-    if (serverScope) {
-      children.add(
-        _HeaderIconActionButton(
+      ]);
+    } else {
+      if (serverSelection) {
+        actions.add(OrexHeaderAction(
           tooltip: 'Пинг',
-          onPressed: refreshingLatency ? null : () => onPingSelected(),
+          label: 'Пинг',
           icon: Icons.network_ping_rounded,
-          label: forceCompactPing ? null : const Text('Пинг'),
-        ),
-      );
-    }
-    children.add(
-      _HeaderIconActionButton(
+          onPressed: refreshingLatency ? null : () => onPingSelected(),
+        ));
+      }
+      actions.add(OrexHeaderAction(
         tooltip: 'Экспорт',
-        onPressed: onExportSelected,
+        label: 'Экспорт',
         icon: Icons.ios_share_rounded,
-        label: forceCompactExport ? null : const Text('Экспорт'),
-      ),
-    );
-    if (serverScope) {
-      children.add(
-        _HeaderIconActionButton(
+        onPressed: onExportSelected,
+      ));
+      if (serverSelection) {
+        actions.add(OrexHeaderAction(
           tooltip: 'Группа',
-          onPressed: canGroupSelected ? onGroupSelected : null,
+          label: 'Группа',
           icon: Icons.folder_outlined,
+          onPressed: canGroupSelected ? onGroupSelected : null,
+        ));
+      }
+      actions.addAll([
+        OrexHeaderAction(
+          tooltip: selectionScope == _ProfileSelectionScope.subscriptions
+              ? 'Удалить подписки' : 'Удалить',
+          label: selectionScope == _ProfileSelectionScope.subscriptions
+              ? 'Удалить' : 'Удалить',
+          icon: Icons.delete_outline_rounded,
+          color: OrexColors.danger,
+          onPressed: onDeleteSelected,
         ),
-      );
+        OrexHeaderAction(
+          tooltip: 'Выбрать все',
+          label: 'Выбрать все',
+          icon: Icons.select_all_rounded,
+          onPressed: allSelected ? null : onSelectAll,
+        ),
+        OrexHeaderAction(
+          tooltip: 'Готово',
+          label: 'Готово',
+          icon: Icons.check_rounded,
+          onPressed: onCloseSelection,
+        ),
+      ]);
     }
-    children.addAll([
-      _HeaderIconActionButton(
-        tooltip: scope == _ProfileSelectionScope.subscriptions
-            ? 'Удалить подписки'
-            : 'Удалить',
-        onPressed: onDeleteSelected,
-        color: OrexColors.danger,
-        icon: Icons.delete_outline_rounded,
-      ),
-      _HeaderIconActionButton(
-        tooltip: 'Выбрать все',
-        onPressed: allSelected ? null : onSelectAll,
-        icon: Icons.select_all_rounded,
-      ),
-      _HeaderIconActionButton(
-        tooltip: 'Готово',
-        onPressed: onCloseSelection,
-        icon: Icons.check_rounded,
-      ),
-    ]);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var index = 0; index < children.length; index++) ...[
-          if (index > 0) const SizedBox(width: 10),
-          children[index],
-        ],
-      ],
-    );
-  }
-}
-
-class _HeaderIconActionButton extends StatelessWidget {
-  const _HeaderIconActionButton({
-    required this.tooltip,
-    required this.onPressed,
-    required this.icon,
-    this.label,
-    this.color,
-  });
-
-  final String tooltip;
-  final VoidCallback? onPressed;
-  final IconData icon;
-  final Widget? label;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: SizedBox(
-        height: 40,
-        child: OutlinedButton(
-          onPressed: onPressed,
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, 40),
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            foregroundColor: color,
-            shape: const StadiumBorder(),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon),
-              Flexible(
-                fit: FlexFit.loose,
-                child: ClipRect(
-                  child: AnimatedSize(
-                    duration:
-                        OrexMotion.duration(context, OrexMotion.compact),
-                    curve: OrexMotion.curve,
-                    alignment: Alignment.centerLeft,
-                    child: label == null
-                        ? const SizedBox.shrink()
-                        : Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: label,
-                          ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return OrexAdaptiveHeader(
+      title: 'Профили',
+      subtitle: 'Серверы, пинг и балансировщики Xray',
+      icon: Icons.dns_rounded,
+      actions: actions,
     );
   }
 }

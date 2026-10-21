@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/egress/exit_location_refresh_coordinator.dart';
@@ -182,7 +184,23 @@ void main() {
     expect(find.text('Неактивен'), findsOneWidget);
     expect(find.text('SOCKS5 :20808'), findsOneWidget);
     expect(find.text('HTTP :20809'), findsOneWidget);
-    expect(find.text('127.0.0.1 · только это устройство'), findsOneWidget);
+    expect(find.text('Доступ из локальной сети'), findsOneWidget);
+    expect(find.text('Запрещён'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.text('Запрещён')).style?.fontWeight,
+      FontWeight.w700,
+    );
+    expect(find.textContaining('Нажатие — 127.0.0.1'), findsNothing);
+
+    // Right click offers LAN addresses only when the connection setting
+    // explicitly allows LAN access. Localhost remains available.
+    await tester.tap(find.text('SOCKS5 :20808'),
+        buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(find.text('127.0.0.1 · это устройство'), findsOneWidget);
+    expect(find.text('Доступ из локальной сети запрещён'), findsOneWidget);
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
 
     await settings.setSocksPort(20818);
     await tester.pump();

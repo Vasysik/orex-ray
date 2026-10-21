@@ -10,7 +10,7 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
-import '../../shared/widgets/responsive_motion.dart';
+import '../../shared/widgets/orex_adaptive_header.dart';
 import '../../shared/widgets/settings_section.dart';
 import '../home/tunnel_controller.dart';
 
@@ -276,70 +276,25 @@ class _DiagnosticsHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Диагностика', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text(
-          'Состояние Xray, watchdog, маршруты и безопасный журнал',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    );
-
-    final actions = Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        OutlinedButton.icon(
+    return OrexAdaptiveHeader(
+      title: 'Диагностика',
+      subtitle: 'Состояние Xray, watchdog, маршруты и безопасный журнал',
+      icon: Icons.monitor_heart_outlined,
+      actions: [
+        OrexHeaderAction(
+          tooltip: 'Обновить диагностику',
+          label: 'Обновить',
+          icon: Icons.refresh_rounded,
+          busy: loading,
           onPressed: loading ? null : onRefresh,
-          icon: loading
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.refresh_rounded),
-          label: const Text('Обновить'),
         ),
-        OutlinedButton.icon(
+        OrexHeaderAction(
+          tooltip: 'Скопировать отчёт',
+          label: 'Скопировать отчёт',
+          icon: Icons.copy_rounded,
           onPressed: canCopy ? onCopy : null,
-          icon: const Icon(Icons.copy_rounded),
-          label: const Text('Скопировать отчёт'),
         ),
       ],
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 700;
-        final content = wide
-            ? Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(child: title),
-                  const SizedBox(width: 20),
-                  actions,
-                ],
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  title,
-                  const SizedBox(height: 14),
-                  actions,
-                ],
-              );
-        return AnimatedSize(
-          duration: OrexMotion.duration(context),
-          curve: OrexMotion.curve,
-          alignment: Alignment.topLeft,
-          child: OrexResponsiveReveal(
-            layoutKey: wide ? 'diagnostics-wide' : 'diagnostics-stacked',
-            child: content,
-          ),
-        );
-      },
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/profiles/profiles_controller.dart';
 import 'package:orex_ray/core/settings/connection_settings_controller.dart';
@@ -59,6 +60,56 @@ void main() {
       await tester.pump();
     },
     timeout: const Timeout(Duration(seconds: 15)),
+  );
+
+  testWidgets(
+    'proxy addresses can be copied from Connection settings',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1100));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // Widget tests must not rely on the host OS clipboard: the platform
+      // channel may not respond to Clipboard.getData in a test isolate.
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      String? clipboardText;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      final harness = await _pumpConnectionScreen(
+        tester,
+        status: TunnelStatus.disconnected,
+      );
+
+      // Explicit copy actions are inside each port row, on the right.
+      expect(find.byTooltip('Копировать SOCKS5'), findsOneWidget);
+      expect(find.byTooltip('Копировать HTTP'), findsOneWidget);
+      expect(
+        tester.getCenter(find.byTooltip('Копировать SOCKS5')).dx,
+        greaterThan(tester.getCenter(find.text('SOCKS5')).dx),
+      );
+      await tester.tap(find.byTooltip('Копировать SOCKS5'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('127.0.0.1 · это устройство'), findsOneWidget);
+      expect(find.text('Доступ из локальной сети запрещён'), findsOneWidget);
+      await tester.tap(find.text('127.0.0.1 · это устройство'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        clipboardText,
+        'socks5://127.0.0.1:${harness.settings.socksPort}',
+      );
+      expect(tester.takeException(), isNull);
+    },
+    timeout: const Timeout(Duration(seconds: 20)),
   );
 
   testWidgets('latency probe settings are not shown in Connection',
@@ -124,8 +175,32 @@ void _expectDisabledListTile(
   expect(tile.onTap, isNull);
   expect(tile.leading, isA<Icon>());
   expect((tile.leading! as Icon).color, disabledColor);
-  expect(tile.trailing, isA<Icon>());
-  expect((tile.trailing! as Icon).color, disabledColor);
+  // MTU has only a chevron. Proxy ports also have a copy button.
+  if (title == 'MTU') {
+    expect(tile.trailing, isA<Icon>());
+    expect((tile.trailing! as Icon).color, disabledColor);
+    return;
+  }
+
+  // Copying a proxy address stays available while port editing is locked.
+  expect(tile.trailing, isA<Row>());
+  final trailingChildren = (tile.trailing! as Row).children;
+  expect(trailingChildren, hasLength(2));
+  expect(trailingChildren.last, isA<Icon>());
+  expect((trailingChildren.last as Icon).color, disabledColor);
+  expect(
+    find.descendant(
+      of: finder,
+      matching: find.byTooltip('Копировать $title'),
+    ),
+    findsOneWidget,
+  );
+  final copyButtons = find.descendant(
+    of: finder,
+    matching: find.byType(IconButton),
+  );
+  expect(copyButtons, findsOneWidget);
+  expect(tester.widget<IconButton>(copyButtons).onPressed, isNotNull);
 }
 
 class _ConnectionHarness {

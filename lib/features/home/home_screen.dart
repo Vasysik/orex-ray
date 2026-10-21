@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/egress/egress_identity.dart';
 import '../../core/tunnel/tunnel_models.dart';
@@ -7,6 +6,7 @@ import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
 import '../../shared/widgets/orex_modal_sheet_surface.dart';
+import '../../shared/widgets/orex_proxy_copy.dart';
 import '../../shared/widgets/responsive_breakpoints.dart';
 import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
@@ -1225,19 +1225,19 @@ class _ProxyDetails extends StatelessWidget {
                 size: 18, color: OrexColors.copper),
             const SizedBox(width: 8),
             Expanded(
-              // In a split home layout this card may be only ~280 px wide.
-              // A fixed-width heading plus a status label can overflow even
-              // before the home layout reaches its compact breakpoint.
-              // Wrap keeps both labels readable without changing the split
-              // threshold or relying on magic widths.
               child: Wrap(
                 alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: 8,
-                runSpacing: 4,
+                runSpacing: 6,
                 children: [
                   Text('Локальный прокси', style: textTheme.titleSmall),
-                  Text(status, style: textTheme.bodySmall),
+                  Text(
+                    status,
+                    style: textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1252,20 +1252,30 @@ class _ProxyDetails extends StatelessWidget {
               protocol: 'SOCKS5',
               port: tunnel.socksProxyPort,
               uriScheme: 'socks5',
+              allowLan: tunnel.proxyAllowsLan,
             ),
             _ProxyAddressChip(
               protocol: 'HTTP',
               port: tunnel.httpProxyPort,
               uriScheme: 'http',
+              allowLan: tunnel.proxyAllowsLan,
             ),
           ],
         ),
-        const SizedBox(height: 7),
-        Text(
-          tunnel.proxyAllowsLan
-              ? 'Доступ из локальной сети разрешён в настройках'
-              : '127.0.0.1 · только это устройство',
-          style: textTheme.bodySmall,
+        const SizedBox(height: 10),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            Text('Доступ из локальной сети', style: textTheme.bodySmall),
+            Text(
+              tunnel.proxyAllowsLan ? 'Разрешён' : 'Запрещён',
+              style: textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -1277,28 +1287,42 @@ class _ProxyAddressChip extends StatelessWidget {
     required this.protocol,
     required this.port,
     required this.uriScheme,
+    required this.allowLan,
   });
 
   final String protocol;
   final int port;
   final String uriScheme;
+  final bool allowLan;
+
+  Future<void> _showAddressMenu(BuildContext context, Offset position) =>
+      OrexProxyCopy.showAddressMenu(
+        context,
+        globalPosition: position,
+        protocol: protocol,
+        scheme: uriScheme,
+        port: port,
+        allowLan: allowLan,
+      );
 
   @override
   Widget build(BuildContext context) {
     final address = '$uriScheme://127.0.0.1:$port';
     return Tooltip(
-      message: 'Скопировать $address',
+      message: 'Копировать $address',
       child: Material(
         color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: () async {
-            await Clipboard.setData(ClipboardData(text: address));
-            if (!context.mounted) return;
-            ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-              SnackBar(content: Text('$protocol-адрес скопирован')),
-            );
+          onTap: () => OrexProxyCopy.copy(
+            context, protocol: protocol, address: address),
+          onSecondaryTapUp: (details) =>
+              _showAddressMenu(context, details.globalPosition),
+          onLongPress: () {
+            final box = context.findRenderObject() as RenderBox;
+            _showAddressMenu(
+              context, box.localToGlobal(box.size.center(Offset.zero)));
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
