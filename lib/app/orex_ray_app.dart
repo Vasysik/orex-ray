@@ -14,6 +14,7 @@ import '../features/shell/app_shell.dart';
 import '../platform/tunnel_engine_factory.dart';
 import '../platform/android/android_startup_controller.dart';
 import '../platform/windows/windows_lifecycle_controller.dart';
+import '../shared/theme/glass.dart';
 import '../shared/theme/orex_theme.dart';
 import '../shared/theme/theme_controller.dart';
 
@@ -173,8 +174,12 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'OrexRay',
-      theme: OrexTheme.light,
-      darkTheme: OrexTheme.dark,
+      theme: OrexTheme.light.copyWith(
+        extensions: [OrexGlassAppearance(enabled: widget.theme.glassEnabled)],
+      ),
+      darkTheme: OrexTheme.dark.copyWith(
+        extensions: [OrexGlassAppearance(enabled: widget.theme.glassEnabled)],
+      ),
       themeMode: widget.theme.mode,
       home: AppShell(
         tunnel: _tunnel,

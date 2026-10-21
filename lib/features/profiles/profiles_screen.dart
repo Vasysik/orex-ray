@@ -1529,16 +1529,48 @@ class _ProfilesHeader extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Compact labels while the actions are still beside the page title.
-        // Only move the actions below the title after the icon-only pills no
-        // longer leave enough room for the title itself.
+        // Measure typography instead of guessing when to break at 480/600px.
+        // Reserve room for the actual heading and its description.
         final width = constraints.maxWidth;
         final serverSelection =
             selectionScope == _ProfileSelectionScope.servers;
-        final sameRowBreakpoint = selectionMode
-            ? (serverSelection ? 600.0 : 500.0)
-            : 480.0;
-        final sameRow = width >= sameRowBreakpoint;
+        final typography = Theme.of(context).textTheme;
+        final headingWidth = 62 +
+            _headerTextWidth(context, 'Профили', typography.headlineSmall);
+        final subtitleWidth = 62 + _headerTextWidth(
+          context, 'Серверы, пинг и балансировщики Xray', typography.bodySmall);
+        final titleWidth = headingWidth > subtitleWidth
+            ? headingWidth
+            : subtitleWidth;
+        const iconButtonWidth = 52.0;
+        const actionGap = 10.0;
+        const headerGap = 20.0;
+        final actionCount = selectionMode ? (serverSelection ? 6 : 4) : 2;
+        final compactActionsWidth =
+            actionCount * iconButtonWidth + (actionCount - 1) * actionGap;
+        final sameRow = width >= titleWidth + headerGap + compactActionsWidth;
+        final availableActionsWidth =
+            sameRow ? width - titleWidth - headerGap : width;
+
+        // Labels disappear from right to left. Neither action layout uses Wrap,
+        // so button rows stay intact at every intermediate window width.
+        final labelStyle = typography.labelLarge;
+        final profileExtra = 8 +
+            _headerTextWidth(context, 'Профиль', labelStyle) + 4 + 18;
+        final checkPingExtra = 8 +
+            _headerTextWidth(context, 'Проверить пинг', labelStyle);
+        final exportExtra =
+            8 + _headerTextWidth(context, 'Экспорт', labelStyle);
+        final selectedPingExtra =
+            8 + _headerTextWidth(context, 'Пинг', labelStyle);
+        final compactProfile = availableActionsWidth <
+            compactActionsWidth + profileExtra;
+        final compactCheckPing = availableActionsWidth <
+            compactActionsWidth + profileExtra + checkPingExtra;
+        final compactExport = availableActionsWidth <
+            compactActionsWidth + selectedPingExtra + exportExtra;
+        final compactSelectedPing = availableActionsWidth <
+            compactActionsWidth + selectedPingExtra;
 
         final actions = selectionMode
             ? _AdaptiveSelectionActions(
@@ -1546,11 +1578,8 @@ class _ProfilesHeader extends StatelessWidget {
                 refreshingLatency: refreshingLatency,
                 allSelected: allSelected,
                 canGroupSelected: canGroupSelected,
-                forceCompactExport: sameRow &&
-                    width < (serverSelection ? 710.0 : 540.0),
-                forceCompactPing:
-                    sameRow && serverSelection && width < 650.0,
-                allowWrap: !sameRow,
+                forceCompactExport: compactExport,
+                forceCompactPing: compactSelectedPing,
                 onPingSelected: onPingSelected,
                 onExportSelected: onExportSelected,
                 onGroupSelected: onGroupSelected,
@@ -1559,9 +1588,8 @@ class _ProfilesHeader extends StatelessWidget {
                 onCloseSelection: onCloseSelection,
               )
             : _AdaptiveProfileActions(
-                forceCompactProfile: sameRow && width < 530.0,
-                forceCompactPing: sameRow && width < 580.0,
-                allowWrap: !sameRow,
+                forceCompactProfile: compactProfile,
+                forceCompactPing: compactCheckPing,
                 refreshingLatency: refreshingLatency,
                 canRefreshLatency: canRefreshLatency,
                 onOpenProfileMenu: onOpenProfileMenu,
@@ -1573,7 +1601,7 @@ class _ProfilesHeader extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(child: title),
-                  const SizedBox(width: 20),
+                  const SizedBox(width: headerGap),
                   actions,
                 ],
               )
@@ -1582,8 +1610,11 @@ class _ProfilesHeader extends StatelessWidget {
                 children: [
                   title,
                   const SizedBox(height: 14),
-                  Align(
-                    alignment: Alignment.centerRight,
+                  // Narrow mobile layouts can scroll horizontally instead of
+                  // cramming six selection buttons into two uneven rows.
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    reverse: true,
                     child: actions,
                   ),
                 ],
@@ -1602,11 +1633,22 @@ class _ProfilesHeader extends StatelessWidget {
   }
 }
 
+double _headerTextWidth(BuildContext context, String text, TextStyle? style) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    maxLines: 1,
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+  )..layout();
+  final width = painter.width;
+  painter.dispose();
+  return width;
+}
+
 class _AdaptiveProfileActions extends StatelessWidget {
   const _AdaptiveProfileActions({
     required this.forceCompactProfile,
     required this.forceCompactPing,
-    required this.allowWrap,
     required this.refreshingLatency,
     required this.canRefreshLatency,
     required this.onOpenProfileMenu,
@@ -1615,7 +1657,6 @@ class _AdaptiveProfileActions extends StatelessWidget {
 
   final bool forceCompactProfile;
   final bool forceCompactPing;
-  final bool allowWrap;
   final bool refreshingLatency;
   final bool canRefreshLatency;
   final VoidCallback onOpenProfileMenu;
@@ -1623,63 +1664,34 @@ class _AdaptiveProfileActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final finite = constraints.maxWidth.isFinite;
-        // Collapse labels progressively both beside the page title and, after
-        // wrapping below it, when the lower action row becomes narrow again.
-        final compactPing =
-            forceCompactPing || (finite && constraints.maxWidth < 170);
-        final compactProfile =
-            forceCompactProfile || (finite && constraints.maxWidth < 130);
-        final children = <Widget>[
-          _HeaderIconActionButton(
-            tooltip: 'Добавить профиль',
-            onPressed: onOpenProfileMenu,
-            icon: Icons.add_rounded,
-            label: compactProfile
-                ? null
-                : const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('Профиль'),
-                      SizedBox(width: 4),
-                      Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-                    ],
-                  ),
-          ),
-          _HeaderIconActionButton(
-            tooltip: 'Проверить пинг',
-            onPressed: refreshingLatency || !canRefreshLatency
-                ? null
-                : () => onRefreshLatency(),
-            icon: Icons.network_ping_rounded,
-            label: compactPing ? null : const Text('Проверить пинг'),
-          ),
-        ];
-
-        if (!allowWrap) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              children[0],
-              const SizedBox(width: 10),
-              children[1],
-            ],
-          );
-        }
-        return AnimatedSize(
-          duration: OrexMotion.duration(context, OrexMotion.compact),
-          curve: OrexMotion.curve,
-          alignment: Alignment.topRight,
-          child: Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 10,
-            runSpacing: 10,
-            children: children,
-          ),
-        );
-      },
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _HeaderIconActionButton(
+          tooltip: 'Добавить профиль',
+          onPressed: onOpenProfileMenu,
+          icon: Icons.add_rounded,
+          label: forceCompactProfile
+              ? null
+              : const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Профиль'),
+                    SizedBox(width: 4),
+                    Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                  ],
+                ),
+        ),
+        const SizedBox(width: 10),
+        _HeaderIconActionButton(
+          tooltip: 'Проверить пинг',
+          onPressed: refreshingLatency || !canRefreshLatency
+              ? null
+              : () => onRefreshLatency(),
+          icon: Icons.network_ping_rounded,
+          label: forceCompactPing ? null : const Text('Проверить пинг'),
+        ),
+      ],
     );
   }
 }
@@ -1692,7 +1704,6 @@ class _AdaptiveSelectionActions extends StatelessWidget {
     required this.canGroupSelected,
     required this.forceCompactExport,
     required this.forceCompactPing,
-    required this.allowWrap,
     required this.onPingSelected,
     required this.onExportSelected,
     required this.onGroupSelected,
@@ -1707,7 +1718,6 @@ class _AdaptiveSelectionActions extends StatelessWidget {
   final bool canGroupSelected;
   final bool forceCompactExport;
   final bool forceCompactPing;
-  final bool allowWrap;
   final Future<void> Function() onPingSelected;
   final VoidCallback onExportSelected;
   final VoidCallback onGroupSelected;
@@ -1717,90 +1727,63 @@ class _AdaptiveSelectionActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final finite = width.isFinite;
-        final serverScope = scope == _ProfileSelectionScope.servers;
-        // Labels disappear from the end first: Export, then Ping. Below the
-        // title, wrapping is preferred; compact labels only once the available
-        // width is genuinely narrow.
-        final compactExport = forceCompactExport ||
-            (finite && width < (serverScope ? 320 : 210));
-        final compactPing = forceCompactPing ||
-            (finite && width < (serverScope ? 250 : 180));
-
-        final children = <Widget>[];
-        if (serverScope) {
-          children.add(
-            _HeaderIconActionButton(
-              tooltip: 'Пинг',
-              onPressed: refreshingLatency ? null : () => onPingSelected(),
-              icon: Icons.network_ping_rounded,
-              label: compactPing ? null : const Text('Пинг'),
-            ),
-          );
-        }
-        children.add(
-          _HeaderIconActionButton(
-            tooltip: 'Экспорт',
-            onPressed: onExportSelected,
-            icon: Icons.ios_share_rounded,
-            label: compactExport ? null : const Text('Экспорт'),
-          ),
-        );
-        if (serverScope) {
-          children.add(
-            _HeaderIconActionButton(
-              tooltip: 'Группа',
-              onPressed: canGroupSelected ? onGroupSelected : null,
-              icon: Icons.folder_outlined,
-            ),
-          );
-        }
-        children.addAll([
-          _HeaderIconActionButton(
-            tooltip: scope == _ProfileSelectionScope.subscriptions
-                ? 'Удалить подписки'
-                : 'Удалить',
-            onPressed: onDeleteSelected,
-            color: OrexColors.danger,
-            icon: Icons.delete_outline_rounded,
-          ),
-          _HeaderIconActionButton(
-            tooltip: 'Выбрать все',
-            onPressed: allSelected ? null : onSelectAll,
-            icon: Icons.select_all_rounded,
-          ),
-          _HeaderIconActionButton(
-            tooltip: 'Готово',
-            onPressed: onCloseSelection,
-            icon: Icons.check_rounded,
-          ),
-        ]);
-        if (!allowWrap) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var index = 0; index < children.length; index++) ...[
-                if (index > 0) const SizedBox(width: 10),
-                children[index],
-              ],
-            ],
-          );
-        }
-        return AnimatedSize(
-          duration: OrexMotion.duration(context, OrexMotion.compact),
-          curve: OrexMotion.curve,
-          alignment: Alignment.topRight,
-          child: Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 10,
-            runSpacing: 10,
-            children: children,
-          ),
-        );
-      },
+    final serverScope = scope == _ProfileSelectionScope.servers;
+    final children = <Widget>[];
+    if (serverScope) {
+      children.add(
+        _HeaderIconActionButton(
+          tooltip: 'Пинг',
+          onPressed: refreshingLatency ? null : () => onPingSelected(),
+          icon: Icons.network_ping_rounded,
+          label: forceCompactPing ? null : const Text('Пинг'),
+        ),
+      );
+    }
+    children.add(
+      _HeaderIconActionButton(
+        tooltip: 'Экспорт',
+        onPressed: onExportSelected,
+        icon: Icons.ios_share_rounded,
+        label: forceCompactExport ? null : const Text('Экспорт'),
+      ),
+    );
+    if (serverScope) {
+      children.add(
+        _HeaderIconActionButton(
+          tooltip: 'Группа',
+          onPressed: canGroupSelected ? onGroupSelected : null,
+          icon: Icons.folder_outlined,
+        ),
+      );
+    }
+    children.addAll([
+      _HeaderIconActionButton(
+        tooltip: scope == _ProfileSelectionScope.subscriptions
+            ? 'Удалить подписки'
+            : 'Удалить',
+        onPressed: onDeleteSelected,
+        color: OrexColors.danger,
+        icon: Icons.delete_outline_rounded,
+      ),
+      _HeaderIconActionButton(
+        tooltip: 'Выбрать все',
+        onPressed: allSelected ? null : onSelectAll,
+        icon: Icons.select_all_rounded,
+      ),
+      _HeaderIconActionButton(
+        tooltip: 'Готово',
+        onPressed: onCloseSelection,
+        icon: Icons.check_rounded,
+      ),
+    ]);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var index = 0; index < children.length; index++) ...[
+          if (index > 0) const SizedBox(width: 10),
+          children[index],
+        ],
+      ],
     );
   }
 }

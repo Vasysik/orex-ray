@@ -5,6 +5,7 @@ import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
+import '../../shared/widgets/orex_modal_sheet_surface.dart';
 import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../../shared/widgets/status_pill.dart';
@@ -916,18 +917,14 @@ class _QuickInfo extends StatelessWidget {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, setSheetState) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: GlassPanel(
-              borderRadius: 24,
-              child: ConstrainedBox(
+        builder: (sheetContext, setSheetState) => OrexModalSheetSurface(
+          child: ConstrainedBox(
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.72,
                 ),
                 child: ListView(
                   shrinkWrap: true,
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.zero,
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
@@ -1000,8 +997,6 @@ class _QuickInfo extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-          ),
         ),
       ),
     );

@@ -53,16 +53,19 @@ class AppearanceScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          const SettingsSection(
+          SettingsSection(
             title: 'Стиль',
             children: [
-              ListTile(
-                leading: Icon(Icons.blur_on_rounded),
-                title: Text('Стеклянные панели'),
-                subtitle: Text('Фирменный glassmorphism Orex включён всегда'),
+              SwitchListTile(
+                key: const ValueKey('appearance-glass-toggle'),
+                secondary: const Icon(Icons.blur_on_rounded),
+                title: const Text('Стеклянные панели'),
+                subtitle: const Text('Размытие и полупрозрачные поверхности'),
+                value: theme.glassEnabled,
+                onChanged: theme.setGlassEnabled,
               ),
-              Divider(height: 1),
-              ListTile(
+              const Divider(height: 1),
+              const ListTile(
                 leading: Icon(Icons.pets_rounded),
                 title: Text('Маскот'),
                 subtitle: Text('Белочка остаётся частью экранов и загрузки'),
