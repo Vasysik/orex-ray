@@ -100,6 +100,56 @@ class OrexTheme {
       chipTheme: base.chipTheme.copyWith(
         selectedColor: palette.accent.withValues(alpha: 0.20),
         side: BorderSide(color: palette.border),
+        labelStyle: TextStyle(color: palette.text),
+        secondaryLabelStyle: TextStyle(color: onAccent),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected) ? palette.accent : null),
+        checkColor: WidgetStatePropertyAll(onAccent),
+        side: BorderSide(color: palette.border),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected) ? palette.accent : palette.mutedText),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected) ? palette.accent : palette.mutedText),
+        trackColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected)
+                ? palette.accent.withValues(alpha: 0.34)
+                : palette.border.withValues(alpha: 0.45)),
+        trackOutlineColor: WidgetStatePropertyAll(palette.border),
+      ),
+      sliderTheme: base.sliderTheme.copyWith(
+        activeTrackColor: palette.accent,
+        inactiveTrackColor: palette.border.withValues(alpha: 0.5),
+        thumbColor: palette.accent,
+        overlayColor: palette.accent.withValues(alpha: 0.14),
+        valueIndicatorColor: palette.accent,
+        valueIndicatorTextStyle: TextStyle(color: onAccent),
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: palette.accent),
+      inputDecorationTheme: base.inputDecorationTheme.copyWith(
+        filled: true,
+        fillColor: palette.surface.withValues(alpha: 0.35),
+        labelStyle: TextStyle(color: palette.mutedText),
+        helperStyle: TextStyle(color: palette.mutedText),
+        prefixIconColor: palette.accent,
+        suffixIconColor: palette.accent,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: palette.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: palette.accent, width: 1.4),
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: palette.border),
+        ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: base.outlinedButtonTheme.style?.copyWith(

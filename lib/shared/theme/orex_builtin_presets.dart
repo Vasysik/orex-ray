@@ -31,8 +31,8 @@ class OrexBuiltinPreset {
   String get assetPath => 'assets/themes/presets/$id.json';
 
   static const values = <OrexBuiltinPreset>[
-    OrexBuiltinPreset('noir', 'Monochrome Noir', 'Чёрно-белый Orex с серой белочкой', Color(0xFFAAAAAA)),
-    OrexBuiltinPreset('cabbage', 'Soft Lime', 'Мягкая салатовая тема с котом и капустой', Color(0xFFAACD81)),
+    OrexBuiltinPreset('noir', 'Monochrome Noir', 'Чёрно-белый Orex с серой белочкой', Color(0xFF969696)),
+    OrexBuiltinPreset('cabbage', 'Soft Lime', 'Мягкая салатовая тема с котом и капустой', Color(0xFFC9E279)),
     OrexBuiltinPreset('hardcore', 'Hardcore Red', 'Чёрно-красная тема с белочкой', Color(0xFFFF303A)),
     OrexBuiltinPreset('hacker', 'Hacker Green', 'Чёрно-зелёная тема с котом-хакером', Color(0xFF3BFF70)),
   ];

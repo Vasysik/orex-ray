@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/profiles/xray_json_file.dart';
 import '../../shared/theme/orex_builtin_presets.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/theme/simple_theme_profile.dart';
 import '../../shared/theme/theme_controller.dart';
 import '../../shared/widgets/settings_section.dart';
@@ -113,6 +116,59 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     if (confirmed == true) await theme.deleteTheme(entry.id);
   });
 
+
+  Widget _themeTileLeading(SimpleThemeProfile entry) {
+    final palette = OrexPalette.resolve(
+      entry.light ? Brightness.light : Brightness.dark,
+      entry.colors,
+    );
+    final image = entry.mascotPath.isEmpty
+        ? const SquirrelMascot(size: 48, compact: true, forceDefault: true)
+        : Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(
+                color: palette.accent.withValues(alpha: 0.24),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              )],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Image.file(
+              File(entry.mascotPath),
+              fit: BoxFit.cover,
+              cacheWidth: 128,
+              errorBuilder: (context, error, stackTrace) =>
+                  const SquirrelMascot(size: 48, compact: true, forceDefault: true),
+            ),
+          );
+    if (theme.selectedId != entry.id) return image;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        image,
+        Positioned(
+          right: -2,
+          bottom: -2,
+          child: Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: palette.accent,
+              shape: BoxShape.circle,
+              border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2),
+            ),
+            child: Icon(Icons.check_rounded, size: 11, color:
+              ThemeData.estimateBrightnessForColor(palette.accent) == Brightness.dark
+                  ? Colors.white : Colors.black),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _presetTile(OrexBuiltinPreset preset) => ListTile(
     key: ValueKey('preset-${preset.id}'),
     selected: theme.selectedId == preset.storageId,
@@ -217,8 +273,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             ListTile(
               key: ValueKey('theme-${entry.id}'),
               selected: theme.selectedId == entry.id,
-              leading: Icon(theme.selectedId == entry.id
-                ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+              leading: _themeTileLeading(entry),
               title: Text(entry.name),
               subtitle: const Text('Настраиваемые цвета, маскот и стекло'),
               onTap: () => _run(() => theme.selectTheme(entry.id)),

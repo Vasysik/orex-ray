@@ -463,9 +463,7 @@ class _ConnectButton extends StatelessWidget {
     final palette = OrexPalette.of(context);
     final classic = palette.accent == OrexColors.copper &&
         palette.secondary == OrexColors.ochre;
-    final buttonInk = classic
-        ? OrexColors.cream
-        : Theme.of(context).colorScheme.onPrimary;
+    final buttonInk = classic ? OrexColors.cream : palette.text;
     return Semantics(
       button: true,
       enabled: canTap,

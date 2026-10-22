@@ -211,11 +211,11 @@ void main() {
       'assets/themes/presets/noir.json',
     )) as Map<String, dynamic>;
     expect(lime['light'], isFalse);
-    expect((lime['colors'] as Map)['background'], '#FF101A0E');
-    expect((lime['colors'] as Map)['surface'], '#FF23351B');
-    expect((lime['colors'] as Map)['accent'], '#FFAACD81');
+    expect((lime['colors'] as Map)['background'], '#FF0E140A');
+    expect((lime['colors'] as Map)['surface'], '#FF1C2812');
+    expect((lime['colors'] as Map)['accent'], '#FFC9E279');
     expect((noir['colors'] as Map)['background'], '#FF050506');
-    expect((noir['colors'] as Map)['surface'], '#FF0E0F10');
+    expect((noir['colors'] as Map)['surface'], '#FF121314');
     // A self-contained preset must still carry its own mascot bytes.
     expect(lime['mascot'], startsWith('data:image/webp;base64,'));
     expect(noir['mascot'], startsWith('data:image/webp;base64,'));
