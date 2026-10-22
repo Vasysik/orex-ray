@@ -40,9 +40,11 @@ bool ActivateWindow(HWND window) {
   } else {
     ShowWindow(window, SW_SHOW);
   }
-  SetWindowPos(window, HWND_TOP, 0, 0, 0, 0,
+  SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
   SetForegroundWindow(window);
+  SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
   return true;
 }
 

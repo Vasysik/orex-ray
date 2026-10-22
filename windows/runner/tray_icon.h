@@ -2,6 +2,7 @@
 #define RUNNER_TRAY_ICON_H_
 
 #include <windows.h>
+#include <cstdint>
 
 #include <string>
 
@@ -10,6 +11,8 @@ enum class TrayStatus {
   kConnecting,
   kDisconnecting,
   kConnected,
+  kChecking,
+  kUnavailable,
   kTimeout,
   kError,
 };
@@ -27,11 +30,12 @@ class TrayIcon {
   void ReAdd();
   void Remove();
   void Update(TrayStatus status, const std::wstring& target_name,
-              bool can_disconnect);
+              bool can_disconnect, const std::wstring& label,
+              std::uint32_t color_rgb, std::uint32_t mark_rgb);
   UINT ShowContextMenu(HWND owner, POINT point) const;
 
  private:
-  HICON CreateStatusIcon(TrayStatus status) const;
+  HICON CreateStatusIcon() const;
   std::wstring StatusText() const;
   std::wstring TooltipText() const;
   void ApplyIcon();
@@ -41,6 +45,10 @@ class TrayIcon {
   bool added_ = false;
   bool can_disconnect_ = false;
   TrayStatus status_ = TrayStatus::kDisconnected;
+  // Placeholder until Dart sends the first theme-resolved status color.
+  std::uint32_t color_rgb_ = 0xD47939;
+  std::uint32_t mark_rgb_ = 0xFCFAFA;
+  std::wstring label_;
   std::wstring target_name_;
   HICON status_icon_ = nullptr;
 };

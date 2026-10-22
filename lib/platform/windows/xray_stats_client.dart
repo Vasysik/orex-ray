@@ -49,6 +49,18 @@ class XrayStatsClient {
     return parseQueryStatsResponse(response);
   }
 
+  Future<Map<String, int>> queryOutboundTotals() async {
+    final call = _channel.createCall<List<int>, List<int>>(
+      _queryStatsMethod,
+      Stream<List<int>>.value(
+        encodeQueryStatsRequest(pattern: 'outbound>>>'),
+      ),
+      CallOptions(timeout: const Duration(seconds: 2)),
+    );
+    final response = await call.response.single;
+    return parseOutboundTotalsResponse(response);
+  }
+
   Future<void> close() => _channel.shutdown();
 
   static List<int> encodeQueryStatsRequest({required String pattern}) {
@@ -97,6 +109,39 @@ class XrayStatsClient {
       downloadBytes: download,
       uploadBytes: upload,
     );
+  }
+
+  static Map<String, int> parseOutboundTotalsResponse(List<int> bytes) {
+    final reader = _ProtoReader(bytes);
+    final totals = <String, int>{};
+
+    while (!reader.isAtEnd) {
+      final key = reader.readVarint();
+      final field = key >> 3;
+      final wireType = key & 0x07;
+      if (field != 1 || wireType != 2) {
+        reader.skip(wireType);
+        continue;
+      }
+
+      final stat = _parseStat(reader.readLengthDelimited());
+      if (stat == null) continue;
+      final parts = stat.name.split('>>>');
+      if (parts.length < 4 ||
+          parts[0] != 'outbound' ||
+          parts[2] != 'traffic' ||
+          (parts[3] != 'downlink' && parts[3] != 'uplink')) {
+        continue;
+      }
+      final tag = parts[1];
+      if (tag != 'proxy' &&
+          tag != 'fallback-proxy' &&
+          !RegExp(r'^proxy-\d+$').hasMatch(tag)) {
+        continue;
+      }
+      totals[tag] = (totals[tag] ?? 0) + stat.value;
+    }
+    return Map.unmodifiable(totals);
   }
 
   static _XrayStat? _parseStat(List<int> bytes) {

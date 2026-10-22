@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../../core/egress/egress_identity.dart';
 import '../../core/tunnel/tunnel_models.dart';
+import '../../shared/theme/connection_visual_status.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
-import '../../shared/widgets/orex_choice_sheet.dart';
+import '../../shared/widgets/orex_modal_sheet_surface.dart';
+import '../../shared/widgets/orex_proxy_copy.dart';
+import '../../shared/widgets/responsive_breakpoints.dart';
+import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../../shared/widgets/status_pill.dart';
 import 'tunnel_controller.dart';
@@ -28,61 +33,89 @@ class HomeScreen extends StatelessWidget {
         final snapshot = tunnel.snapshot;
         return LayoutBuilder(
           builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 920;
+            final wide = constraints.maxWidth >= OrexBreakpoints.homeSplitCards;
+            final responsiveBody = wide
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Match the connection card's bottom edge to the
+                      // second right-hand card, regardless of their content.
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: _ConnectionHero(
+                                tunnel: tunnel,
+                                snapshot: snapshot,
+                                onTap: tunnel.toggle,
+                                showStatusText: true,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              flex: 4,
+                              child: _QuickInfo(
+                                tunnel: tunnel,
+                                snapshot: snapshot,
+                                stretchProxyCard: true,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _TrafficCard(tunnel: tunnel, snapshot: snapshot),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ConnectionHero(
+                        tunnel: tunnel,
+                        snapshot: snapshot,
+                        onTap: tunnel.toggle,
+                        showStatusText: false,
+                      ),
+                      const SizedBox(height: 12),
+                      _MobileStatusCard(tunnel: tunnel, snapshot: snapshot),
+                      const SizedBox(height: 16),
+                      _QuickInfo(tunnel: tunnel, snapshot: snapshot),
+                    ],
+                  );
+
             return SingleChildScrollView(
-              padding: EdgeInsets.all(wide ? 24 : 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _Header(
-                    tunnel: tunnel,
-                    snapshot: snapshot,
-                  ),
-                  const SizedBox(height: 20),
-                  if (snapshot.errorMessage != null) ...[
-                    _ErrorCard(message: snapshot.errorMessage!),
-                    const SizedBox(height: 16),
-                  ],
-                  _ModeSelector(tunnel: tunnel),
-                  const SizedBox(height: 16),
-                  if (wide) ...[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: _ConnectionHero(
-                            tunnel: tunnel,
-                            snapshot: snapshot,
-                            onTap: tunnel.toggle,
-                            showStatusText: true,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          flex: 4,
-                          child: _QuickInfo(
-                            tunnel: tunnel,
-                            snapshot: snapshot,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _TrafficCard(tunnel: tunnel, snapshot: snapshot),
-                  ] else ...[
-                    _ConnectionHero(
+              child: AnimatedPadding(
+                duration: OrexMotion.duration(context),
+                curve: OrexMotion.curve,
+                padding: EdgeInsets.all(wide ? 24 : 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Header(
                       tunnel: tunnel,
                       snapshot: snapshot,
-                      onTap: tunnel.toggle,
-                      showStatusText: false,
                     ),
-                    const SizedBox(height: 12),
-                    _MobileStatusCard(tunnel: tunnel, snapshot: snapshot),
+                    const SizedBox(height: 20),
+                    if (snapshot.errorMessage != null) ...[
+                      _ErrorCard(message: snapshot.errorMessage!),
+                      const SizedBox(height: 16),
+                    ],
+                    _ModeSelector(tunnel: tunnel),
                     const SizedBox(height: 16),
-                    _QuickInfo(tunnel: tunnel, snapshot: snapshot),
+                    AnimatedSize(
+                      duration: OrexMotion.duration(context),
+                      curve: OrexMotion.curve,
+                      alignment: Alignment.topCenter,
+                      child: OrexResponsiveReveal(
+                        layoutKey: wide ? 'home-wide' : 'home-compact',
+                        alignment: Alignment.topCenter,
+                        child: responsiveBody,
+                      ),
+                    ),
                   ],
-                ],
+                ),
               ),
             );
           },
@@ -122,22 +155,12 @@ class _Header extends StatelessWidget {
       ],
     );
 
-    final profile = snapshot.profile;
     final pingStatus = snapshot.isConnected
-        ? tunnel.effectivePingStatusFor(profile)
+        ? tunnel.effectivePingStatusFor(snapshot.profile)
         : PingStatus.unknown;
-    final routeFailed = _routeFailed(pingStatus);
-    final routeConfirmed = pingStatus == PingStatus.success;
-    final label = routeFailed
-        ? 'Нет ответа'
-        : switch (snapshot.status) {
-            TunnelStatus.connected when routeConfirmed => 'Защищено',
-            TunnelStatus.connected => 'Проверка',
-            TunnelStatus.connecting => 'Подключение',
-            TunnelStatus.disconnecting => 'Отключение',
-            TunnelStatus.error => 'Ошибка',
-            TunnelStatus.disconnected => 'Не подключено',
-          };
+    final visualStatus =
+        ConnectionVisualStatus.fromSnapshot(snapshot, pingStatus);
+    final label = visualStatus.label;
 
     double textWidth(String value, TextStyle? style) {
       final painter = TextPainter(
@@ -175,17 +198,27 @@ class _Header extends StatelessWidget {
         final fitsStatus = constraints.maxWidth >=
             brandNaturalWidth + 16 + pillNaturalWidth;
 
-        if (!fitsStatus) return brand;
-        return Row(
-          children: [
-            Expanded(child: brand),
-            const SizedBox(width: 16),
-            StatusPill(
-              label: label,
-              active: snapshot.isConnected && routeConfirmed,
-              color: routeFailed ? OrexColors.danger : null,
-            ),
-          ],
+        final content = fitsStatus
+            ? Row(
+                children: [
+                  Expanded(child: brand),
+                  const SizedBox(width: 16),
+                  StatusPill(
+                    label: label,
+                    color: visualStatus.color,
+                  ),
+                ],
+              )
+            : brand;
+        return AnimatedSize(
+          duration: OrexMotion.duration(context, OrexMotion.compact),
+          curve: OrexMotion.curve,
+          alignment: Alignment.centerLeft,
+          child: OrexResponsiveReveal(
+            layoutKey: fitsStatus ? 'header-status' : 'header-brand',
+            alignment: Alignment.centerLeft,
+            child: content,
+          ),
         );
       },
     );
@@ -340,7 +373,7 @@ class _ConnectionHero extends StatelessWidget {
     final pingStatus = active
         ? tunnel.effectivePingStatusFor(profile)
         : PingStatus.unknown;
-    final routeFailed = _routeFailed(pingStatus);
+    final routeFailed = ConnectionVisualStatus.isRouteFailed(pingStatus);
     final fallbackMessage = snapshot.message ??
         (hasProfile
             ? 'Готовы подключить ${profile.name}'
@@ -357,6 +390,9 @@ class _ConnectionHero extends StatelessWidget {
       borderRadius: 28,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       child: Column(
+        mainAxisAlignment: showStatusText
+            ? MainAxisAlignment.center
+            : MainAxisAlignment.start,
         children: [
           if (showStatusText) ...[
             Text(
@@ -418,14 +454,11 @@ class _ConnectButton extends StatelessWidget {
     final disconnecting = snapshot.status == TunnelStatus.disconnecting;
     final busy = connecting || disconnecting;
     final canTap = enabled && !disconnecting;
-    final routeFailed = active && _routeFailed(pingStatus);
+    final routeFailed = active && ConnectionVisualStatus.isRouteFailed(pingStatus);
     final pingConfirmed = active && pingStatus == PingStatus.success;
     final healthConfirmed = routeFailed || pingConfirmed;
-    final glowColor = routeFailed
-        ? OrexColors.danger
-        : pingConfirmed
-            ? OrexColors.online
-            : OrexColors.copper;
+    final glowColor =
+        ConnectionVisualStatus.fromSnapshot(snapshot, pingStatus).color;
     return Semantics(
       button: true,
       enabled: canTap,
@@ -438,9 +471,11 @@ class _ConnectButton extends StatelessWidget {
               : disconnecting
                   ? 'OrexRay отключается'
                   : 'Подключить OrexRay',
-      child: GestureDetector(
-        onTap: canTap ? () => onTap() : null,
-        child: AnimatedOpacity(
+      child: MouseRegion(
+        cursor: canTap ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          onTap: canTap ? () => onTap() : null,
+          child: AnimatedOpacity(
           duration: const Duration(milliseconds: 220),
           opacity: enabled ? 1 : 0.45,
           child: AnimatedContainer(
@@ -507,6 +542,7 @@ class _ConnectButton extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -558,26 +594,95 @@ class _MobileStatusCard extends StatelessWidget {
             ],
           ),
           const Divider(height: 26),
-          Row(
-            children: [
-              const Icon(Icons.data_usage_rounded, color: OrexColors.copper),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text('Трафик',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ),
-              Flexible(
-                child: Text(
-                  '${_bytes(snapshot.stats.downloadBytes)} ↓ · '
-                  '${_bytes(snapshot.stats.uploadBytes)} ↑',
-                  textAlign: TextAlign.end,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-              ),
-            ],
+          _MobileTrafficRow(
+            value: '${_bytes(snapshot.stats.downloadBytes)} ↓ · '
+                '${_bytes(snapshot.stats.uploadBytes)} ↑',
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MobileTrafficRow extends StatelessWidget {
+  const _MobileTrafficRow({required this.value});
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelStyle = Theme.of(context).textTheme.bodySmall;
+    final valueStyle = Theme.of(context).textTheme.titleSmall;
+    final direction = Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+
+    double measure(String text, TextStyle? style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      return painter.width;
+    }
+
+    final labelWidth = 24 + 10 + measure('Трафик', labelStyle);
+    final valueWidth = measure(value, valueStyle);
+    final label = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.data_usage_rounded, color: OrexColors.copper),
+        const SizedBox(width: 10),
+        Text('Трафик', style: labelStyle),
+      ],
+    );
+
+    return SizedBox(
+      height: 24,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Prefer true card-centered traffic data. If centering would collide
+          // with the unchanged left label, fall back to the old right side.
+          final centeredLeft = (constraints.maxWidth - valueWidth) / 2;
+          // Keep a comfortable visual gap from the unchanged left label.
+          // Once a centered value would come closer than this, move the value
+          // to the right edge instead of letting the row look cramped.
+          const minimumLabelGap = 64.0;
+          final canCenter = centeredLeft >= labelWidth + minimumLabelGap;
+          final content = canCenter
+              ? Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Align(alignment: Alignment.centerLeft, child: label),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: valueStyle,
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    label,
+                    const SizedBox(width: 64),
+                    Expanded(
+                      child: Text(
+                        value,
+                        textAlign: TextAlign.end,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: valueStyle,
+                      ),
+                    ),
+                  ],
+                );
+          return OrexResponsiveReveal(
+            layoutKey: canCenter ? 'traffic-centered' : 'traffic-trailing',
+            alignment: Alignment.center,
+            child: content,
+          );
+        },
       ),
     );
   }
@@ -625,6 +730,7 @@ class _CompactMetric extends StatelessWidget {
     if (onTap == null) return child;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
+      mouseCursor: busy ? SystemMouseCursors.basic : SystemMouseCursors.click,
       onTap: busy ? null : () => onTap!(),
       child: child,
     );
@@ -632,16 +738,23 @@ class _CompactMetric extends StatelessWidget {
 }
 
 class _QuickInfo extends StatelessWidget {
-  const _QuickInfo({required this.tunnel, required this.snapshot});
+  const _QuickInfo({
+    required this.tunnel,
+    required this.snapshot,
+    this.stretchProxyCard = false,
+  });
 
   final TunnelController tunnel;
   final TunnelSnapshot snapshot;
+  final bool stretchProxyCard;
 
   @override
   Widget build(BuildContext context) {
     final profile = snapshot.profile;
     final pingLabel = _pingLabel(tunnel, profile);
+    final activeBalancerMember = tunnel.activeBalancerMemberName(profile);
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         GlassPanel(
           borderRadius: 24,
@@ -649,128 +762,299 @@ class _QuickInfo extends StatelessWidget {
           child: profile == null
               ? const _NoProfileCard()
               : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap:
-                            tunnel.canChangeTarget && tunnel.targets.length > 1
-                                ? () => _showTargetPicker(context)
-                                : null,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Row(
-                            children: [
-                              EgressAvatar(
-                                identity: tunnel.egressIdentityFor(profile.id),
-                                fallbackIcon: profile.isBalancer
-                                    ? Icons.hub_rounded
-                                    : Icons.public_rounded,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            profile.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleMedium,
-                                          ),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      mouseCursor:
+                          tunnel.canChangeTarget && tunnel.targets.length > 1
+                              ? SystemMouseCursors.click
+                              : SystemMouseCursors.basic,
+                      onTap:
+                          tunnel.canChangeTarget && tunnel.targets.length > 1
+                              ? () => _showTargetPicker(context)
+                              : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            EgressAvatar(
+                              identity: tunnel.egressIdentityFor(profile.id),
+                              fallbackIcon: profile.isBalancer
+                                  ? Icons.hub_rounded
+                                  : Icons.public_rounded,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          profile.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium,
                                         ),
-                                        if (tunnel.targets.length > 1)
-                                          const Icon(Icons
-                                              .keyboard_arrow_down_rounded),
-                                      ],
-                                    ),
-                                    Text(
-                                      profile.endpoint,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
+                                      ),
+                                      if (tunnel.targets.length > 1)
+                                        const Icon(Icons
+                                            .keyboard_arrow_down_rounded),
+                                    ],
+                                  ),
+                                  Text(
+                                    snapshot.isConnected &&
+                                            profile.isBalancer &&
+                                            activeBalancerMember != null
+                                        ? '${profile.endpoint} · $activeBalancerMember'
+                                        : profile.endpoint,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    const Divider(height: 1),
-                    const SizedBox(height: 18),
-                    _InfoRow(label: 'Протокол', value: profile.protocol),
-                    const SizedBox(height: 12),
-                    _InfoRow(label: 'Транспорт', value: profile.transportLabel),
-                    const SizedBox(height: 12),
-                    _InfoRow(
-                      label: 'Задержка',
-                      value: pingLabel,
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Divider(height: 1),
+                  const SizedBox(height: 18),
+                  _InfoRow(label: 'Протокол', value: profile.protocol),
+                  const SizedBox(height: 12),
+                  _InfoRow(label: 'Транспорт', value: profile.transportLabel),
+                  const SizedBox(height: 12),
+                  _InfoRow(
+                    label: 'Задержка',
+                    value: pingLabel,
+                  ),
+                ],
+              ),
         ),
         const SizedBox(height: 16),
-        GlassPanel(
-          borderRadius: 24,
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              _CardIcon(icon: _modeIcon(snapshot.mode)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Текущий режим'),
-                    const SizedBox(height: 3),
-                    Text(snapshot.mode.description),
-                  ],
-                ),
-              ),
-              const Icon(Icons.lock_rounded, color: OrexColors.copper),
-            ],
+        if (stretchProxyCard)
+          Expanded(
+            child: GlassPanel(
+              borderRadius: 24,
+              padding: const EdgeInsets.all(20),
+              child: _ProxyDetails(tunnel: tunnel),
+            ),
+          )
+        else
+          GlassPanel(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(20),
+            child: _ProxyDetails(tunnel: tunnel),
           ),
-        ),
       ],
     );
   }
 
   Future<void> _showTargetPicker(BuildContext context) async {
     final selectedId = snapshot.profile?.id;
-    final id = await showOrexChoiceSheet<String>(
-      context,
-      title: 'Быстрая смена профиля',
-      options: [
-        for (final target in tunnel.targets)
-          OrexChoiceSheetOption<String>(
-            value: target.id,
-            icon: target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
-            leading: EgressAvatar(
-              identity: tunnel.egressIdentityFor(target.id),
-              fallbackIcon:
-                  target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
-              selected: selectedId == target.id,
-              size: 38,
-            ),
-            title: target.name,
-            subtitle: '${target.endpoint} · '
-                '${tunnel.effectiveLatencyFor(target) == null ? '- мс' : '${tunnel.effectiveLatencyFor(target)} мс'}',
-            selected: selectedId == target.id,
-          ),
-      ],
+    final targetsById = <String, TunnelTarget>{
+      for (final target in tunnel.targets) target.id: target,
+    };
+    final groups = <_QuickTargetGroup>[
+      for (final group in tunnel.profileGroups)
+        _QuickTargetGroup(
+          key: group.key,
+          title: group.title,
+          icon: group.isSubscription
+              ? Icons.cloud_sync_outlined
+              : Icons.folder_outlined,
+          targets: [
+            for (final id in group.profileIds)
+              if (targetsById[id] case final target?) target,
+          ],
+        ),
+    ]..removeWhere((group) => group.targets.isEmpty);
+
+    final balancers = tunnel.targets
+        .where((target) => target.isBalancer)
+        .toList(growable: false);
+    if (balancers.isNotEmpty) {
+      groups.add(
+        _QuickTargetGroup(
+          key: 'balancers',
+          title: 'Балансировщики',
+          icon: Icons.hub_rounded,
+          targets: balancers,
+        ),
+      );
+    }
+    if (groups.isEmpty) return;
+
+    final simpleFlatPicker = groups.length == 1 &&
+        groups.single.key == 'manual:ungrouped' &&
+        balancers.isEmpty;
+
+    _QuickTargetGroup? selectedGroup;
+    for (final group in groups) {
+      if (group.targets.any((target) => target.id == selectedId)) {
+        selectedGroup = group;
+        break;
+      }
+    }
+    final expanded = <String>{selectedGroup?.key ?? groups.first.key};
+
+    final id = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => OrexModalSheetSurface(
+          child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.72,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                      child: Text(
+                        'Быстрая смена профиля',
+                        style: Theme.of(sheetContext)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    if (simpleFlatPicker) ...[
+                      const SizedBox(height: 8),
+                      for (final target in groups.single.targets)
+                        _QuickTargetTile(
+                          target: target,
+                          selected: selectedId == target.id,
+                          latencyMs: tunnel.effectiveLatencyFor(target),
+                          identity: tunnel.egressIdentityFor(target.id),
+                          onTap: () => Navigator.of(sheetContext).pop(target.id),
+                        ),
+                    ] else ...[
+                      if (selectedGroup != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                          child: Text(
+                            'Текущая группа: ${selectedGroup.title}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(sheetContext).textTheme.bodySmall,
+                          ),
+                        )
+                      else
+                        const SizedBox(height: 8),
+                      for (final group in groups) ...[
+                        ListTile(
+                          dense: true,
+                          leading: Icon(group.icon, color: OrexColors.copper),
+                          title: Text(
+                            group.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text('${group.targets.length} серверов'),
+                          trailing: Icon(
+                            expanded.contains(group.key)
+                                ? Icons.expand_less_rounded
+                                : Icons.expand_more_rounded,
+                          ),
+                          mouseCursor: SystemMouseCursors.click,
+                          onTap: () => setSheetState(() {
+                            if (!expanded.add(group.key)) {
+                              expanded.remove(group.key);
+                            }
+                          }),
+                        ),
+                        if (expanded.contains(group.key))
+                          for (final target in group.targets)
+                            _QuickTargetTile(
+                              target: target,
+                              selected: selectedId == target.id,
+                              latencyMs: tunnel.effectiveLatencyFor(target),
+                              identity: tunnel.egressIdentityFor(target.id),
+                              onTap: () =>
+                                  Navigator.of(sheetContext).pop(target.id),
+                            ),
+                        if (group != groups.last) const Divider(height: 1),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+        ),
+      ),
     );
     if (id != null) await tunnel.selectTarget(id);
+  }
+}
+
+class _QuickTargetGroup {
+  const _QuickTargetGroup({
+    required this.key,
+    required this.title,
+    required this.icon,
+    required this.targets,
+  });
+
+  final String key;
+  final String title;
+  final IconData icon;
+  final List<TunnelTarget> targets;
+}
+
+class _QuickTargetTile extends StatelessWidget {
+  const _QuickTargetTile({
+    required this.target,
+    required this.selected,
+    required this.latencyMs,
+    required this.identity,
+    required this.onTap,
+  });
+
+  final TunnelTarget target;
+  final bool selected;
+  final int? latencyMs;
+  final EgressIdentity? identity;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.only(left: 20, right: 8),
+      leading: EgressAvatar(
+        identity: identity,
+        fallbackIcon: target.isBalancer ? Icons.hub_rounded : Icons.public_rounded,
+        selected: selected,
+        size: 38,
+      ),
+      title: Text(
+        target.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${target.endpoint} · ${latencyMs == null ? '- мс' : '$latencyMs мс'}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: selected
+          ? const Icon(Icons.check_circle, color: OrexColors.copper)
+          : const Icon(Icons.chevron_right),
+      mouseCursor: SystemMouseCursors.click,
+      onTap: onTap,
+    );
   }
 }
 
@@ -896,27 +1180,159 @@ class _Metric extends StatelessWidget {
     if (onTap == null) return child;
     return InkWell(
       borderRadius: BorderRadius.circular(16),
+      mouseCursor: busy ? SystemMouseCursors.basic : SystemMouseCursors.click,
       onTap: busy ? null : () => onTap!(),
       child: child,
     );
   }
 }
 
-class _CardIcon extends StatelessWidget {
-  const _CardIcon({required this.icon});
+/// Read-only shortcut for local inbound listeners.  The actual ports and
+/// exposure policy are still configured on the Connection page.
+class _ProxyDetails extends StatelessWidget {
+  const _ProxyDetails({required this.tunnel});
 
-  final IconData icon;
+  final TunnelController tunnel;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: OrexColors.copper.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
+    final available = tunnel.localProxyExpectedAvailable;
+    final status = available
+        ? 'Доступен'
+        : tunnel.localProxyDisabledInVpn
+            ? 'Отключён в TUN'
+            : 'Неактивен';
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.settings_ethernet_rounded,
+                size: 18, color: OrexColors.copper),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  Text('Локальный прокси', style: textTheme.titleSmall),
+                  Text(
+                    status,
+                    style: textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: available ? OrexColors.online : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Keep both endpoints on a single line while resizing the window.
+        // On very narrow cards, scroll horizontally instead of wrapping and
+        // causing the card height to jump.
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ProxyAddressChip(
+                protocol: 'SOCKS5',
+                port: tunnel.socksProxyPort,
+                uriScheme: 'socks5',
+                allowLan: tunnel.proxyAllowsLan,
+              ),
+              const SizedBox(width: 4),
+              _ProxyAddressChip(
+                protocol: 'HTTP',
+                port: tunnel.httpProxyPort,
+                uriScheme: 'http',
+                allowLan: tunnel.proxyAllowsLan,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            Text('Доступ из локальной сети:', style: textTheme.bodySmall),
+            Text(
+              tunnel.proxyAllowsLan ? 'Разрешён' : 'Запрещён',
+              style: textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ProxyAddressChip extends StatelessWidget {
+  const _ProxyAddressChip({
+    required this.protocol,
+    required this.port,
+    required this.uriScheme,
+    required this.allowLan,
+  });
+
+  final String protocol;
+  final int port;
+  final String uriScheme;
+  final bool allowLan;
+
+  Future<void> _showAddressMenu(BuildContext context, Offset position) =>
+      OrexProxyCopy.showAddressMenu(
+        context,
+        globalPosition: position,
+        protocol: protocol,
+        scheme: uriScheme,
+        port: port,
+        allowLan: allowLan,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final address = '$uriScheme://127.0.0.1:$port';
+    return Tooltip(
+      message: 'Копировать $address',
+      child: Material(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => OrexProxyCopy.copy(
+            context, protocol: protocol, address: address),
+          onSecondaryTapUp: (details) =>
+              _showAddressMenu(context, details.globalPosition),
+          onLongPress: () {
+            final box = context.findRenderObject() as RenderBox;
+            _showAddressMenu(
+              context, box.localToGlobal(box.size.center(Offset.zero)));
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('$protocol :$port',
+                    style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(width: 6),
+                const Icon(Icons.copy_rounded, size: 14),
+              ],
+            ),
+          ),
+        ),
       ),
-      child: Icon(icon, color: OrexColors.copper),
     );
   }
 }
@@ -931,12 +1347,18 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        const Spacer(),
-        Flexible(
+        // The labels keep their original left edge. A fixed label column moves
+        // only the values left and gives protocol/transport/ping more room.
+        SizedBox(
+          width: 86,
+          child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
           child: Text(
             value,
-            textAlign: TextAlign.end,
+            textAlign: TextAlign.start,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium,
           ),
@@ -952,9 +1374,6 @@ String _pingLabel(TunnelController tunnel, TunnelTarget? target) {
   final ping = tunnel.effectiveLatencyFor(target);
   return ping == null ? '—' : '$ping мс';
 }
-
-bool _routeFailed(PingStatus status) =>
-    status == PingStatus.timeout || status == PingStatus.unavailable;
 
 String _statusTitle(TunnelStatus status) => switch (status) {
       TunnelStatus.disconnected => 'Не подключено',

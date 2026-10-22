@@ -45,3 +45,34 @@ Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDi
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+
+[Code]
+const
+  HWND_TOPMOST = -1;
+  HWND_NOTOPMOST = -2;
+  SWP_NOSIZE = $0001;
+  SWP_NOMOVE = $0002;
+
+function SetWindowPos(hWnd: HWND; hWndInsertAfter: HWND; X, Y, cx, cy: Integer;
+  uFlags: UINT): BOOL;
+  external 'SetWindowPos@user32.dll stdcall';
+function SetForegroundWindow(hWnd: HWND): BOOL;
+  external 'SetForegroundWindow@user32.dll stdcall';
+
+var
+  WizardActivatedOnce: Boolean;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if WizardActivatedOnce then
+    exit;
+
+  WizardActivatedOnce := True;
+  BringToFrontAndRestore;
+  SetWindowPos(WizardForm.Handle, HWND_TOPMOST, 0, 0, 0, 0,
+    SWP_NOSIZE or SWP_NOMOVE);
+  SetForegroundWindow(WizardForm.Handle);
+  SetWindowPos(WizardForm.Handle, HWND_NOTOPMOST, 0, 0, 0, 0,
+    SWP_NOSIZE or SWP_NOMOVE);
+  WizardForm.BringToFront;
+end;

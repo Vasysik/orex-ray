@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../platform/android/android_startup_controller.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
 
 class BackgroundScreen extends StatelessWidget {
@@ -125,6 +126,7 @@ class BackgroundScreen extends StatelessWidget {
                     'Видимость меняется в системных настройках Android.',
                   ),
                   trailing: const Icon(Icons.open_in_new_rounded),
+                  mouseCursor: SystemMouseCursors.click,
                   onTap: () => _openAndroidNotificationSettings(context),
                 ),
                 const Divider(height: 1),
@@ -156,6 +158,71 @@ class BackgroundScreen extends StatelessWidget {
                   onChanged: settings.setShowNotificationPing,
                 ),
               ],
+            ],
+          ),
+          const SizedBox(height: 16),
+          SettingsSection(
+            title: 'Подписки',
+            subtitle: 'Без фонового таймера: проверка выполняется при запуске '
+                'и возврате в приложение.',
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.cloud_sync_outlined,
+                  color: OrexColors.copper,
+                ),
+                title: const Text('Автообновление подписок'),
+                subtitle: const Text(
+                  'Обновлять только просроченные подписки. Интервал провайдера, '
+                  'если он указан, тоже учитывается.',
+                ),
+                trailing: DropdownButton<int>(
+                  value: settings.subscriptionAutoUpdateHours,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('Выкл.')),
+                    DropdownMenuItem(value: 1, child: Text('1 ч')),
+                    DropdownMenuItem(value: 6, child: Text('6 ч')),
+                    DropdownMenuItem(value: 12, child: Text('12 ч')),
+                    DropdownMenuItem(value: 24, child: Text('1 день')),
+                    DropdownMenuItem(value: 72, child: Text('3 дня')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      settings.setSubscriptionAutoUpdateHours(value);
+                    }
+                  },
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.monitor_heart_outlined,
+                  color: OrexColors.copper,
+                ),
+                title: const Text('Метаданные подписок'),
+                subtitle: const Text(
+                  'Проверять квоту, срок и ссылки через лёгкий HEAD-запрос '
+                  'при открытии и возврате в приложение. Серверы не скачиваются.',
+                ),
+                trailing: DropdownButton<int>(
+                  value: settings.subscriptionMetadataRefreshMinutes,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('Выкл.')),
+                    DropdownMenuItem(value: 10, child: Text('10 мин')),
+                    DropdownMenuItem(value: 30, child: Text('30 мин')),
+                    DropdownMenuItem(value: 60, child: Text('1 ч')),
+                    DropdownMenuItem(value: 360, child: Text('6 ч')),
+                    DropdownMenuItem(value: 720, child: Text('12 ч')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      settings.setSubscriptionMetadataRefreshMinutes(value);
+                    }
+                  },
+                ),
+              ),
             ],
           ),
           if (Platform.isWindows) ...[
@@ -274,7 +341,8 @@ Future<void> _openAndroidNotificationSettings(BuildContext context) async {
     await AndroidStartupController.openNotificationSettings();
   } catch (_) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       const SnackBar(content: Text('Не удалось открыть настройки уведомлений')),
     );
   }

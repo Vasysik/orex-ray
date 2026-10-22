@@ -106,6 +106,8 @@ class TunnelController extends ChangeNotifier {
   final TunnelEngine _engine;
   final ProfilesController _profiles;
   final ConnectionSettingsController _settings;
+
+  String get latencyProbeUrl => _settings.latencyProbeUrl;
   final TunnelRouteLatencyProbe _routeLatencyProbe;
   final Duration _routeProbeStartupDelay;
   final String _operatingSystem;
@@ -153,6 +155,24 @@ class TunnelController extends ChangeNotifier {
 
   ConnectionMode get mode => _settings.mode;
 
+  /// Local inbound addresses remain configurable even while disconnected.
+  int get socksProxyPort => _settings.socksPort;
+  int get httpProxyPort => _settings.httpPort;
+  bool get proxyAllowsLan => _settings.allowLan;
+
+  /// A running tunnel exposes local HTTP/SOCKS listeners except in VPN/TUN
+  /// mode when the parallel proxy option is disabled.  This is a configured
+  /// state, not an independent socket-health probe.
+  bool get localProxyExpectedAvailable =>
+      _engineSnapshot.isConnected &&
+      (_engineSnapshot.mode != ConnectionMode.vpnTun ||
+          _settings.localProxyInVpn);
+
+  bool get localProxyDisabledInVpn =>
+      _engineSnapshot.isConnected &&
+      _engineSnapshot.mode == ConnectionMode.vpnTun &&
+      !_settings.localProxyInVpn;
+
   bool get canChangeMode =>
       !_engineSnapshot.isBusy && !_engineSnapshot.isConnected;
 
@@ -178,6 +198,18 @@ class TunnelController extends ChangeNotifier {
   }
 
   TunnelTarget? get selectedProfile => _profiles.selectedTarget;
+  String? activeBalancerMemberName(TunnelTarget? target) {
+    if (target == null || !target.isBalancer) return null;
+    final memberId = snapshot.activeBalancerMemberId;
+    if (memberId == null || memberId.isEmpty) return null;
+    for (final profile in target.profiles) {
+      if (profile.id == memberId) return profile.name;
+    }
+    final fallback = target.fallbackProfile;
+    if (fallback?.id == memberId) return fallback!.name;
+    return null;
+  }
+
 
   EgressIdentity? egressIdentityFor(String targetId) =>
       _egressIdentities[targetId];
@@ -240,6 +272,7 @@ class TunnelController extends ChangeNotifier {
   Listenable get profileUiChanges => _profileUiRevision;
 
   List<TunnelTarget> get targets => _profiles.targets;
+  List<ProfileGroupInfo> get profileGroups => _profiles.profileGroups;
 
   bool get refreshingLatency =>
       _profiles.refreshingLatency || _routeLatencyRefreshCount > 0;

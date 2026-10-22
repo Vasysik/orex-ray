@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/glass.dart';
 import '../theme/orex_theme.dart';
+import 'responsive_motion.dart';
 
 class SettingsSection extends StatelessWidget {
   const SettingsSection({
@@ -22,25 +23,38 @@ class SettingsSection extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 8, bottom: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title.toUpperCase(),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      letterSpacing: 1.1,
-                      color: OrexColors.copper,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-              if (subtitle != null) ...[
-                const SizedBox(height: 3),
-                Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
+          child: AnimatedSize(
+            duration: OrexMotion.duration(context, OrexMotion.compact),
+            curve: OrexMotion.curve,
+            alignment: Alignment.topLeft,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title.toUpperCase(),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        letterSpacing: 1.1,
+                        color: OrexColors.copper,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 3),
+                  Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
+                ],
               ],
-            ],
+            ),
           ),
         ),
-        GlassPanel(borderRadius: 20, child: Column(children: children)),
+        AnimatedSize(
+          duration: OrexMotion.duration(context),
+          curve: OrexMotion.curve,
+          alignment: Alignment.topLeft,
+          child: GlassPanel(
+            borderRadius: 20,
+            child: Column(children: children),
+          ),
+        ),
       ],
     );
   }
@@ -74,13 +88,18 @@ class SettingsPageHeader extends StatelessWidget {
         ),
         const SizedBox(width: 14),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 4),
-              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-            ],
+          child: AnimatedSize(
+            duration: OrexMotion.duration(context),
+            curve: OrexMotion.curve,
+            alignment: Alignment.topLeft,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 4),
+                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
           ),
         ),
       ],

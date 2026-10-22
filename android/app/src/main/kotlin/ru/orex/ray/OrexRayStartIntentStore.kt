@@ -200,6 +200,14 @@ internal object OrexRayStartIntentStore {
                 ),
             )
             .put(
+                OrexRayVpnService.EXTRA_STATS_OUTBOUND_PROFILE_IDS,
+                JSONArray(
+                    intent.getStringArrayListExtra(
+                        OrexRayVpnService.EXTRA_STATS_OUTBOUND_PROFILE_IDS,
+                    ).orEmpty(),
+                ),
+            )
+            .put(
                 OrexRayVpnService.EXTRA_DNS_SERVERS,
                 JSONArray(
                     intent.getStringArrayListExtra(OrexRayVpnService.EXTRA_DNS_SERVERS).orEmpty(),
@@ -257,6 +265,11 @@ internal object OrexRayStartIntentStore {
                 .putStringArrayListExtra(
                     OrexRayVpnService.EXTRA_STATS_OUTBOUND_TAGS,
                     json.optJSONArray(OrexRayVpnService.EXTRA_STATS_OUTBOUND_TAGS)
+                        .toStringArrayList(),
+                )
+                .putStringArrayListExtra(
+                    OrexRayVpnService.EXTRA_STATS_OUTBOUND_PROFILE_IDS,
+                    json.optJSONArray(OrexRayVpnService.EXTRA_STATS_OUTBOUND_PROFILE_IDS)
                         .toStringArrayList(),
                 )
                 .putExtra(

@@ -10,6 +10,9 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_adaptive_header.dart';
+import '../../shared/widgets/orex_confirm_dialog.dart';
+import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
 import '../home/tunnel_controller.dart';
 
@@ -92,7 +95,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     if (value == null) return;
     await Clipboard.setData(ClipboardData(text: _report(value)));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       const SnackBar(content: Text('Диагностический отчёт скопирован')),
     );
   }
@@ -101,24 +105,15 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     if (value == 'info' || value == 'debug') {
       final confirmed = await showDialog<bool>(
             context: context,
-            builder: (dialogContext) => AlertDialog(
-              icon: const Icon(Icons.visibility_outlined),
-              title: const Text('Подробные сетевые логи'),
-              content: const Text(
+            builder: (dialogContext) => const OrexConfirmDialog(
+              icon: Icons.visibility_outlined,
+              title: 'Подробные сетевые логи',
+              content: Text(
                 'На уровнях «Информация» и «Отладка» Xray может писать адреса '
                 'назначения и другую сетевую диагностику. Используй эти '
                 'режимы только временно при поиске проблемы.',
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Отмена'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Включить'),
-                ),
-              ],
+              confirmLabel: 'Включить',
             ),
           ) ??
           false;
@@ -275,61 +270,25 @@ class _DiagnosticsHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Диагностика', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text(
-          'Состояние Xray, watchdog, маршруты и безопасный журнал',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    );
-
-    final actions = Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        OutlinedButton.icon(
+    return OrexAdaptiveHeader(
+      title: 'Диагностика',
+      subtitle: 'Состояние Xray, watchdog, маршруты и безопасный журнал',
+      icon: Icons.monitor_heart_outlined,
+      actions: [
+        OrexHeaderAction(
+          tooltip: 'Обновить диагностику',
+          label: 'Обновить',
+          icon: Icons.refresh_rounded,
+          busy: loading,
           onPressed: loading ? null : onRefresh,
-          icon: loading
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.refresh_rounded),
-          label: const Text('Обновить'),
         ),
-        OutlinedButton.icon(
+        OrexHeaderAction(
+          tooltip: 'Скопировать отчёт',
+          label: 'Скопировать отчёт',
+          icon: Icons.copy_rounded,
           onPressed: canCopy ? onCopy : null,
-          icon: const Icon(Icons.copy_rounded),
-          label: const Text('Скопировать отчёт'),
         ),
       ],
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth >= 700) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(child: title),
-              const SizedBox(width: 20),
-              actions,
-            ],
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            title,
-            const SizedBox(height: 14),
-            actions,
-          ],
-        );
-      },
     );
   }
 }

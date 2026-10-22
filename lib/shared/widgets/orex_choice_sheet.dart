@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme/glass.dart';
+import 'orex_modal_sheet_surface.dart';
 import '../theme/orex_theme.dart';
 
 class OrexChoiceSheetOption<T> {
@@ -30,14 +30,8 @@ Future<T?> showOrexChoiceSheet<T>(
   return showModalBottomSheet<T>(
     context: context,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        child: GlassPanel(
-          borderRadius: 24,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: ConstrainedBox(
+    builder: (ctx) => OrexModalSheetSurface(
+      child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 460),
               child: ListView(
                 shrinkWrap: true,
@@ -74,9 +68,6 @@ Future<T?> showOrexChoiceSheet<T>(
                       ),
                 ],
               ),
-            ),
-          ),
-        ),
       ),
     ),
   );
@@ -110,6 +101,7 @@ class _OrexChoiceTile extends StatelessWidget {
       trailing: selected
           ? const Icon(Icons.check_circle, color: OrexColors.copper)
           : const Icon(Icons.chevron_right),
+      mouseCursor: SystemMouseCursors.click,
       onTap: onTap,
     );
   }

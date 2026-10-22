@@ -23,6 +23,7 @@ class XrayConfigBuilder {
     List<String> geoProxyRules = const [],
     List<String> geoBlockRules = const [],
     String logLevel = 'error',
+    String? balancerProbeUrl,
     int? apiPort,
     String? outboundInterface,
   }) {
@@ -61,6 +62,7 @@ class XrayConfigBuilder {
       geoProxyRules: geoProxyRules,
       geoBlockRules: geoBlockRules,
       logLevel: logLevel,
+      balancerProbeUrl: balancerProbeUrl,
       apiPort: apiPort,
     );
   }
@@ -79,6 +81,7 @@ class XrayConfigBuilder {
     List<String> geoProxyRules = const [],
     List<String> geoBlockRules = const [],
     String logLevel = 'error',
+    String? balancerProbeUrl,
   }) {
     return _encode(
       target,
@@ -106,6 +109,7 @@ class XrayConfigBuilder {
       geoProxyRules: geoProxyRules,
       geoBlockRules: geoBlockRules,
       logLevel: logLevel,
+      balancerProbeUrl: balancerProbeUrl,
       enableInboundStats: false,
     );
   }
@@ -122,6 +126,7 @@ class XrayConfigBuilder {
     List<String> geoProxyRules = const [],
     List<String> geoBlockRules = const [],
     String logLevel = 'error',
+    String? balancerProbeUrl,
     int? apiPort,
     bool enableInboundStats = true,
   }) {
@@ -139,6 +144,7 @@ class XrayConfigBuilder {
       geoProxyRules: geoProxyRules,
       geoBlockRules: geoBlockRules,
       logLevel: logLevel,
+      balancerProbeUrl: balancerProbeUrl,
       apiPort: apiPort,
       enableInboundStats: enableInboundStats,
     );
@@ -180,6 +186,7 @@ class XrayConfigBuilder {
     required List<String> geoProxyRules,
     required List<String> geoBlockRules,
     required String logLevel,
+    String? balancerProbeUrl,
     int? apiPort,
     bool enableInboundStats = true,
   }) {
@@ -258,7 +265,9 @@ class XrayConfigBuilder {
           fallbackTag != null)
         'observatory': {
           'subjectSelector': ['proxy-'],
-          'probeURL': target.balancer!.probeUrl,
+          'probeURL': balancerProbeUrl?.trim().isNotEmpty == true
+              ? balancerProbeUrl!.trim()
+              : target.balancer!.probeUrl,
           'probeInterval': '${target.balancer!.probeIntervalSeconds}s',
           'enableConcurrency': true,
         },

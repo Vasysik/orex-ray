@@ -96,6 +96,8 @@ class ConnectionSettingsController extends ChangeNotifier {
     required int statsIntervalSeconds,
     required int notificationStatsIntervalSeconds,
     required int pingIntervalSeconds,
+    required int subscriptionAutoUpdateHours,
+    required int subscriptionMetadataRefreshMinutes,
     required bool showNotificationSpeed,
     required bool showNotificationPing,
     required bool restartServiceOnKill,
@@ -125,6 +127,8 @@ class ConnectionSettingsController extends ChangeNotifier {
         _statsIntervalSeconds = statsIntervalSeconds,
         _notificationStatsIntervalSeconds = notificationStatsIntervalSeconds,
         _pingIntervalSeconds = pingIntervalSeconds,
+        _subscriptionAutoUpdateHours = subscriptionAutoUpdateHours,
+        _subscriptionMetadataRefreshMinutes = subscriptionMetadataRefreshMinutes,
         _showNotificationSpeed = showNotificationSpeed,
         _showNotificationPing = showNotificationPing,
         _restartServiceOnKill = restartServiceOnKill,
@@ -155,6 +159,10 @@ class ConnectionSettingsController extends ChangeNotifier {
   static const _notificationStatsIntervalKey =
       'orex_ray_notification_stats_interval_v1';
   static const _pingIntervalKey = 'orex_ray_ping_interval_v1';
+  static const _subscriptionAutoUpdateHoursKey =
+      'orex_ray_subscription_auto_update_hours_v1';
+  static const _subscriptionMetadataRefreshMinutesKey =
+      'orex_ray_subscription_metadata_refresh_minutes_v1';
   static const _notificationSpeedKey = 'orex_ray_notification_speed_v1';
   static const _notificationPingKey = 'orex_ray_notification_ping_v1';
   static const _restartServiceKey = 'orex_ray_restart_service_v1';
@@ -191,6 +199,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   int _statsIntervalSeconds;
   int _notificationStatsIntervalSeconds;
   int _pingIntervalSeconds;
+  int _subscriptionAutoUpdateHours;
+  int _subscriptionMetadataRefreshMinutes;
   bool _showNotificationSpeed;
   bool _showNotificationPing;
   bool _restartServiceOnKill;
@@ -254,6 +264,14 @@ class ConnectionSettingsController extends ChangeNotifier {
           5,
       pingIntervalSeconds:
           _validPingInterval(preferences.getInt(_pingIntervalKey)) ?? 60,
+      subscriptionAutoUpdateHours: _validSubscriptionAutoUpdateHours(
+            preferences.getInt(_subscriptionAutoUpdateHoursKey),
+          ) ??
+          12,
+      subscriptionMetadataRefreshMinutes: _validSubscriptionMetadataRefreshMinutes(
+            preferences.getInt(_subscriptionMetadataRefreshMinutesKey),
+          ) ??
+          10,
       showNotificationSpeed: preferences.getBool(_notificationSpeedKey) ?? true,
       showNotificationPing: preferences.getBool(_notificationPingKey) ?? true,
       restartServiceOnKill: preferences.getBool(_restartServiceKey) ?? true,
@@ -294,6 +312,9 @@ class ConnectionSettingsController extends ChangeNotifier {
   int get statsIntervalSeconds => _statsIntervalSeconds;
   int get notificationStatsIntervalSeconds => _notificationStatsIntervalSeconds;
   int get pingIntervalSeconds => _pingIntervalSeconds;
+  int get subscriptionAutoUpdateHours => _subscriptionAutoUpdateHours;
+  int get subscriptionMetadataRefreshMinutes =>
+      _subscriptionMetadataRefreshMinutes;
   bool get showNotificationSpeed => _showNotificationSpeed;
   bool get showNotificationPing => _showNotificationPing;
   bool get restartServiceOnKill => _restartServiceOnKill;
@@ -542,6 +563,35 @@ class ConnectionSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setSubscriptionAutoUpdateHours(int value) async {
+    final normalized = _validSubscriptionAutoUpdateHours(value);
+    if (normalized == null) {
+      throw const FormatException(
+        'Автообновление подписок: 0, 1, 6, 12, 24 или 72 часа',
+      );
+    }
+    if (_subscriptionAutoUpdateHours == normalized) return;
+    _subscriptionAutoUpdateHours = normalized;
+    await _preferences.setInt(_subscriptionAutoUpdateHoursKey, normalized);
+    notifyListeners();
+  }
+
+  Future<void> setSubscriptionMetadataRefreshMinutes(int value) async {
+    final normalized = _validSubscriptionMetadataRefreshMinutes(value);
+    if (normalized == null) {
+      throw const FormatException(
+        'Метаданные подписок: 0, 10, 30, 60, 360 или 720 минут',
+      );
+    }
+    if (_subscriptionMetadataRefreshMinutes == normalized) return;
+    _subscriptionMetadataRefreshMinutes = normalized;
+    await _preferences.setInt(
+      _subscriptionMetadataRefreshMinutesKey,
+      normalized,
+    );
+    notifyListeners();
+  }
+
   Future<void> setShowNotificationSpeed(bool value) async {
     if (_showNotificationSpeed == value) return;
     _showNotificationSpeed = value;
@@ -626,6 +676,12 @@ class ConnectionSettingsController extends ChangeNotifier {
 
   static int? _validPingInterval(int? value) =>
       const {15, 30, 60, 120, 300}.contains(value) ? value : null;
+
+  static int? _validSubscriptionAutoUpdateHours(int? value) =>
+      const {0, 1, 6, 12, 24, 72}.contains(value) ? value : null;
+
+  static int? _validSubscriptionMetadataRefreshMinutes(int? value) =>
+      const {0, 10, 30, 60, 360, 720}.contains(value) ? value : null;
 
   static String _normalizeLogLevel(String? value) => switch (value) {
         'warning' => 'warning',

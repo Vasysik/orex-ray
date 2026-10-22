@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/profiles/profile_repository.dart';
+import 'package:orex_ray/core/profiles/proxy_subscription.dart';
 import 'package:orex_ray/core/profiles/vless_link_parser.dart';
 import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -46,6 +47,55 @@ void main() {
       profile.realityPassword,
     );
     expect(reloaded.readSelectedId(), profile.id);
+  });
+
+  test('persists subscription URL and owned profile ids', () async {
+    SharedPreferences.setMockInitialValues({});
+    final repository = await ProfileRepository.load();
+    const subscription = ProxySubscription(
+      id: 'sub-test',
+      url: 'https://example.com/sub?token=secret',
+      name: 'Example',
+      profileIds: ['one', 'two'],
+      updateIntervalHours: 12,
+      metadataHeadUnsupported: true,
+      userInfo: 'upload=1; download=2; total=10; expire=2000000000',
+      supportUrl: 'https://support.example/help',
+      webPageUrl: 'https://panel.example/user',
+      announce: 'Maintenance tonight',
+      lastMetadataCheckEpochMs: 123456,
+      notices: ['Осталось: 23 дня'],
+    );
+
+    await repository.saveSubscriptions([subscription]);
+    final reloaded = await ProfileRepository.load();
+    final restored = reloaded.readSubscriptions().single;
+
+    expect(restored.url, subscription.url);
+    expect(restored.profileIds, ['one', 'two']);
+    expect(restored.updateIntervalHours, 12);
+    expect(restored.metadataHeadUnsupported, isTrue);
+    expect(restored.supportUrl, 'https://support.example/help');
+    expect(restored.webPageUrl, 'https://panel.example/user');
+    expect(restored.announce, 'Maintenance tonight');
+    expect(restored.lastMetadataCheckEpochMs, 123456);
+    expect(restored.parsedUserInfo?.usedBytes, 3);
+    expect(restored.parsedUserInfo?.remainingBytes, 7);
+    expect(restored.notices, ['Осталось: 23 дня']);
+  });
+
+  test('persists manual profile group name', () async {
+    SharedPreferences.setMockInitialValues({});
+    final repository = await ProfileRepository.load();
+    final profile = const VlessLinkParser().parse(
+      'vless://33333333-3333-4333-8333-333333333333@group.example:443'
+      '?encryption=none&security=none&type=tcp#Grouped',
+    ).copyWith(groupName: 'Работа');
+
+    await repository.saveProfiles([profile]);
+    final reloaded = await ProfileRepository.load();
+
+    expect(reloaded.readProfiles().single.groupName, 'Работа');
   });
 
   test('migrates VLESS JSON written before outbound protocol support', () {

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
+import '../../shared/theme/connection_visual_status.dart';
 import '../../features/home/tunnel_controller.dart';
 
 class WindowsLifecycleController {
@@ -24,6 +25,7 @@ class WindowsLifecycleController {
   bool _initialized = false;
   bool _exitInProgress = false;
   String? _lastTrayState;
+  Future<void> _trayUpdateQueue = Future<void>.value();
   Timer? _recoveryDebounce;
   bool _recoveryInProgress = false;
   TunnelRecoveryReason? _pendingRecoveryReason;
@@ -38,7 +40,7 @@ class WindowsLifecycleController {
     _tunnel.addListener(_onTunnelChanged);
     await _syncCloseBehavior();
     await _syncStartupRegistration();
-    await _syncTrayStatus();
+    await _queueTrayStatus();
   }
 
   Future<void> _handleNativeCall(MethodCall call) async {
@@ -68,7 +70,15 @@ class WindowsLifecycleController {
   }
 
   void _onTunnelChanged() {
-    unawaited(_syncTrayStatus());
+    unawaited(_queueTrayStatus());
+  }
+
+  Future<void> _queueTrayStatus() {
+    // A completed older channel request must not overwrite a newer state.
+    _trayUpdateQueue = _trayUpdateQueue
+        .catchError((Object _) {})
+        .then((_) => _syncTrayStatus());
+    return _trayUpdateQueue;
   }
 
   void _scheduleRecovery(TunnelRecoveryReason reason) {
@@ -146,11 +156,21 @@ class WindowsLifecycleController {
     final snapshot = _tunnel.snapshot;
     if (snapshot.status != TunnelStatus.disconnected) {
       try {
-        await _channel.invokeMethod<void>('updateTray', {
-          'status': TunnelStatus.disconnecting.name,
-          'targetName': snapshot.profile?.name.trim(),
-          'canDisconnect': false,
-        });
+        final disconnecting = snapshot.copyWith(
+          status: TunnelStatus.disconnecting,
+        );
+        final visual = ConnectionVisualStatus.fromSnapshot(
+          disconnecting,
+          PingStatus.unknown,
+        );
+        await _trayUpdateQueue;
+        await _channel.invokeMethod<void>(
+          'updateTray',
+          visual.trayArguments(
+            snapshot: disconnecting,
+            targetName: snapshot.profile?.name.trim(),
+          ),
+        );
       } catch (_) {
         // Exit cleanup still has to run even if Explorer or the tray channel is
         // temporarily unavailable.
@@ -171,20 +191,22 @@ class WindowsLifecycleController {
   Future<void> _syncTrayStatus() async {
     final snapshot = _tunnel.snapshot;
     final targetName = snapshot.profile?.name.trim();
-    final timedOut = snapshot.isConnected &&
-        _tunnel.effectivePingStatusFor(snapshot.profile) == PingStatus.timeout;
-    final trayStatus = timedOut ? 'timeout' : snapshot.status.name;
-    final stateKey = '$trayStatus|${targetName ?? ''}';
+    final routePing = snapshot.isConnected
+        ? _tunnel.effectivePingStatusFor(snapshot.profile)
+        : PingStatus.unknown;
+    final visual = ConnectionVisualStatus.fromSnapshot(snapshot, routePing);
+    final arguments = visual.trayArguments(
+      snapshot: snapshot,
+      targetName: targetName,
+    );
+    final stateKey = '${arguments['status']}|${arguments['label']}|'
+        '${arguments['colorRgb']}|${targetName ?? ''}|'
+        '${arguments['canDisconnect']}';
     if (_lastTrayState == stateKey) return;
-    _lastTrayState = stateKey;
 
-    await _channel.invokeMethod<void>('updateTray', {
-      'status': trayStatus,
-      'targetName': targetName,
-      'canDisconnect': snapshot.status == TunnelStatus.connected ||
-          snapshot.status == TunnelStatus.connecting ||
-          snapshot.status == TunnelStatus.error,
-    });
+    await _channel.invokeMethod<void>('updateTray', arguments);
+    // Retry on the next notification if the platform update failed.
+    _lastTrayState = stateKey;
   }
 
   void dispose() {

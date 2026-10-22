@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ThemeController extends ChangeNotifier {
-  ThemeController._(this._mode);
+  ThemeController._(this._mode, this._glassEnabled);
 
   static const _key = 'orex_ray_theme_mode';
+  static const _glassKey = 'orex_ray_glass_enabled';
+
+  bool _glassEnabled;
+  bool get glassEnabled => _glassEnabled;
 
   ThemeMode _mode;
   ThemeMode get mode => _mode;
@@ -17,7 +21,15 @@ class ThemeController extends ChangeNotifier {
       'system' => ThemeMode.system,
       _ => ThemeMode.dark,
     };
-    return ThemeController._(mode);
+    return ThemeController._(mode, prefs.getBool(_glassKey) ?? true);
+  }
+
+  Future<void> setGlassEnabled(bool enabled) async {
+    if (_glassEnabled == enabled) return;
+    _glassEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_glassKey, enabled);
   }
 
   Future<void> setMode(ThemeMode mode) async {

@@ -1,29 +1,54 @@
+import 'dart:async';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/egress/egress_identity.dart';
 import '../../core/profiles/profiles_controller.dart';
+import '../../core/profiles/proxy_subscription.dart';
 import '../../core/profiles/vless_link_parser.dart';
 import '../../core/profiles/xray_json_codec.dart';
 import '../../core/profiles/xray_json_file.dart';
 import '../../core/profiles/xray_json_source.dart';
 import '../../core/tunnel/tunnel_models.dart';
+import '../../platform/external_url_launcher.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
+import '../../shared/widgets/orex_adaptive_header.dart';
 import '../../shared/widgets/orex_choice_sheet.dart';
+import '../../shared/widgets/orex_confirm_dialog.dart';
+import '../../shared/widgets/orex_notice.dart';
+import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
 
 enum _ProfileCreateAction {
   importLink,
+  subscription,
   importXrayJson,
   newProfile,
   balancer,
 }
 
 enum _XrayJsonExportAction { copy, saveFile }
+
+class _ProfileSection {
+  const _ProfileSection({
+    required this.key,
+    required this.title,
+    required this.profiles,
+    this.subscription,
+    this.manualGroupName,
+  });
+
+  final String key;
+  final String title;
+  final List<TunnelProfile> profiles;
+  final ProxySubscription? subscription;
+  final String? manualGroupName;
+}
 
 class ProfilesScreen extends StatelessWidget {
   const ProfilesScreen({
@@ -47,6 +72,12 @@ class ProfilesScreen extends StatelessWidget {
           icon: Icons.add_link_rounded,
           title: 'Импорт ссылки',
           subtitle: 'VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP',
+        ),
+        OrexChoiceSheetOption<_ProfileCreateAction>(
+          value: _ProfileCreateAction.subscription,
+          icon: Icons.sync_rounded,
+          title: 'Импорт подписки',
+          subtitle: 'HTTP/HTTPS URL со списком серверов',
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.importXrayJson,
@@ -74,6 +105,9 @@ class ProfilesScreen extends StatelessWidget {
       case _ProfileCreateAction.importLink:
         await _showImportDialog(context);
         break;
+      case _ProfileCreateAction.subscription:
+        await _showSubscriptionDialog(context);
+        break;
       case _ProfileCreateAction.importXrayJson:
         await _showXrayJsonImportDialog(context);
         break;
@@ -92,9 +126,85 @@ class ProfilesScreen extends StatelessWidget {
       builder: (context) => _ImportLinkDialog(profiles: profiles),
     );
     if (profile == null || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       SnackBar(content: Text('Профиль «${profile.name}» импортирован')),
     );
+  }
+
+  Future<void> _showSubscriptionDialog(BuildContext context) async {
+    final result = await showDialog<SubscriptionSyncResult>(
+      context: context,
+      builder: (context) => _ImportSubscriptionDialog(profiles: profiles),
+    );
+    if (result == null || !context.mounted) return;
+    final parts = <String>[
+      if (result.addedCount > 0) 'добавлено ${result.addedCount}',
+      if (result.updatedCount > 0) 'обновлено ${result.updatedCount}',
+      if (result.removedCount > 0) 'удалено ${result.removedCount}',
+      if (result.skippedUnsupported > 0)
+        'пропущено ${result.skippedUnsupported}',
+    ];
+    OrexNotice.show(
+      context,
+      SnackBar(
+        content: Text(
+          parts.isEmpty
+              ? 'Подписка «${result.subscription.name}» обновлена'
+              : 'Подписка «${result.subscription.name}»: ${parts.join(', ')}',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _refreshSubscription(
+    BuildContext context,
+    ProxySubscription subscription,
+  ) async {
+    try {
+      final result = await profiles.refreshSubscription(subscription.id);
+      if (!context.mounted) return;
+      OrexNotice.show(
+        context,
+        SnackBar(
+          content: Text(
+            '«${result.subscription.name}» обновлена: '
+            '${result.subscription.profileIds.length} серверов',
+          ),
+        ),
+      );
+    } on FormatException catch (error) {
+      if (!context.mounted) return;
+      OrexNotice.show(
+        context,
+        SnackBar(content: Text(error.message.toString())),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      OrexNotice.show(
+        context,
+        SnackBar(content: Text('Не удалось обновить подписку: $error')),
+      );
+    }
+  }
+
+  Future<void> _deleteSubscription(
+    BuildContext context,
+    ProxySubscription subscription,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => OrexConfirmDialog(
+        title: 'Удалить подписку?',
+        content: Text(
+          '«${subscription.name}» и ${subscription.profileIds.length} '
+          'серверов этой подписки будут удалены.',
+        ),
+        confirmLabel: 'Удалить',
+        icon: Icons.delete_outline_rounded,
+      ),
+    );
+    if (confirmed == true) await profiles.deleteSubscription(subscription.id);
   }
 
   Future<void> _showXrayJsonImportDialog(BuildContext context) async {
@@ -109,7 +219,8 @@ class ProfilesScreen extends StatelessWidget {
       if (result.skippedUnsupported > 0)
         'пропущено неподдерживаемых ${result.skippedUnsupported}',
     ];
-    ScaffoldMessenger.of(context).showSnackBar(
+    OrexNotice.show(
+      context,
       SnackBar(
         content: Text(
           parts.isEmpty ? 'JSON импортирован' : 'JSON Xray: ${parts.join(', ')}',
@@ -128,7 +239,8 @@ class ProfilesScreen extends StatelessWidget {
     if (profileId == null &&
         (selectedIds == null || selectedIds.isEmpty) &&
         profiles.profiles.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         const SnackBar(content: Text('Нет профилей для экспорта')),
       );
       return;
@@ -167,7 +279,8 @@ class ProfilesScreen extends StatelessWidget {
         case _XrayJsonExportAction.copy:
           await Clipboard.setData(ClipboardData(text: payload));
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
+          OrexNotice.show(
+            context,
             SnackBar(
               content: Text(
                 exportingMultiple
@@ -186,14 +299,16 @@ class ProfilesScreen extends StatelessWidget {
             suggestedName: '$baseName.json',
           );
           if (!context.mounted || !saved) return;
-          ScaffoldMessenger.of(context).showSnackBar(
+          OrexNotice.show(
+            context,
             const SnackBar(content: Text('JSON Xray экспортирован')),
           );
           break;
       }
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(content: Text('Не удалось экспортировать JSON: $error')),
       );
     }
@@ -243,10 +358,11 @@ class ProfilesScreen extends StatelessWidget {
     BuildContext context, {
     BalancerProfile? existing,
   }) async {
-    if (existing == null && profiles.profiles.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    if (existing == null && profiles.profiles.isEmpty) {
+      OrexNotice.show(
+        context,
         const SnackBar(
-          content: Text('Для балансировщика нужны минимум два профиля'),
+          content: Text('Для балансировщика нужен хотя бы один профиль'),
         ),
       );
       return;
@@ -255,6 +371,8 @@ class ProfilesScreen extends StatelessWidget {
       context: context,
       builder: (context) => _BalancerDialog(
         profiles: profiles.profiles,
+        groups: profiles.profileGroups,
+        probeUrl: tunnel.latencyProbeUrl,
         existing: existing,
       ),
     );
@@ -264,14 +382,16 @@ class ProfilesScreen extends StatelessWidget {
         id: existing?.id,
         name: value.name,
         memberIds: value.memberIds,
+        memberGroupKeys: value.memberGroupKeys,
         strategy: value.strategy,
-        probeUrl: value.probeUrl,
+        probeUrl: tunnel.latencyProbeUrl,
         probeIntervalSeconds: value.probeIntervalSeconds,
         fallbackTarget: value.fallbackTarget,
       );
     } on FormatException catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      OrexNotice.show(
+        context,
         SnackBar(content: Text(error.message.toString())),
       );
     }
@@ -284,19 +404,11 @@ class ProfilesScreen extends StatelessWidget {
   ) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Удалить?'),
+      builder: (_) => OrexConfirmDialog(
+        title: 'Удалить?',
         content: Text('«$name» будет удалён с этого устройства.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Удалить'),
-          ),
-        ],
+        confirmLabel: 'Удалить',
+        icon: Icons.delete_outline_rounded,
       ),
     );
     if (confirmed == true) await profiles.delete(id);
@@ -312,72 +424,194 @@ class _ProfilesBody extends StatefulWidget {
   State<_ProfilesBody> createState() => _ProfilesBodyState();
 }
 
+enum _ProfileSelectionScope { servers, subscriptions }
+
 class _ProfilesBodyState extends State<_ProfilesBody> {
   final Set<String> _selectedProfileIds = <String>{};
+  final Set<String> _expandedSectionKeys = <String>{};
+  final Set<String> _collapsedSectionKeys = <String>{};
+  _ProfileSelectionScope? _selectionScope;
   String? _draggingProfileId;
 
   ProfilesController get profiles => widget.owner.profiles;
   TunnelController get tunnel => widget.owner.tunnel;
-  bool get _selectionMode => _selectedProfileIds.isNotEmpty;
+  bool get _selectionMode =>
+      _selectionScope != null && _selectedProfileIds.isNotEmpty;
+  bool get _selectingServers =>
+      _selectionScope == _ProfileSelectionScope.servers;
+  bool get _selectingSubscriptions =>
+      _selectionScope == _ProfileSelectionScope.subscriptions;
+
+  Set<String> get _manualProfileIds => {
+        for (final profile in profiles.profiles)
+          if (!profiles.isSubscriptionProfile(profile.id)) profile.id,
+      };
+
+  List<ProxySubscription> get _selectedSubscriptions => profiles.subscriptions
+      .where(
+        (subscription) => subscription.profileIds.isNotEmpty &&
+            subscription.profileIds.every(_selectedProfileIds.contains),
+      )
+      .toList(growable: false);
 
   void _toggleSelection(String id) {
+    if (!_selectingServers || profiles.isSubscriptionProfile(id)) return;
     setState(() {
       if (!_selectedProfileIds.add(id)) {
         _selectedProfileIds.remove(id);
       }
+      if (_selectedProfileIds.isEmpty) _selectionScope = null;
     });
   }
 
   void _enterSelection(String id) {
+    if (profiles.isSubscriptionProfile(id)) return;
+    if (_selectionScope != null && !_selectingServers) return;
     if (_selectedProfileIds.contains(id)) return;
-    setState(() => _selectedProfileIds.add(id));
+    setState(() {
+      _selectionScope = _ProfileSelectionScope.servers;
+      _selectedProfileIds.add(id);
+    });
   }
 
   void _clearSelection() {
-    if (!_selectionMode) return;
-    setState(_selectedProfileIds.clear);
+    if (_selectionScope == null && _selectedProfileIds.isEmpty) return;
+    setState(() {
+      _selectionScope = null;
+      _selectedProfileIds.clear();
+    });
   }
 
   void _selectAll() {
+    final scope = _selectionScope;
+    if (scope == null) return;
     setState(() {
-      _selectedProfileIds
-        ..clear()
-        ..addAll(profiles.profiles.map((profile) => profile.id));
+      _selectedProfileIds.clear();
+      switch (scope) {
+        case _ProfileSelectionScope.servers:
+          _selectedProfileIds.addAll(_manualProfileIds);
+          break;
+        case _ProfileSelectionScope.subscriptions:
+          for (final subscription in profiles.subscriptions) {
+            _selectedProfileIds.addAll(subscription.profileIds);
+          }
+          break;
+      }
+      if (_selectedProfileIds.isEmpty) _selectionScope = null;
     });
   }
 
   Future<void> _deleteSelected(BuildContext context) async {
-    final count = _selectedProfileIds.length;
-    if (count == 0) return;
+    final ids = Set<String>.from(_selectedProfileIds);
+    final scope = _selectionScope;
+    if (ids.isEmpty || scope == null) return;
+
+    if (scope == _ProfileSelectionScope.subscriptions) {
+      final selectedSubscriptions = _selectedSubscriptions;
+      if (selectedSubscriptions.isEmpty) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => OrexConfirmDialog(
+          title: selectedSubscriptions.length == 1
+              ? 'Удалить подписку?'
+              : 'Удалить ${selectedSubscriptions.length} подписки?',
+          content: const Text(
+            'Подписки и все принадлежащие им серверы будут удалены с устройства.',
+          ),
+          confirmLabel: 'Удалить',
+          icon: Icons.delete_outline_rounded,
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      for (final subscription in selectedSubscriptions) {
+        await profiles.deleteSubscription(subscription.id);
+        if (!mounted) return;
+      }
+      _clearSelection();
+      return;
+    }
+
+    final manualIds = ids.where((id) => !profiles.isSubscriptionProfile(id)).toSet();
+    if (manualIds.isEmpty) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Удалить $count профилей?'),
+      builder: (_) => OrexConfirmDialog(
+        title: 'Удалить ${manualIds.length} профилей?',
         content: const Text(
-          'Выбранные серверы будут удалены с этого устройства. '
-          'Балансировщики с недостаточным числом серверов тоже будут удалены.',
+          'Выбранные серверы будут удалены с этого устройства.',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Удалить'),
-          ),
-        ],
+        confirmLabel: 'Удалить',
+        icon: Icons.delete_outline_rounded,
       ),
     );
     if (confirmed != true || !mounted) return;
-    final ids = Set<String>.from(_selectedProfileIds);
-    await profiles.deleteProfiles(ids);
-    if (mounted) _clearSelection();
+    await profiles.deleteProfiles(manualIds);
+    if (!mounted) return;
+    _clearSelection();
   }
 
   Future<void> _exportSelected(BuildContext context) async {
     final ids = Set<String>.from(_selectedProfileIds);
-    if (ids.isEmpty) return;
+    final scope = _selectionScope;
+    if (ids.isEmpty || scope == null) return;
+    if (scope == _ProfileSelectionScope.subscriptions) {
+      final selectedSubscriptions = _selectedSubscriptions;
+      if (selectedSubscriptions.isEmpty) return;
+      const copyUrls = '__copy_subscription_urls__';
+      const exportServers = '__export_subscription_servers__';
+      final action = await showOrexChoiceSheet<String>(
+        context,
+        title: selectedSubscriptions.length == 1
+            ? 'Экспорт подписки'
+            : 'Экспорт подписок',
+        options: const [
+          OrexChoiceSheetOption<String>(
+            value: copyUrls,
+            icon: Icons.link_rounded,
+            title: 'Скопировать исходную ссылку',
+            subtitle: 'Для нескольких подписок — по одной ссылке на строку',
+          ),
+          OrexChoiceSheetOption<String>(
+            value: exportServers,
+            icon: Icons.data_object_rounded,
+            title: 'Экспортировать серверы JSON Xray',
+          ),
+        ],
+      );
+      if (action == null || !context.mounted) return;
+      if (action == copyUrls) {
+        await Clipboard.setData(
+          ClipboardData(
+            text: selectedSubscriptions.map((item) => item.url).join('\n'),
+          ),
+        );
+        if (!context.mounted) return;
+        OrexNotice.show(
+          context,
+          SnackBar(
+            content: Text(
+              selectedSubscriptions.length == 1
+                  ? 'Ссылка подписки скопирована'
+                  : 'Ссылки подписок скопированы',
+            ),
+          ),
+        );
+        return;
+      }
+      final profileIds = <String>{
+        for (final subscription in selectedSubscriptions) ...subscription.profileIds,
+      };
+      if (profileIds.isEmpty) return;
+      await widget.owner._showXrayJsonExportMenu(
+        context,
+        profileIds: profileIds,
+        suggestedBaseName: selectedSubscriptions.length == 1
+            ? selectedSubscriptions.single.name
+            : 'orexray-subscriptions-${selectedSubscriptions.length}',
+      );
+      return;
+    }
+
     await widget.owner._showXrayJsonExportMenu(
       context,
       profileIds: ids,
@@ -386,9 +620,274 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
   }
 
   Future<void> _pingSelected() async {
-    if (_selectedProfileIds.isEmpty || tunnel.refreshingLatency) return;
+    if (!_selectingServers ||
+        _selectedProfileIds.isEmpty ||
+        tunnel.refreshingLatency) {
+      return;
+    }
     await tunnel.refreshProfileLatencies(
       Set<String>.from(_selectedProfileIds),
+    );
+  }
+
+  List<_ProfileSection> _buildProfileSections(
+    List<TunnelProfile> currentProfiles, {
+    required bool subscriptions,
+  }) {
+    final byId = <String, TunnelProfile>{
+      for (final profile in currentProfiles) profile.id: profile,
+    };
+    final sections = <_ProfileSection>[];
+    for (final group in profiles.profileGroups) {
+      if (group.isSubscription != subscriptions) continue;
+      final items = <TunnelProfile>[
+        for (final id in group.profileIds)
+          if (byId[id] case final profile?) profile,
+      ];
+      if (items.isEmpty) continue;
+      sections.add(
+        _ProfileSection(
+          key: group.key,
+          title: group.title,
+          profiles: List.unmodifiable(items),
+          subscription: group.subscription,
+          manualGroupName: group.isManualGroup ? group.title : null,
+        ),
+      );
+    }
+    return sections;
+  }
+
+  int _selectedCountForSection(_ProfileSection section) => section.profiles
+      .where((profile) => _selectedProfileIds.contains(profile.id))
+      .length;
+
+  _ProfileSelectionScope _scopeForSection(_ProfileSection section) =>
+      section.subscription == null
+          ? _ProfileSelectionScope.servers
+          : _ProfileSelectionScope.subscriptions;
+
+  void _toggleSectionSelection(_ProfileSection section) {
+    final scope = _scopeForSection(section);
+    if (_selectionScope != null && _selectionScope != scope) return;
+    final ids = section.profiles.map((profile) => profile.id).toSet();
+    setState(() {
+      _selectionScope ??= scope;
+      final fullySelected = ids.every(_selectedProfileIds.contains);
+      if (fullySelected) {
+        _selectedProfileIds.removeAll(ids);
+      } else {
+        _selectedProfileIds.addAll(ids);
+      }
+      if (_selectedProfileIds.isEmpty) _selectionScope = null;
+    });
+  }
+
+  void _enterSectionSelection(_ProfileSection section) {
+    final scope = _scopeForSection(section);
+    if (_selectionScope != null && _selectionScope != scope) return;
+    setState(() {
+      _selectionScope = scope;
+      _selectedProfileIds.addAll(
+        section.profiles.map((profile) => profile.id),
+      );
+    });
+  }
+
+  bool _sectionExpanded(_ProfileSection section, String? activeId) {
+    if (_expandedSectionKeys.contains(section.key)) return true;
+    if (_collapsedSectionKeys.contains(section.key)) return false;
+    if (section.subscription != null) {
+      return activeId != null &&
+          section.profiles.any((profile) => profile.id == activeId);
+    }
+    return true;
+  }
+
+  void _toggleSection(_ProfileSection section, String? activeId) {
+    final expanded = _sectionExpanded(section, activeId);
+    setState(() {
+      if (expanded) {
+        _expandedSectionKeys.remove(section.key);
+        _collapsedSectionKeys.add(section.key);
+      } else {
+        _collapsedSectionKeys.remove(section.key);
+        _expandedSectionKeys.add(section.key);
+      }
+    });
+  }
+
+  Future<String?> _requestGroupName(
+    BuildContext context, {
+    String initialValue = '',
+    String title = 'Новая группа',
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 80,
+            decoration: const InputDecoration(hintText: 'Например, Работа'),
+            onSubmitted: (value) {
+              final normalized = value.trim();
+              if (normalized.isNotEmpty) {
+                Navigator.of(dialogContext).pop(normalized);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final normalized = controller.text.trim();
+                if (normalized.isNotEmpty) {
+                  Navigator.of(dialogContext).pop(normalized);
+                }
+              },
+              child: const Text('Сохранить'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _assignToGroup(
+    BuildContext context,
+    Iterable<String> profileIds,
+  ) async {
+    final ids = profileIds.toSet();
+    final manualIds = ids
+        .where((id) => !profiles.isSubscriptionProfile(id))
+        .toSet();
+    if (manualIds.isEmpty) {
+      OrexNotice.show(
+        context,
+        const SnackBar(
+          content: Text('Серверы подписки автоматически сгруппированы'),
+        ),
+      );
+      return;
+    }
+
+    const createGroup = '__create_group__';
+    const clearGroup = '__clear_group__';
+    final action = await showOrexChoiceSheet<String>(
+      context,
+      title: 'Переместить в группу',
+      options: [
+        const OrexChoiceSheetOption<String>(
+          value: clearGroup,
+          icon: Icons.folder_off_outlined,
+          title: 'Серверы',
+        ),
+        for (final name in profiles.manualGroupNames)
+          OrexChoiceSheetOption<String>(
+            value: name,
+            icon: Icons.folder_outlined,
+            title: name,
+          ),
+        const OrexChoiceSheetOption<String>(
+          value: createGroup,
+          icon: Icons.create_new_folder_outlined,
+          title: 'Новая группа',
+        ),
+      ],
+    );
+    if (action == null || !context.mounted) return;
+
+    String? targetGroup;
+    if (action == createGroup) {
+      targetGroup = await _requestGroupName(context);
+      if (targetGroup == null || !context.mounted) return;
+    } else if (action != clearGroup) {
+      targetGroup = action;
+    }
+
+    final changed = await profiles.setProfilesGroup(manualIds, targetGroup);
+    if (!context.mounted) return;
+    if (ids.length != manualIds.length) {
+      OrexNotice.show(
+        context,
+        SnackBar(
+          content: Text(
+            'Перемещено $changed; серверы подписок оставлены в своих группах',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _renameManualGroup(BuildContext context, String name) async {
+    final next = await _requestGroupName(
+      context,
+      initialValue: name,
+      title: 'Переименовать группу',
+    );
+    if (next == null || next == name || !mounted) return;
+    await profiles.renameProfileGroup(name, next);
+  }
+
+  Future<void> _deleteManualGroup(BuildContext context, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => OrexConfirmDialog(
+        title: 'Расформировать группу?',
+        content: Text('Профили из группы «$name» останутся в разделе «Серверы».'),
+        confirmLabel: 'Расформировать',
+        icon: Icons.folder_off_outlined,
+      ),
+    );
+    if (confirmed != true) return;
+    await profiles.deleteProfileGroup(name);
+  }
+
+  Future<void> _openSubscriptionUrl(
+    BuildContext context,
+    String url,
+  ) async {
+    try {
+      await ExternalUrlLauncher.open(url);
+    } on Object catch (error) {
+      if (!context.mounted) return;
+      OrexNotice.show(
+        context,
+        SnackBar(content: Text('Не удалось открыть ссылку: $error')),
+      );
+    }
+  }
+
+  Future<void> _copySubscriptionUrl(
+    BuildContext context,
+    ProxySubscription subscription,
+  ) async {
+    await Clipboard.setData(ClipboardData(text: subscription.url));
+    if (!context.mounted) return;
+    OrexNotice.show(
+      context,
+      const SnackBar(content: Text('Ссылка подписки скопирована')),
+    );
+  }
+
+  Future<void> _exportSubscriptionServers(
+    BuildContext context,
+    ProxySubscription subscription,
+  ) async {
+    if (subscription.profileIds.isEmpty) return;
+    await widget.owner._showXrayJsonExportMenu(
+      context,
+      profileIds: subscription.profileIds.toSet(),
+      suggestedBaseName: subscription.name,
     );
   }
 
@@ -405,91 +904,144 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
         final currentProfiles = profiles.profiles;
         final validIds = currentProfiles.map((profile) => profile.id).toSet();
         _selectedProfileIds.removeWhere((id) => !validIds.contains(id));
+        if (_selectedProfileIds.isEmpty) _selectionScope = null;
         final activeTarget = profiles.selectedTarget;
-
-        final header = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AnimatedBuilder(
-              animation: tunnel.profileUiChanges,
-              builder: (context, _) => _ProfilesHeader(
-                refreshingLatency: tunnel.refreshingLatency,
-                canRefreshLatency: currentProfiles.isNotEmpty,
-                selectionMode: _selectionMode,
-                allSelected:
-                    _selectedProfileIds.length == currentProfiles.length,
-                onOpenProfileMenu: () => widget.owner._showProfileMenu(context),
-                onRefreshLatency: tunnel.refreshAllLatencies,
-                onCloseSelection: _clearSelection,
-                onSelectAll: _selectAll,
-                onPingSelected: _pingSelected,
-                onExportSelected: () => _exportSelected(context),
-                onDeleteSelected: () => _deleteSelected(context),
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionTitle(
-              title: 'Серверы',
-              count: currentProfiles.length,
-              selectedCount: _selectionMode ? _selectedProfileIds.length : null,
-            ),
-            const SizedBox(height: 10),
-          ],
+        final manualSections = _buildProfileSections(
+          currentProfiles,
+          subscriptions: false,
         );
+        final subscriptionSections = _buildProfileSections(
+          currentProfiles,
+          subscriptions: true,
+        );
+        final subscriptionSectionsById = <String, _ProfileSection>{
+          for (final section in subscriptionSections)
+            if (section.subscription case final subscription?)
+              subscription.id: section,
+        };
+        final manualProfileCount = manualSections.fold<int>(
+          0,
+          (count, section) => count + section.profiles.length,
+        );
+        final manualSelectedCount = manualSections.fold<int>(
+          0,
+          (count, section) => count + _selectedCountForSection(section),
+        );
+        final hasManualGroups =
+            manualSections.any((section) => section.manualGroupName != null);
+        final groupedManualView = manualSections.length > 1 || hasManualGroups;
+        final selectedSubscriptions = _selectedSubscriptions;
+        final selectedSubscriptionCount = selectedSubscriptions.length;
+        final canGroupSelected = _selectingServers && _selectedProfileIds.isNotEmpty;
 
-        final footer = !_selectionMode && profiles.balancers.isNotEmpty
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 10),
-                  _SectionTitle(
-                    title: 'Балансировщики',
-                    count: profiles.balancers.length,
-                  ),
-                  const SizedBox(height: 10),
-                  for (final balancer in profiles.balancers)
-                    Padding(
-                      key: ValueKey(balancer.id),
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _BalancerCard(
-                        balancer: balancer,
-                        identity: tunnel.egressIdentityFor(balancer.id),
-                        members: [
-                          for (final id in balancer.memberIds)
-                            ...currentProfiles.where((item) => item.id == id),
-                        ],
-                        selected: activeTarget?.id == balancer.id,
-                        latencyMs: profiles.targetById(balancer.id)?.latencyMs,
-                        onRefreshPing: tunnel.canRefreshTargetLatency(balancer.id)
-                            ? () => tunnel.refreshTargetLatency(balancer.id)
-                            : null,
-                        onSelect: () => _selectFromProfiles(balancer.id),
-                        onEdit: () => widget.owner._showBalancerDialog(
-                          context,
-                          existing: balancer,
-                        ),
-                        onDelete: () => widget.owner._deleteTarget(
-                          context,
-                          balancer.id,
-                          balancer.name,
-                        ),
-                      ),
+        Widget buildProfileCard(
+          TunnelProfile profile,
+          int localIndex,
+          _ProfileSection section, {
+          bool allowReorder = true,
+          bool nested = false,
+        }) {
+          final serverSelectionEnabled =
+              section.subscription == null && _selectingServers;
+          final card = _ProfileCard(
+            profile: profile,
+            identity: tunnel.egressIdentityFor(profile.id),
+            selected: activeTarget?.id == profile.id,
+            multiSelected: serverSelectionEnabled &&
+                _selectedProfileIds.contains(profile.id),
+            selectionMode: serverSelectionEnabled,
+            dragging: _draggingProfileId == profile.id,
+            onSelect: () {
+              if (_selectingServers && section.subscription == null) {
+                _toggleSelection(profile.id);
+              } else if (!_selectionMode) {
+                unawaited(_selectFromProfiles(profile.id));
+              }
+            },
+            onLongPress: _selectionScope == null && section.subscription == null
+                ? () => _enterSelection(profile.id)
+                : null,
+            latencyMs: profile.latencyMs,
+            onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
+                ? () => tunnel.refreshProfileLatency(profile.id)
+                : null,
+            onEdit: () => widget.owner._showEditProfileDialog(context, profile),
+            onExport: () => widget.owner._showXrayJsonExportMenu(
+              context,
+              profileId: profile.id,
+              suggestedBaseName: profile.name,
+            ),
+            onDelete: () => widget.owner._deleteTarget(
+              context,
+              profile.id,
+              profile.name,
+            ),
+            onGroup: section.subscription == null
+                ? () => _assignToGroup(context, {profile.id})
+                : null,
+          );
+          return Padding(
+            key: ValueKey(profile.id),
+            padding: EdgeInsets.only(bottom: nested ? 4 : 12),
+            child: _selectingServers && allowReorder
+                ? ReorderableDelayedDragStartListener(
+                    index: localIndex,
+                    child: card,
+                  )
+                : card,
+          );
+        }
+
+        Widget buildManualGroupHeader(_ProfileSection section) {
+          final selectedCount = _selectedCountForSection(section);
+          return _ProfileGroupHeader(
+            title: section.title,
+            count: section.profiles.length,
+            selectedCount: selectedCount,
+            selectionMode: _selectingServers,
+            expanded: _sectionExpanded(section, activeTarget?.id),
+            onToggle: () => _selectingServers
+                ? _toggleSectionSelection(section)
+                : _toggleSection(section, activeTarget?.id),
+            onLongPress: _selectionScope == null
+                ? () => _enterSectionSelection(section)
+                : null,
+            onExpandToggle: () => _toggleSection(section, activeTarget?.id),
+            onRename: section.manualGroupName == null
+                ? null
+                : () => _renameManualGroup(
+                      context,
+                      section.manualGroupName!,
                     ),
-                ],
-              )
-            : null;
+            onDelete: section.manualGroupName == null
+                ? null
+                : () => _deleteManualGroup(
+                      context,
+                      section.manualGroupName!,
+                    ),
+          );
+        }
 
-        if (currentProfiles.isEmpty) {
-          return ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              AnimatedBuilder(
+
+        final slivers = <Widget>[
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            sliver: SliverToBoxAdapter(
+              child: AnimatedBuilder(
                 animation: tunnel.profileUiChanges,
                 builder: (context, _) => _ProfilesHeader(
                   refreshingLatency: tunnel.refreshingLatency,
-                  canRefreshLatency: false,
-                  selectionMode: false,
-                  allSelected: false,
+                  canRefreshLatency: currentProfiles.isNotEmpty,
+                  selectionMode: _selectionMode,
+                  selectionScope: _selectionScope,
+                  allSelected: switch (_selectionScope) {
+                    _ProfileSelectionScope.servers => manualProfileCount > 0 &&
+                        manualSelectedCount == manualProfileCount,
+                    _ProfileSelectionScope.subscriptions =>
+                      profiles.subscriptions.isNotEmpty &&
+                          selectedSubscriptionCount == profiles.subscriptions.length,
+                    null => false,
+                  },
                   onOpenProfileMenu: () => widget.owner._showProfileMenu(context),
                   onRefreshLatency: tunnel.refreshAllLatencies,
                   onCloseSelection: _clearSelection,
@@ -497,94 +1049,389 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                   onPingSelected: _pingSelected,
                   onExportSelected: () => _exportSelected(context),
                   onDeleteSelected: () => _deleteSelected(context),
+                  onGroupSelected: () =>
+                      _assignToGroup(context, _selectedProfileIds),
+                  canGroupSelected: canGroupSelected,
                 ),
               ),
-              const SizedBox(height: 20),
-              _EmptyProfiles(
-                onImport: () => widget.owner._showProfileMenu(context),
+            ),
+          ),
+          if (profiles.subscriptions.isNotEmpty) ...[
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+              sliver: SliverToBoxAdapter(
+                child: _SectionTitle(
+                  title: 'Подписки',
+                  count: profiles.subscriptions.length,
+                  selectedCount:
+                      _selectingSubscriptions ? selectedSubscriptionCount : null,
+                ),
               ),
-            ],
-          );
-        }
-
-        return ReorderableListView.builder(
-          padding: const EdgeInsets.all(20),
-          buildDefaultDragHandles: false,
-          header: header,
-          footer: footer,
-          itemCount: currentProfiles.length,
-          onReorderStart: (index) {
-            if (!mounted || index < 0 || index >= currentProfiles.length) return;
-            setState(() => _draggingProfileId = currentProfiles[index].id);
-          },
-          onReorderEnd: (_) {
-            if (mounted && _draggingProfileId != null) {
-              setState(() => _draggingProfileId = null);
-            }
-          },
-          proxyDecorator: (child, index, animation) {
-            return AnimatedBuilder(
-              animation: animation,
-              child: child,
-              builder: (context, child) {
-                final scale = Tween<double>(
-                  begin: 1,
-                  end: 1.015,
-                ).evaluate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                    reverseCurve: Curves.easeInCubic,
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              sliver: SliverReorderableList(
+                itemCount: profiles.subscriptions.length,
+                itemBuilder: (context, index) {
+                  final subscription = profiles.subscriptions[index];
+                  final section = subscriptionSectionsById[subscription.id];
+                  final selectedCount = section == null
+                      ? 0
+                      : _selectedCountForSection(section);
+                  final fullySelected = section != null &&
+                      section.profiles.isNotEmpty &&
+                      selectedCount == section.profiles.length;
+                  final expanded = section != null &&
+                      _sectionExpanded(section, activeTarget?.id);
+                  final card = _SubscriptionCard(
+                    subscription: subscription,
+                    refreshing: profiles.subscriptionRefreshing(subscription.id),
+                    expanded: expanded,
+                    selectedCount: selectedCount,
+                    selectionMode: _selectingSubscriptions,
+                    onToggle: section == null
+                        ? null
+                        : () => _selectingSubscriptions
+                            ? _toggleSectionSelection(section)
+                            : _toggleSection(section, activeTarget?.id),
+                    onLongPress: section == null || _selectionScope != null
+                        ? null
+                        : () => _enterSectionSelection(section),
+                    onExpandToggle: section == null
+                        ? null
+                        : () => _toggleSection(section, activeTarget?.id),
+                    onRefresh: () => widget.owner._refreshSubscription(
+                      context,
+                      subscription,
+                    ),
+                    onDelete: () => widget.owner._deleteSubscription(
+                      context,
+                      subscription,
+                    ),
+                    onCopyUrl: () => _copySubscriptionUrl(
+                      context,
+                      subscription,
+                    ),
+                    onExportServers: () => _exportSubscriptionServers(
+                      context,
+                      subscription,
+                    ),
+                    onOpenSupport: subscription.supportUrl.isEmpty
+                        ? null
+                        : () => _openSubscriptionUrl(
+                              context,
+                              subscription.supportUrl,
+                            ),
+                    onOpenWebPage: subscription.webPageUrl.isEmpty
+                        ? null
+                        : () => _openSubscriptionUrl(
+                              context,
+                              subscription.webPageUrl,
+                            ),
+                  );
+                  final header = _selectingSubscriptions &&
+                          fullySelected &&
+                          profiles.subscriptions.length > 1
+                      ? ReorderableDelayedDragStartListener(
+                          index: index,
+                          child: card,
+                        )
+                      : card;
+                  return Column(
+                    key: ValueKey('subscription-section-${subscription.id}'),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      header,
+                      if (expanded)
+                        _NestedGroupChildren(
+                          child: Column(
+                            children: [
+                              for (var profileIndex = 0;
+                                  profileIndex < section.profiles.length;
+                                  profileIndex++)
+                                buildProfileCard(
+                                  section.profiles[profileIndex],
+                                  profileIndex,
+                                  section,
+                                  allowReorder: false,
+                                  nested: true,
+                                ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 4),
+                    ],
+                  );
+                },
+                onReorderItem: (oldIndex, newIndex) {
+                  if (newIndex == oldIndex) return;
+                  unawaited(
+                    profiles.reorderSubscriptions(oldIndex, newIndex),
+                  );
+                },
+                proxyDecorator: (child, index, animation) => AnimatedBuilder(
+                  animation: animation,
+                  child: child,
+                  builder: (context, child) {
+                    final scale = Tween<double>(begin: 1, end: 1.012).evaluate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                        reverseCurve: Curves.easeInCubic,
+                      ),
+                    );
+                    return Transform.scale(scale: scale, child: child);
+                  },
+                ),
+              ),
+            ),
+          ],
+          if (manualProfileCount > 0) ...[
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+              sliver: SliverToBoxAdapter(
+                child: _SectionTitle(
+                  title: 'Серверы',
+                  count: manualProfileCount,
+                  selectedCount:
+                      _selectingServers ? manualSelectedCount : null,
+                ),
+              ),
+            ),
+            if (groupedManualView)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverReorderableList(
+                  itemCount: manualSections.length,
+                  itemBuilder: (context, groupIndex) {
+                    final section = manualSections[groupIndex];
+                    final selectedCount = _selectedCountForSection(section);
+                    final fullySelected = selectedCount == section.profiles.length;
+                    final expanded = _sectionExpanded(section, activeTarget?.id);
+                    final groupHeader = buildManualGroupHeader(section);
+                    final draggableHeader = _selectingServers &&
+                            fullySelected &&
+                            manualSections.length > 1
+                        ? ReorderableDelayedDragStartListener(
+                            index: groupIndex,
+                            child: groupHeader,
+                          )
+                        : groupHeader;
+                    return Column(
+                      key: ValueKey('manual-section-${section.key}'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        draggableHeader,
+                        if (expanded)
+                          _NestedGroupChildren(
+                            child: ReorderableListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              buildDefaultDragHandles: false,
+                              itemCount: section.profiles.length,
+                              itemBuilder: (context, index) => buildProfileCard(
+                                section.profiles[index],
+                                index,
+                                section,
+                                nested: true,
+                              ),
+                              onReorderStart: (index) {
+                                if (!mounted ||
+                                    index < 0 ||
+                                    index >= section.profiles.length) {
+                                  return;
+                                }
+                                setState(
+                                  () => _draggingProfileId =
+                                      section.profiles[index].id,
+                                );
+                              },
+                              onReorderEnd: (_) {
+                                if (mounted && _draggingProfileId != null) {
+                                  setState(() => _draggingProfileId = null);
+                                }
+                              },
+                              proxyDecorator: (child, index, animation) =>
+                                  AnimatedBuilder(
+                                animation: animation,
+                                child: child,
+                                builder: (context, child) {
+                                  final scale = Tween<double>(
+                                    begin: 1,
+                                    end: 1.015,
+                                  ).evaluate(
+                                    CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutCubic,
+                                      reverseCurve: Curves.easeInCubic,
+                                    ),
+                                  );
+                                  return Transform.scale(
+                                    scale: scale,
+                                    child: child,
+                                  );
+                                },
+                              ),
+                              onReorderItem: (oldIndex, newIndex) {
+                                if (newIndex == oldIndex) return;
+                                unawaited(
+                                  profiles.reorderProfilesInScope(
+                                    section.profiles
+                                        .map((profile) => profile.id)
+                                        .toList(growable: false),
+                                    oldIndex,
+                                    newIndex,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        const SizedBox(height: 4),
+                      ],
+                    );
+                  },
+                  onReorderItem: (oldIndex, newIndex) {
+                    if (newIndex == oldIndex) return;
+                    unawaited(
+                      profiles.reorderProfileGroups(
+                        manualSections.map((item) => item.key).toList(),
+                        oldIndex,
+                        newIndex,
+                      ),
+                    );
+                  },
+                  proxyDecorator: (child, index, animation) => AnimatedBuilder(
+                    animation: animation,
+                    child: child,
+                    builder: (context, child) {
+                      final scale = Tween<double>(begin: 1, end: 1.012).evaluate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                          reverseCurve: Curves.easeInCubic,
+                        ),
+                      );
+                      return Transform.scale(scale: scale, child: child);
+                    },
                   ),
-                );
-                return Transform.scale(scale: scale, child: child);
-              },
-            );
-          },
-          onReorderItem: profiles.reorderProfiles,
-          itemBuilder: (context, index) {
-            final profile = currentProfiles[index];
-            final card = _ProfileCard(
-              profile: profile,
-              identity: tunnel.egressIdentityFor(profile.id),
-              selected: activeTarget?.id == profile.id,
-              multiSelected: _selectedProfileIds.contains(profile.id),
-              selectionMode: _selectionMode,
-              dragging: _draggingProfileId == profile.id,
-              onSelect: () => _selectionMode
-                  ? _toggleSelection(profile.id)
-                  : _selectFromProfiles(profile.id),
-              onLongPress:
-                  _selectionMode ? null : () => _enterSelection(profile.id),
-              latencyMs: profile.latencyMs,
-              onRefreshPing: tunnel.canRefreshTargetLatency(profile.id)
-                  ? () => tunnel.refreshProfileLatency(profile.id)
-                  : null,
-              onEdit: () =>
-                  widget.owner._showEditProfileDialog(context, profile),
-              onExport: () => widget.owner._showXrayJsonExportMenu(
-                context,
-                profileId: profile.id,
-                suggestedBaseName: profile.name,
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverReorderableList(
+                  itemCount: manualSections.single.profiles.length,
+                  itemBuilder: (context, index) => buildProfileCard(
+                    manualSections.single.profiles[index],
+                    index,
+                    manualSections.single,
+                  ),
+                  onReorderStart: (index) {
+                    if (!mounted ||
+                        index < 0 ||
+                        index >= manualSections.single.profiles.length) {
+                      return;
+                    }
+                    setState(
+                      () => _draggingProfileId =
+                          manualSections.single.profiles[index].id,
+                    );
+                  },
+                  onReorderEnd: (_) {
+                    if (mounted && _draggingProfileId != null) {
+                      setState(() => _draggingProfileId = null);
+                    }
+                  },
+                  proxyDecorator: (child, index, animation) => AnimatedBuilder(
+                    animation: animation,
+                    child: child,
+                    builder: (context, child) {
+                      final scale = Tween<double>(begin: 1, end: 1.015).evaluate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                          reverseCurve: Curves.easeInCubic,
+                        ),
+                      );
+                      return Transform.scale(scale: scale, child: child);
+                    },
+                  ),
+                  onReorderItem: (oldIndex, newIndex) {
+                    unawaited(
+                      profiles.reorderProfilesInScope(
+                        manualSections.single.profiles
+                            .map((profile) => profile.id)
+                            .toList(growable: false),
+                        oldIndex,
+                        newIndex,
+                      ),
+                    );
+                  },
+                ),
               ),
-              onDelete: () => widget.owner._deleteTarget(
-                context,
-                profile.id,
-                profile.name,
+          ],
+          if (profiles.balancers.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 20),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _SectionTitle(
+                      title: 'Балансировщики',
+                      count: profiles.balancers.length,
+                    ),
+                    const SizedBox(height: 10),
+                    for (final balancer in profiles.balancers)
+                      Padding(
+                        key: ValueKey(balancer.id),
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _BalancerCard(
+                          balancer: balancer,
+                          identity: tunnel.egressIdentityFor(balancer.id),
+                          members: profiles.effectiveBalancerMembers(balancer),
+                          selected: activeTarget?.id == balancer.id,
+                          activeMemberName: activeTarget?.id == balancer.id
+                              ? tunnel.activeBalancerMemberName(
+                                  profiles.targetById(balancer.id),
+                                )
+                              : null,
+                          latencyMs: profiles.targetById(balancer.id)?.latencyMs,
+                          onRefreshPing:
+                              tunnel.canRefreshTargetLatency(balancer.id)
+                                  ? () => tunnel.refreshTargetLatency(balancer.id)
+                                  : null,
+                          onSelect: () => _selectFromProfiles(balancer.id),
+                          onEdit: () => widget.owner._showBalancerDialog(
+                            context,
+                            existing: balancer,
+                          ),
+                          onDelete: () => widget.owner._deleteTarget(
+                            context,
+                            balancer.id,
+                            balancer.name,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            );
-            return Padding(
-              key: ValueKey(profile.id),
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _selectionMode
-                  ? ReorderableDelayedDragStartListener(
-                      index: index,
-                      child: card,
-                    )
-                  : card,
-            );
-          },
-        );
+            ),
+          if (currentProfiles.isEmpty &&
+              profiles.subscriptions.isEmpty &&
+              profiles.balancers.isEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              sliver: SliverToBoxAdapter(
+                child: _EmptyProfiles(
+                  onImport: () => widget.owner._showProfileMenu(context),
+                ),
+              ),
+            ),
+          const SliverToBoxAdapter(child: SizedBox(height: 8)),
+        ];
+
+        return CustomScrollView(slivers: slivers);
       },
     );
   }
@@ -595,6 +1442,7 @@ class _ProfilesHeader extends StatelessWidget {
     required this.refreshingLatency,
     required this.canRefreshLatency,
     required this.selectionMode,
+    required this.selectionScope,
     required this.allSelected,
     required this.onOpenProfileMenu,
     required this.onRefreshLatency,
@@ -603,11 +1451,14 @@ class _ProfilesHeader extends StatelessWidget {
     required this.onPingSelected,
     required this.onExportSelected,
     required this.onDeleteSelected,
+    required this.onGroupSelected,
+    required this.canGroupSelected,
   });
 
   final bool refreshingLatency;
   final bool canRefreshLatency;
   final bool selectionMode;
+  final _ProfileSelectionScope? selectionScope;
   final bool allSelected;
   final VoidCallback onOpenProfileMenu;
   final Future<void> Function() onRefreshLatency;
@@ -616,134 +1467,82 @@ class _ProfilesHeader extends StatelessWidget {
   final Future<void> Function() onPingSelected;
   final VoidCallback onExportSelected;
   final VoidCallback onDeleteSelected;
+  final VoidCallback onGroupSelected;
+  final bool canGroupSelected;
 
   @override
   Widget build(BuildContext context) {
-    final title = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Профили', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text(
-          'Серверы, пинг и балансировщики Xray',
-          style: Theme.of(context).textTheme.bodySmall,
+    final serverSelection = selectionScope == _ProfileSelectionScope.servers;
+    final actions = <OrexHeaderAction>[];
+    if (!selectionMode) {
+      actions.addAll([
+        OrexHeaderAction(
+          tooltip: 'Добавить профиль',
+          label: 'Профиль',
+          icon: Icons.add_rounded,
+          trailingIcon: Icons.keyboard_arrow_down_rounded,
+          onPressed: onOpenProfileMenu,
         ),
-      ],
-    );
-
-    final actions = selectionMode
-        ? Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              OutlinedButton.icon(
-                onPressed: refreshingLatency ? null : () => onPingSelected(),
-                icon: const Icon(Icons.network_ping_rounded),
-                label: const Text('Пинг'),
-              ),
-              OutlinedButton.icon(
-                onPressed: onExportSelected,
-                icon: const Icon(Icons.ios_share_rounded),
-                label: const Text('Экспорт'),
-              ),
-              _HeaderIconActionButton(
-                tooltip: 'Удалить',
-                onPressed: onDeleteSelected,
-                color: OrexColors.danger,
-                icon: Icons.delete_outline_rounded,
-              ),
-              _HeaderIconActionButton(
-                tooltip: 'Выбрать все',
-                onPressed: allSelected ? null : onSelectAll,
-                icon: Icons.select_all_rounded,
-              ),
-              _HeaderIconActionButton(
-                tooltip: 'Готово',
-                onPressed: onCloseSelection,
-                icon: Icons.check_rounded,
-              ),
-            ],
-          )
-        : Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              OutlinedButton.icon(
-                onPressed: onOpenProfileMenu,
-                icon: const Icon(Icons.add_rounded),
-                label: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Профиль'),
-                    SizedBox(width: 4),
-                    Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-                  ],
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: refreshingLatency || !canRefreshLatency
-                    ? null
-                    : onRefreshLatency,
-                icon: const Icon(Icons.network_ping_rounded),
-                label: const Text('Проверить пинг'),
-              ),
-            ],
-          );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final rowBreakpoint = selectionMode ? 920.0 : 700.0;
-        if (constraints.maxWidth >= rowBreakpoint) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(child: title),
-              const SizedBox(width: 20),
-              actions,
-            ],
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            title,
-            const SizedBox(height: 14),
-            actions,
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _HeaderIconActionButton extends StatelessWidget {
-  const _HeaderIconActionButton({
-    required this.tooltip,
-    required this.onPressed,
-    required this.icon,
-    this.color,
-  });
-
-  final String tooltip;
-  final VoidCallback? onPressed;
-  final IconData icon;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: OutlinedButton(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(0, 40),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          foregroundColor: color,
-          shape: const StadiumBorder(),
+        OrexHeaderAction(
+          tooltip: 'Проверить пинг',
+          label: 'Проверить пинг',
+          icon: Icons.network_ping_rounded,
+          onPressed: refreshingLatency || !canRefreshLatency
+              ? null : () => onRefreshLatency(),
         ),
-        child: Icon(icon),
-      ),
+      ]);
+    } else {
+      if (serverSelection) {
+        actions.add(OrexHeaderAction(
+          tooltip: 'Пинг',
+          label: 'Пинг',
+          icon: Icons.network_ping_rounded,
+          onPressed: refreshingLatency ? null : () => onPingSelected(),
+        ));
+      }
+      actions.add(OrexHeaderAction(
+        tooltip: 'Экспорт',
+        label: 'Экспорт',
+        icon: Icons.ios_share_rounded,
+        onPressed: onExportSelected,
+      ));
+      if (serverSelection) {
+        actions.add(OrexHeaderAction(
+          tooltip: 'Группа',
+          label: 'Группа',
+          icon: Icons.folder_outlined,
+          onPressed: canGroupSelected ? onGroupSelected : null,
+        ));
+      }
+      actions.addAll([
+        OrexHeaderAction(
+          tooltip: selectionScope == _ProfileSelectionScope.subscriptions
+              ? 'Удалить подписки' : 'Удалить',
+          label: selectionScope == _ProfileSelectionScope.subscriptions
+              ? 'Удалить' : 'Удалить',
+          icon: Icons.delete_outline_rounded,
+          color: OrexColors.danger,
+          onPressed: onDeleteSelected,
+        ),
+        OrexHeaderAction(
+          tooltip: 'Выбрать все',
+          label: 'Выбрать все',
+          icon: Icons.select_all_rounded,
+          onPressed: allSelected ? null : onSelectAll,
+        ),
+        OrexHeaderAction(
+          tooltip: 'Готово',
+          label: 'Готово',
+          icon: Icons.check_rounded,
+          onPressed: onCloseSelection,
+        ),
+      ]);
+    }
+    return OrexAdaptiveHeader(
+      title: 'Профили',
+      subtitle: 'Серверы, пинг и балансировщики Xray',
+      icon: Icons.dns_rounded,
+      actions: actions,
     );
   }
 }
@@ -761,30 +1560,186 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final textTheme = Theme.of(context).textTheme;
+    final primary = Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(title.toUpperCase(),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: OrexColors.copper,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.1,
-                )),
-        const SizedBox(width: 8),
-        Text('$count', style: Theme.of(context).textTheme.bodySmall),
-        if (selectedCount case final selected?) ...[
-          const SizedBox(width: 14),
-          Text(
-            'ВЫДЕЛЕНО',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: OrexColors.copper,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.7,
-                ),
+        Text(
+          title.toUpperCase(),
+          style: textTheme.bodySmall?.copyWith(
+            color: OrexColors.copper,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.1,
           ),
-          const SizedBox(width: 8),
-          Text('$selected', style: Theme.of(context).textTheme.bodySmall),
-        ],
+        ),
+        const SizedBox(width: 8),
+        Text('$count', style: textTheme.bodySmall),
       ],
+    );
+    final selected = selectedCount;
+    return Padding(
+      // Match SettingsSection titles: page padding (20) + section label inset (8).
+      padding: const EdgeInsets.only(left: 8),
+      child: AnimatedSize(
+        duration: OrexMotion.duration(context, OrexMotion.compact),
+        curve: OrexMotion.curve,
+        alignment: Alignment.topLeft,
+        child: Wrap(
+          spacing: 14,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            primary,
+            if (selected != null)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'ВЫДЕЛЕНО',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: OrexColors.copper,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.7,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('$selected', style: textTheme.bodySmall),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NestedGroupChildren extends StatelessWidget {
+  const _NestedGroupChildren({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(left: 10),
+      padding: const EdgeInsets.only(left: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(
+            color: OrexColors.copper.withValues(alpha: 0.34),
+            width: 2,
+          ),
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _NestedGroupChild extends StatelessWidget {
+  const _NestedGroupChild({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _NestedGroupChildren(child: child);
+  }
+}
+
+class _ProfileGroupHeader extends StatelessWidget {
+  const _ProfileGroupHeader({
+    required this.title,
+    required this.count,
+    required this.selectedCount,
+    required this.selectionMode,
+    required this.expanded,
+    required this.onToggle,
+    required this.onExpandToggle,
+    required this.onLongPress,
+    this.onRename,
+    this.onDelete,
+  });
+
+  final String title;
+  final int count;
+  final int selectedCount;
+  final bool selectionMode;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final VoidCallback onExpandToggle;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onRename;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final partiallySelected = selectedCount > 0 && selectedCount < count;
+    final fullySelected = count > 0 && selectedCount == count;
+    return Padding(
+      padding: EdgeInsets.only(bottom: expanded ? 4 : 10),
+      child: GlassPanel(
+        borderRadius: 18,
+        blur: 14,
+        tint: selectedCount > 0 ? OrexColors.copper : null,
+        opacity: selectedCount > 0 ? 0.24 : 0.34,
+        child: ListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          mouseCursor: SystemMouseCursors.click,
+          onTap: onToggle,
+          onLongPress: onLongPress,
+          leading: const Icon(
+            Icons.folder_outlined,
+            color: OrexColors.copper,
+          ),
+          title: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text('$count серверов'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selectionMode)
+                Checkbox(
+                  tristate: true,
+                  value: partiallySelected ? null : fullySelected,
+                  onChanged: (_) => onToggle(),
+                )
+              else if (onRename != null || onDelete != null)
+                PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'rename') onRename?.call();
+                    if (value == 'delete') onDelete?.call();
+                  },
+                  itemBuilder: (context) => [
+                    if (onRename != null)
+                      const PopupMenuItem(
+                        value: 'rename',
+                        child: Text('Переименовать'),
+                      ),
+                    if (onDelete != null)
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Расформировать группу'),
+                      ),
+                  ],
+                ),
+              IconButton(
+                tooltip: expanded ? 'Свернуть' : 'Развернуть',
+                onPressed: onExpandToggle,
+                icon: Icon(
+                  expanded
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -807,7 +1762,7 @@ class _EmptyProfiles extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
-            'Импортируйте ссылку или JSON Xray с одним или несколькими профилями.',
+            'Импортируйте ссылку, подписку или JSON Xray с одним или несколькими профилями.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -821,6 +1776,561 @@ class _EmptyProfiles extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ImportSubscriptionDialog extends StatefulWidget {
+  const _ImportSubscriptionDialog({required this.profiles});
+
+  final ProfilesController profiles;
+
+  @override
+  State<_ImportSubscriptionDialog> createState() =>
+      _ImportSubscriptionDialogState();
+}
+
+class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
+  final TextEditingController _controller = TextEditingController();
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_loading) return;
+    final value = _controller.text.trim();
+    if (value.isEmpty) {
+      setState(() => _error = 'Вставь URL подписки');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.profiles.importSubscription(value);
+      if (!mounted) return;
+      Navigator.of(context).pop(result);
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message.toString());
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = 'Не удалось добавить подписку: $error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Импорт подписки'),
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Поддерживаются обычные HTTP/HTTPS подписки: '
+              'список ссылок, Base64-список и JSON Xray.',
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _controller,
+              enabled: !_loading,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                labelText: 'URL подписки',
+                errorText: _error,
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _loading ? null : _submit,
+          child: _loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Импортировать'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SubscriptionCard extends StatelessWidget {
+  const _SubscriptionCard({
+    required this.subscription,
+    required this.refreshing,
+    required this.expanded,
+    required this.selectedCount,
+    required this.selectionMode,
+    required this.onToggle,
+    required this.onExpandToggle,
+    required this.onLongPress,
+    required this.onRefresh,
+    required this.onDelete,
+    required this.onCopyUrl,
+    required this.onExportServers,
+    required this.onOpenSupport,
+    required this.onOpenWebPage,
+  });
+
+  final ProxySubscription subscription;
+  final bool refreshing;
+  final bool expanded;
+  final int selectedCount;
+  final bool selectionMode;
+  final VoidCallback? onToggle;
+  final VoidCallback? onExpandToggle;
+  final VoidCallback? onLongPress;
+  final VoidCallback onRefresh;
+  final VoidCallback onDelete;
+  final VoidCallback onCopyUrl;
+  final VoidCallback onExportServers;
+  final VoidCallback? onOpenSupport;
+  final VoidCallback? onOpenWebPage;
+
+  @override
+  Widget build(BuildContext context) {
+    final uri = Uri.tryParse(subscription.url);
+    final host = uri?.host ?? subscription.url;
+    final count = subscription.profileIds.length;
+    final partiallySelected = selectedCount > 0 && selectedCount < count;
+    final fullySelected = count > 0 && selectedCount == count;
+    final userInfo = subscription.parsedUserInfo;
+    final rawNotices = subscription.notices.take(3).toList(growable: false);
+    final normalizedName = subscription.name.trim().toLowerCase();
+    final normalizedHost = host.trim().toLowerCase();
+    final summaryItems = <String>[
+      '$count серверов',
+      if (normalizedHost.isNotEmpty && normalizedHost != normalizedName) host,
+      if (subscription.lastUpdatedEpochMs case final updated?)
+        _relativeSubscriptionUpdate(updated),
+    ];
+    final hasUsageMetadata = userInfo != null &&
+        (userInfo.totalBytes != null || userInfo.expiresAt != null);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: expanded ? 4 : 10),
+      child: GlassPanel(
+        borderRadius: 18,
+        blur: 16,
+        tint: selectedCount > 0 ? OrexColors.copper : null,
+        opacity: selectedCount > 0 ? 0.24 : 0.42,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          mouseCursor: onToggle == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          onTap: onToggle,
+          onLongPress: onLongPress,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                leading: const Icon(
+                  Icons.cloud_sync_outlined,
+                  color: OrexColors.copper,
+                ),
+                title: Text(
+                  subscription.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: _DotSeparatedText(
+                  items: summaryItems,
+                  maxLines: 2,
+                  style: null,
+                ),
+                trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (selectionMode)
+                    Checkbox(
+                      tristate: true,
+                      value: partiallySelected ? null : fullySelected,
+                      onChanged: onToggle == null ? null : (_) => onToggle!(),
+                    )
+                  else ...[
+                    IconButton(
+                      tooltip: 'Обновить подписку',
+                      onPressed:
+                          refreshing ? null : onRefresh,
+                      icon: refreshing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh_rounded),
+                    ),
+                    PopupMenuButton<String>(
+                      tooltip: 'Действия подписки',
+                      enabled: !refreshing,
+                      onSelected: (value) {
+                        if (value == 'copy-url') onCopyUrl();
+                        if (value == 'export-json') onExportServers();
+                        if (value == 'web-page') onOpenWebPage?.call();
+                        if (value == 'support') onOpenSupport?.call();
+                        if (value == 'delete') onDelete();
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'copy-url',
+                          child: Text('Скопировать исходную ссылку'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'export-json',
+                          child: Text('Экспорт серверов JSON Xray'),
+                        ),
+                        if (onOpenWebPage != null)
+                          const PopupMenuItem(
+                            value: 'web-page',
+                            child: Text('Кабинет'),
+                          ),
+                        if (onOpenSupport != null)
+                          const PopupMenuItem(
+                            value: 'support',
+                            child: Text('Поддержка'),
+                          ),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Удалить подписку'),
+                        ),
+                      ],
+                    ),
+                  ],
+                  IconButton(
+                    tooltip: expanded ? 'Свернуть' : 'Развернуть',
+                    onPressed: onExpandToggle,
+                    icon: Icon(
+                      expanded
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (rawNotices.isNotEmpty || subscription.announce.isNotEmpty)
+              const Divider(height: 1, indent: 16, endIndent: 16),
+            if (rawNotices.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                child: _DotSeparatedText(
+                  items: rawNotices,
+                  maxLines: 2,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            if (subscription.announce.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Text(
+                  subscription.announce,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: OrexColors.copper,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+            if (hasUsageMetadata) ...[
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                child: _SubscriptionMetadataPanel(
+                  userInfo: userInfo,
+                  onOpenSupport: onOpenSupport,
+                  onOpenWebPage: onOpenWebPage,
+                ),
+              ),
+            ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DotSeparatedText extends StatelessWidget {
+  const _DotSeparatedText({
+    required this.items,
+    required this.style,
+    this.maxLines = 2,
+  });
+
+  final List<String> items;
+  final TextStyle? style;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanItems = items
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+    if (cleanItems.isEmpty) return const SizedBox.shrink();
+
+    final effectiveStyle = style ?? DefaultTextStyle.of(context).style;
+    final direction = Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    double widthOf(String value) {
+      final painter = TextPainter(
+        text: TextSpan(text: value, style: effectiveStyle),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      return painter.width;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) {
+          return Text(cleanItems.join(' · '), style: effectiveStyle);
+        }
+        final lines = <List<String>>[];
+        var current = <String>[];
+        var consumed = 0;
+        for (final item in cleanItems) {
+          final candidate = [...current, item];
+          if (current.isNotEmpty &&
+              widthOf(candidate.join(' · ')) > constraints.maxWidth) {
+            lines.add(current);
+            if (lines.length >= maxLines) break;
+            current = <String>[item];
+          } else {
+            current = candidate;
+          }
+          consumed += 1;
+        }
+        if (lines.length < maxLines && current.isNotEmpty) {
+          lines.add(current);
+        }
+        final displayed = lines.fold<int>(0, (sum, line) => sum + line.length);
+        final truncated =
+            displayed < cleanItems.length || consumed < cleanItems.length;
+
+        return AnimatedSize(
+          duration: OrexMotion.duration(context, OrexMotion.compact),
+          curve: OrexMotion.curve,
+          alignment: Alignment.topLeft,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < lines.length; index++)
+                Text(
+                  '${lines[index].join(' · ')}${truncated && index == lines.length - 1 ? ' …' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: effectiveStyle,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SubscriptionMetadataPanel extends StatelessWidget {
+  const _SubscriptionMetadataPanel({
+    required this.userInfo,
+    required this.onOpenSupport,
+    required this.onOpenWebPage,
+  });
+
+  final SubscriptionUserInfo? userInfo;
+  final VoidCallback? onOpenSupport;
+  final VoidCallback? onOpenWebPage;
+
+  @override
+  Widget build(BuildContext context) {
+    final info = userInfo;
+    final total = info?.totalBytes;
+    final expiry = info?.expiresAt;
+    final usageFraction = info?.usageFraction;
+    final remaining = info?.remainingBytes;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (info != null && total != null) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Использовано ${_formatSubscriptionBytes(info.usedBytes)} / '
+                  '${_formatSubscriptionBytes(total)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              if (remaining != null)
+                Text(
+                  'Осталось ${_formatSubscriptionBytes(remaining)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: OrexColors.copper,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 6,
+              value: usageFraction,
+              backgroundColor:
+                  Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.10),
+              color: OrexColors.copper,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (expiry != null) ...[
+          Text(
+            _formatSubscriptionExpiry(expiry),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 6),
+        ],
+        if (onOpenWebPage != null || onOpenSupport != null) ...[
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (onOpenWebPage != null)
+                OutlinedButton.icon(
+                  onPressed: onOpenWebPage,
+                  icon: const Icon(Icons.account_circle_outlined, size: 18),
+                  label: const Text('Кабинет'),
+                ),
+              if (onOpenSupport != null)
+                OutlinedButton.icon(
+                  onPressed: onOpenSupport,
+                  icon: const Icon(Icons.support_agent_rounded, size: 18),
+                  label: const Text('Поддержка'),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+String _formatSubscriptionBytes(int bytes) {
+  const units = <String>['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+  var value = bytes.toDouble();
+  var unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  final digits = unit <= 1 || value >= 100 ? 0 : 1;
+  return '${value.toStringAsFixed(digits)} ${units[unit]}';
+}
+
+String _formatSubscriptionExpiry(DateTime expiry) {
+  final now = DateTime.now();
+  final difference = expiry.difference(now);
+  if (difference <= Duration.zero) return 'Срок действия истёк';
+  final days = (difference.inSeconds / Duration.secondsPerDay).ceil();
+  return 'До ${_formatSubscriptionDate(expiry)} · ${_russianCountLabel(
+    days,
+    one: 'день',
+    few: 'дня',
+    many: 'дней',
+  )}';
+}
+
+String _formatSubscriptionDate(DateTime date) {
+  const months = <String>[
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
+  ];
+  return '${date.day} ${months[date.month - 1]}';
+}
+
+String _russianCountLabel(
+  int value, {
+  required String one,
+  required String few,
+  required String many,
+}) {
+  final mod100 = value % 100;
+  final mod10 = value % 10;
+  final unit = mod100 >= 11 && mod100 <= 14
+      ? many
+      : mod10 == 1
+          ? one
+          : mod10 >= 2 && mod10 <= 4
+              ? few
+              : many;
+  return '$value $unit';
+}
+
+String _relativeSubscriptionUpdate(int epochMs) {
+  final elapsed = DateTime.now().difference(
+    DateTime.fromMillisecondsSinceEpoch(epochMs),
+  );
+  if (elapsed.isNegative || elapsed.inMinutes < 1) return 'обновлено сейчас';
+  if (elapsed.inHours < 1) {
+    return 'обновлено ${_russianCountLabel(
+      elapsed.inMinutes,
+      one: 'минута',
+      few: 'минуты',
+      many: 'минут',
+    )} назад';
+  }
+  if (elapsed.inDays < 1) {
+    return 'обновлено ${_russianCountLabel(
+      elapsed.inHours,
+      one: 'час',
+      few: 'часа',
+      many: 'часов',
+    )} назад';
+  }
+  return 'обновлено ${_russianCountLabel(
+    elapsed.inDays,
+    one: 'день',
+    few: 'дня',
+    many: 'дней',
+  )} назад';
 }
 
 class _ProfileCard extends StatelessWidget {
@@ -838,6 +2348,7 @@ class _ProfileCard extends StatelessWidget {
     required this.onEdit,
     required this.onExport,
     required this.onDelete,
+    this.onGroup,
   });
 
   final TunnelProfile profile;
@@ -853,6 +2364,7 @@ class _ProfileCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onExport;
   final VoidCallback onDelete;
+  final VoidCallback? onGroup;
 
   @override
   Widget build(BuildContext context) {
@@ -871,26 +2383,49 @@ class _ProfileCard extends StatelessWidget {
             horizontal: 16,
             vertical: 8,
           ),
+          mouseCursor: SystemMouseCursors.click,
           onTap: onSelect,
           onLongPress: onLongPress,
           leading: EgressAvatar(
             identity: identity,
             selected: selected,
           ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  profile.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              _PingBadge(
-                latencyMs: latencyMs,
-                onTap: onRefreshPing,
-              ),
-            ],
+          title: LayoutBuilder(
+            builder: (context, constraints) {
+              final showPingBadge = constraints.maxWidth >= 92;
+              return Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      profile.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  ClipRect(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: constraints.maxWidth,
+                      ),
+                      child: AnimatedSize(
+                        duration: OrexMotion.duration(
+                          context,
+                          OrexMotion.compact,
+                        ),
+                        curve: OrexMotion.curve,
+                        alignment: Alignment.centerRight,
+                        child: showPingBadge
+                            ? _PingBadge(
+                                latencyMs: latencyMs,
+                                onTap: onRefreshPing,
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 5),
@@ -911,6 +2446,7 @@ class _ProfileCard extends StatelessWidget {
                         if (value == 'edit') onEdit();
                         if (value == 'ping') onRefreshPing?.call();
                         if (value == 'export') onExport();
+                        if (value == 'group') onGroup?.call();
                         if (value == 'delete') onDelete();
                       },
                       itemBuilder: (context) => [
@@ -927,6 +2463,11 @@ class _ProfileCard extends StatelessWidget {
                           value: 'export',
                           child: Text('Экспорт JSON Xray'),
                         ),
+                        if (onGroup != null)
+                          const PopupMenuItem(
+                            value: 'group',
+                            child: Text('Группа…'),
+                          ),
                         const PopupMenuDivider(),
                         const PopupMenuItem(
                           value: 'delete',
@@ -962,6 +2503,8 @@ class _PingBadge extends StatelessWidget {
                 : OrexColors.danger;
     return InkWell(
       borderRadius: BorderRadius.circular(999),
+      mouseCursor:
+          onTap == null ? SystemMouseCursors.basic : SystemMouseCursors.click,
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -985,6 +2528,7 @@ class _BalancerCard extends StatelessWidget {
     required this.identity,
     required this.members,
     required this.selected,
+    required this.activeMemberName,
     required this.latencyMs,
     required this.onRefreshPing,
     required this.onSelect,
@@ -996,6 +2540,7 @@ class _BalancerCard extends StatelessWidget {
   final EgressIdentity? identity;
   final List<TunnelProfile> members;
   final bool selected;
+  final String? activeMemberName;
   final int? latencyMs;
   final VoidCallback? onRefreshPing;
   final VoidCallback onSelect;
@@ -1009,6 +2554,7 @@ class _BalancerCard extends StatelessWidget {
       opacity: 0.50,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        mouseCursor: SystemMouseCursors.click,
         onTap: onSelect,
         leading: EgressAvatar(
           identity: identity,
@@ -1027,7 +2573,9 @@ class _BalancerCard extends StatelessWidget {
           ],
         ),
         subtitle: Text(
-          '${members.length} серверов · ${balancer.strategy.title}\n${members.map((e) => e.name).join(' · ')}',
+          '${members.length} серверов'
+          '${activeMemberName == null ? '' : ' · $activeMemberName'}'
+          '\n${members.map((e) => e.name).join(' · ')}',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
@@ -1285,7 +2833,8 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
           children: [
             Text(
               'Поддерживается полный Xray config, один outbound, массив [] '
-              'из нескольких конфигов и HTTP/HTTPS ссылка с JSON.',
+              'из нескольких конфигов и HTTP/HTTPS ссылка с JSON. '
+              'Для обновляемого списка серверов используйте «Подписка».',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
@@ -1707,24 +3256,31 @@ class _BalancerDraft {
   const _BalancerDraft({
     required this.name,
     required this.memberIds,
+    required this.memberGroupKeys,
     required this.strategy,
-    required this.probeUrl,
     required this.probeIntervalSeconds,
     required this.fallbackTarget,
   });
 
   final String name;
   final List<String> memberIds;
+  final List<String> memberGroupKeys;
   final BalancerStrategy strategy;
-  final String probeUrl;
   final int probeIntervalSeconds;
   final String? fallbackTarget;
 }
 
 class _BalancerDialog extends StatefulWidget {
-  const _BalancerDialog({required this.profiles, this.existing});
+  const _BalancerDialog({
+    required this.profiles,
+    required this.groups,
+    required this.probeUrl,
+    this.existing,
+  });
 
   final List<TunnelProfile> profiles;
+  final List<ProfileGroupInfo> groups;
+  final String probeUrl;
   final BalancerProfile? existing;
 
   @override
@@ -1734,16 +3290,16 @@ class _BalancerDialog extends StatefulWidget {
 class _BalancerDialogState extends State<_BalancerDialog> {
   late final TextEditingController _name =
       TextEditingController(text: widget.existing?.name ?? '');
-  late final TextEditingController _probeUrl = TextEditingController(
-    text: widget.existing?.probeUrl ?? 'https://www.gstatic.com/generate_204',
-  );
   late final TextEditingController _interval = TextEditingController(
     text: '${widget.existing?.probeIntervalSeconds ?? 30}',
   );
   late final Set<String> _members =
       widget.existing?.memberIds.toSet() ?? <String>{};
+  late final Set<String> _memberGroups =
+      widget.existing?.memberGroupKeys.toSet() ?? <String>{};
   late BalancerStrategy _strategy =
       widget.existing?.strategy ?? BalancerStrategy.random;
+  final Set<String> _expandedGroups = <String>{};
   String _fallbackValue = 'none';
   String? _error;
 
@@ -1766,10 +3322,33 @@ class _BalancerDialogState extends State<_BalancerDialog> {
   @override
   void dispose() {
     _name.dispose();
-    _probeUrl.dispose();
     _interval.dispose();
     super.dispose();
   }
+
+  List<ProfileGroupInfo> get _selectableGroups => widget.groups
+      .where((group) => group.isManualFolder || group.isSubscription)
+      .toList(growable: false);
+
+  bool _canSelectWholeGroup(ProfileGroupInfo group) =>
+      group.isManualFolder || group.isSubscription;
+
+  Set<String> get _groupMemberIds => {
+        for (final group in _selectableGroups)
+          if (_memberGroups.contains(group.key)) ...group.profileIds,
+      };
+
+  TunnelProfile? _profileForId(String id) {
+    for (final profile in widget.profiles) {
+      if (profile.id == id) return profile;
+    }
+    return null;
+  }
+
+  Set<String> get _effectiveMemberIds => <String>{
+        ..._members,
+        ..._groupMemberIds,
+      };
 
   void _submit() {
     final interval = int.tryParse(_interval.text.trim()) ?? 30;
@@ -1777,8 +3356,8 @@ class _BalancerDialogState extends State<_BalancerDialog> {
       setState(() => _error = 'Укажи имя балансировщика');
       return;
     }
-    if (_members.length < 2) {
-      setState(() => _error = 'Выбери минимум два сервера');
+    if (_effectiveMemberIds.isEmpty) {
+      setState(() => _error = 'Выбери хотя бы один сервер или папку');
       return;
     }
     Navigator.pop(
@@ -1786,8 +3365,8 @@ class _BalancerDialogState extends State<_BalancerDialog> {
       _BalancerDraft(
         name: _name.text.trim(),
         memberIds: _members.toList(growable: false),
+        memberGroupKeys: _memberGroups.toList(growable: false),
         strategy: _strategy,
-        probeUrl: _probeUrl.text.trim(),
         probeIntervalSeconds: interval,
         fallbackTarget: _fallbackValue == 'none' ? null : _fallbackValue,
       ),
@@ -1865,10 +3444,21 @@ class _BalancerDialogState extends State<_BalancerDialog> {
               if (_strategy == BalancerStrategy.leastPing ||
                   _fallbackValue != 'none') ...[
                 const SizedBox(height: 12),
-                TextField(
-                    controller: _probeUrl,
-                    decoration:
-                        const InputDecoration(labelText: 'URL проверки')),
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Адрес проверки задержки',
+                  ),
+                  child: Text(
+                    widget.probeUrl,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Используется общий адрес из «Сеть → Проверка задержки».',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _interval,
@@ -1878,27 +3468,107 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                 ),
               ],
               const SizedBox(height: 16),
-              Text('Серверы', style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 6),
-              for (final profile in widget.profiles)
-                CheckboxListTile(
+              Text('Маршруты', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              Text(
+                'Можно выбрать папку целиком или раскрыть её и отметить '
+                'отдельные серверы. Выбранная папка остаётся динамической: '
+                'новые серверы в ней попадут в балансировщик автоматически.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              for (final group in widget.groups) ...[
+                ListTile(
+                  dense: true,
                   contentPadding: EdgeInsets.zero,
-                  value: _members.contains(profile.id),
-                  onChanged: (value) {
-                    setState(() {
-                      if (value == true) {
-                        _members.add(profile.id);
-                      } else {
-                        _members.remove(profile.id);
-                      }
-                    });
-                  },
-                  title: Text(profile.name),
-                  subtitle: Text(
-                    '${profile.endpoint} · '
-                    '${profile.latencyMs == null ? '- мс' : '${profile.latencyMs} мс'}',
+                  leading: Icon(
+                    group.isSubscription
+                        ? Icons.cloud_sync_outlined
+                        : group.isManualFolder
+                            ? Icons.folder_outlined
+                            : Icons.folder_open_outlined,
+                    color: OrexColors.copper,
+                  ),
+                  title: Text(
+                    group.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text('${group.profileIds.length} серверов'),
+                  mouseCursor: SystemMouseCursors.click,
+                  onTap: () => setState(() {
+                    if (!_expandedGroups.add(group.key)) {
+                      _expandedGroups.remove(group.key);
+                    }
+                  }),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_canSelectWholeGroup(group))
+                        Checkbox(
+                          value: _memberGroups.contains(group.key),
+                          onChanged: (value) {
+                            setState(() {
+                              if (value == true) {
+                                _memberGroups.add(group.key);
+                                _members.removeAll(group.profileIds);
+                                _expandedGroups.add(group.key);
+                              } else {
+                                _memberGroups.remove(group.key);
+                              }
+                            });
+                          },
+                        ),
+                      Icon(
+                        _expandedGroups.contains(group.key)
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
+                      ),
+                    ],
                   ),
                 ),
+                if (_expandedGroups.contains(group.key))
+                  for (final id in group.profileIds)
+                    if (_profileForId(id) case final profile?)
+                      Builder(
+                        builder: (context) {
+                          final inherited = _memberGroups.contains(group.key);
+                          return _NestedGroupChild(
+                            child: CheckboxListTile(
+                              dense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              value: inherited || _members.contains(profile.id),
+                              onChanged: inherited
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        if (value == true) {
+                                          _members.add(profile.id);
+                                        } else {
+                                          _members.remove(profile.id);
+                                        }
+                                      });
+                                    },
+                              title: Text(
+                                profile.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                inherited
+                                    ? 'Включён через группу · ${profile.endpoint}'
+                                    : '${profile.endpoint} · '
+                                        '${profile.latencyMs == null ? '- мс' : '${profile.latencyMs} мс'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                if (group != widget.groups.last) const Divider(height: 1),
+              ],
             ],
           ),
         ),

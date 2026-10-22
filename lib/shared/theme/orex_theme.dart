@@ -60,6 +60,9 @@ class OrexTheme {
 
   static ThemeData _build(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
+    final dividerColor =
+        (isDark ? OrexColors.ochreLight : OrexColors.copperBright)
+            .withValues(alpha: isDark ? 0.18 : 0.28);
     final scheme = ColorScheme(
       brightness: brightness,
       primary: OrexColors.copper,
@@ -79,8 +82,12 @@ class OrexTheme {
       scaffoldBackgroundColor: isDark ? OrexColors.darkBg : OrexColors.lightBg,
       splashFactory: InkSparkle.splashFactory,
       textTheme: _textTheme(isDark),
-      dividerColor: (isDark ? OrexColors.ochre : OrexColors.walnut)
-          .withValues(alpha: 0.12),
+      dividerColor: dividerColor,
+      dividerTheme: DividerThemeData(
+        color: dividerColor,
+        thickness: 1,
+        space: 1,
+      ),
       iconTheme: IconThemeData(
         color: isDark ? OrexColors.ochreLight : OrexColors.walnut,
       ),
@@ -93,6 +100,24 @@ class OrexTheme {
         backgroundColor: Colors.transparent,
         indicatorColor: OrexColors.copper.withValues(alpha: 0.2),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: ButtonStyle(
+          mouseCursor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.disabled)
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click),
+          side: WidgetStateProperty.resolveWith((states) {
+            if (!states.contains(WidgetState.disabled)) {
+              return BorderSide(color: dividerColor);
+            }
+            return BorderSide(
+              color: dividerColor.withValues(
+                alpha: (isDark ? 0.18 : 0.28) * 0.55,
+              ),
+            );
+          }),
+        ),
+      ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: OrexColors.copper,
@@ -101,7 +126,40 @@ class OrexTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
+        ).copyWith(
+          mouseCursor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.disabled)
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click),
         ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: ButtonStyle(
+          mouseCursor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.disabled)
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: ButtonStyle(
+          mouseCursor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.disabled)
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click),
+        ),
+      ),
+      // Consistent width and corners for all standard editors and dialogs.
+      dialogTheme: DialogThemeData(
+        constraints: const BoxConstraints(maxWidth: 720),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        backgroundColor:
+            isDark ? OrexColors.darkSurface : OrexColors.lightSurface,
+        surfaceTintColor: Colors.transparent,
+        iconColor: OrexColors.copper,
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,

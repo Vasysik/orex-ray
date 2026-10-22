@@ -30,6 +30,23 @@ void main() {
     expect(totals.uploadBytes, 700);
   });
 
+  test('parses per-outbound totals for balancer members', () {
+    final response = <int>[
+      ..._field(1, _stat('outbound>>>proxy-0>>>traffic>>>downlink', 120)),
+      ..._field(1, _stat('outbound>>>proxy-0>>>traffic>>>uplink', 30)),
+      ..._field(1, _stat('outbound>>>proxy-1>>>traffic>>>downlink', 400)),
+      ..._field(1, _stat('outbound>>>fallback-proxy>>>traffic>>>uplink', 50)),
+      ..._field(1, _stat('outbound>>>direct>>>traffic>>>downlink', 9999)),
+    ];
+
+    final totals = XrayStatsClient.parseOutboundTotalsResponse(response);
+
+    expect(totals['proxy-0'], 150);
+    expect(totals['proxy-1'], 400);
+    expect(totals['fallback-proxy'], 50);
+    expect(totals.containsKey('direct'), isFalse);
+  });
+
   test('supports multi-byte protobuf varints', () {
     final response = _field(
       1,

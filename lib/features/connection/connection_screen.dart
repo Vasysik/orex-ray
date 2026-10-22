@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/widgets/orex_confirm_dialog.dart';
 import '../../shared/widgets/orex_edit_dialog.dart';
+import '../../shared/widgets/orex_proxy_copy.dart';
 import '../../shared/widgets/settings_section.dart';
 import '../home/tunnel_controller.dart';
 
@@ -69,19 +71,30 @@ class ConnectionScreen extends StatelessWidget {
             const SizedBox(height: 16),
             SettingsSection(
               title: 'Сеть',
-              subtitle:
-                  'Эти порты используются и режимом системного прокси Windows.',
+              subtitle: 'Локальные порты SOCKS5/HTTP и параметры доступа.',
               children: [
                 ListTile(
                   enabled: !locked,
                   leading: Icon(Icons.cable_rounded, color: editableIconColor),
                   title: const Text('SOCKS5'),
                   subtitle: Text(
-                      '${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.socksPort}'),
-                  trailing: Icon(
-                    Icons.chevron_right_rounded,
-                    color: chevronColor,
+                    '${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.socksPort}',
                   ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ProxyCopyButton(
+                        protocol: 'SOCKS5',
+                        scheme: 'socks5',
+                        port: settings.socksPort,
+                        allowLan: settings.allowLan,
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: chevronColor),
+                    ],
+                  ),
+                  mouseCursor: locked
+                      ? SystemMouseCursors.basic
+                      : SystemMouseCursors.click,
                   onTap: locked
                       ? null
                       : () => _editNumber(
@@ -99,11 +112,23 @@ class ConnectionScreen extends StatelessWidget {
                   leading: Icon(Icons.http_rounded, color: editableIconColor),
                   title: const Text('HTTP'),
                   subtitle: Text(
-                      '${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.httpPort}'),
-                  trailing: Icon(
-                    Icons.chevron_right_rounded,
-                    color: chevronColor,
+                    '${settings.allowLan ? '0.0.0.0' : '127.0.0.1'}:${settings.httpPort}',
                   ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ProxyCopyButton(
+                        protocol: 'HTTP',
+                        scheme: 'http',
+                        port: settings.httpPort,
+                        allowLan: settings.allowLan,
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: chevronColor),
+                    ],
+                  ),
+                  mouseCursor: locked
+                      ? SystemMouseCursors.basic
+                      : SystemMouseCursors.click,
                   onTap: locked
                       ? null
                       : () => _editNumber(
@@ -157,6 +182,9 @@ class ConnectionScreen extends StatelessWidget {
                     Icons.chevron_right_rounded,
                     color: chevronColor,
                   ),
+                  mouseCursor: locked
+                      ? SystemMouseCursors.basic
+                      : SystemMouseCursors.click,
                   onTap: locked
                       ? null
                       : () => _editNumber(
@@ -177,6 +205,43 @@ class ConnectionScreen extends StatelessWidget {
   }
 }
 
+
+/// A compact, independent action beside the port editor's chevron.
+/// It remains available even while the surrounding ListTile is disabled.
+class _ProxyCopyButton extends StatelessWidget {
+  const _ProxyCopyButton({
+    required this.protocol,
+    required this.scheme,
+    required this.port,
+    required this.allowLan,
+  });
+
+  final String protocol;
+  final String scheme;
+  final int port;
+  final bool allowLan;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Копировать $protocol',
+      icon: const Icon(Icons.copy_rounded, size: 19),
+      onPressed: () {
+        final box = context.findRenderObject();
+        if (box is! RenderBox) return;
+        OrexProxyCopy.showAddressMenu(
+          context,
+          globalPosition: box.localToGlobal(box.size.center(Offset.zero)),
+          protocol: protocol,
+          scheme: scheme,
+          port: port,
+          allowLan: allowLan,
+        );
+      },
+    );
+  }
+}
+
 Future<void> _setAllowLan(
   BuildContext context,
   ConnectionSettingsController settings,
@@ -189,25 +254,16 @@ Future<void> _setAllowLan(
 
   final confirmed = await showDialog<bool>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          icon: const Icon(Icons.warning_amber_rounded),
-          title: const Text('Открыть прокси в локальную сеть?'),
-          content: const Text(
+        builder: (dialogContext) => const OrexConfirmDialog(
+          icon: Icons.warning_amber_rounded,
+          title: 'Открыть прокси в локальную сеть?',
+          content: Text(
             'SOCKS5 и HTTP-прокси OrexRay сейчас не требуют пароль. '
             'После включения другие устройства в этой локальной сети смогут '
             'использовать твой прокси, если соединение не блокирует firewall. '
             'Включай это только в доверенной сети.',
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Открыть доступ'),
-            ),
-          ],
+          confirmLabel: 'Открыть доступ',
         ),
       ) ??
       false;

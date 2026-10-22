@@ -97,6 +97,10 @@ object OrexRayTunnelEvents {
         val latency = (value["latencyMs"] as? Number)?.toInt()
         if (latency == null) remove("latencyMs") else putInt("latencyMs", latency)
         putString("pingStatus", value["pingStatus"] as? String ?: "unknown")
+        putNullableString(
+            "activeBalancerMemberId",
+            value["activeBalancerMemberId"] as? String,
+        )
     }
 
     internal fun fromBundle(bundle: Bundle): Map<String, Any?> = event(
@@ -112,6 +116,7 @@ object OrexRayTunnelEvents {
         durationSeconds = bundle.getLong("durationSeconds"),
         latencyMs = if (bundle.containsKey("latencyMs")) bundle.getInt("latencyMs") else null,
         pingStatus = bundle.getString("pingStatus") ?: "unknown",
+        activeBalancerMemberId = bundle.getString("activeBalancerMemberId"),
     )
 
     private fun Intent.eventBundle(): Bundle? = if (Build.VERSION.SDK_INT >= 33) {
@@ -138,6 +143,7 @@ object OrexRayTunnelEvents {
         durationSeconds: Long = 0,
         latencyMs: Int? = null,
         pingStatus: String = "unknown",
+        activeBalancerMemberId: String? = null,
     ): Map<String, Any?> = mapOf(
         "status" to status,
         "mode" to mode,
@@ -151,5 +157,6 @@ object OrexRayTunnelEvents {
         "durationSeconds" to durationSeconds,
         "latencyMs" to latencyMs,
         "pingStatus" to pingStatus,
+        "activeBalancerMemberId" to activeBalancerMemberId,
     )
 }

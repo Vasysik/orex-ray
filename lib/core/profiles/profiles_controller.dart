@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:crypto/crypto.dart';
 
 import 'package:flutter/foundation.dart';
 
@@ -6,6 +9,9 @@ import '../tunnel/tunnel_models.dart';
 import 'latency_probe.dart';
 import 'profile_repository.dart';
 import 'proxy_link_parser.dart';
+import 'proxy_subscription.dart';
+import 'subscription_parser.dart';
+import 'subscription_source.dart';
 import 'xray_json_codec.dart';
 
 class XrayJsonImportResult {
@@ -22,36 +28,95 @@ class XrayJsonImportResult {
   int get changedCount => addedCount + updatedCount;
 }
 
+
+class SubscriptionSyncResult {
+  const SubscriptionSyncResult({
+    required this.subscription,
+    required this.addedCount,
+    required this.updatedCount,
+    required this.removedCount,
+    required this.skippedUnsupported,
+  });
+
+  final ProxySubscription subscription;
+  final int addedCount;
+  final int updatedCount;
+  final int removedCount;
+  final int skippedUnsupported;
+}
+
+class _LoadedSubscription {
+  const _LoadedSubscription({required this.fetched, required this.parsed});
+
+  final SubscriptionFetchResult fetched;
+  final SubscriptionParseResult parsed;
+}
+
+class ProfileGroupInfo {
+  const ProfileGroupInfo({
+    required this.key,
+    required this.title,
+    required this.profileIds,
+    required this.subscription,
+  });
+
+  final String key;
+  final String title;
+  final List<String> profileIds;
+  final ProxySubscription? subscription;
+
+  bool get isSubscription => subscription != null;
+  bool get isManualGroup => key.startsWith('manual:group:');
+  bool get isManualFolder => key.startsWith('manual:');
+}
+
 class ProfilesController extends ChangeNotifier {
   ProfilesController._({
     required ProfileRepository repository,
     required List<TunnelProfile> profiles,
     required List<BalancerProfile> balancers,
+    required List<ProxySubscription> subscriptions,
     required String? selectedId,
     required LatencyProbe latencyProbe,
+    required SubscriptionSource subscriptionSource,
   })  : _repository = repository,
         _profiles = List<TunnelProfile>.from(profiles),
         _balancers = List<BalancerProfile>.from(balancers),
+        _subscriptions = List<ProxySubscription>.from(subscriptions),
         _selectedId = selectedId,
-        _latencyProbe = latencyProbe;
+        _latencyProbe = latencyProbe,
+        _subscriptionSource = subscriptionSource;
 
   final ProfileRepository _repository;
   final ProxyLinkParser _parser = const ProxyLinkParser();
   final XrayJsonCodec _xrayJsonCodec = const XrayJsonCodec();
+  final SubscriptionParser _subscriptionParser = const SubscriptionParser();
+  final SubscriptionSource _subscriptionSource;
   final LatencyProbe _latencyProbe;
   final List<TunnelProfile> _profiles;
   final List<BalancerProfile> _balancers;
+  final List<ProxySubscription> _subscriptions;
   String? _selectedId;
   static const _maxProfiles = 500;
   bool _refreshingLatency = false;
+  bool _refreshingSubscriptions = false;
+  bool _autoRefreshInFlight = false;
+  bool _metadataRefreshInFlight = false;
+  final Set<String> _refreshingSubscriptionIds = <String>{};
+  // Invalidates in-flight downloads after a subscription is removed or changed.
+  final Map<String, int> _subscriptionRevisions = <String, int>{};
+  final Map<String, int> _lastAutoRefreshAttemptEpochMs = <String, int>{};
+  final Map<String, int> _lastMetadataRefreshAttemptEpochMs = <String, int>{};
   bool _disposed = false;
 
   static Future<ProfilesController> load({
     LatencyProbe latencyProbe = const LatencyProbe(),
+    SubscriptionSource? subscriptionSource,
   }) async {
     final repository = await ProfileRepository.load();
     final profiles = repository.readProfiles();
     final balancers = repository.readBalancers();
+    final subscriptions = repository.readSubscriptions();
     var selectedId = repository.readSelectedId();
     final allIds = <String>{
       ...profiles.map((item) => item.id),
@@ -64,14 +129,311 @@ class ProfilesController extends ChangeNotifier {
       repository: repository,
       profiles: profiles,
       balancers: balancers,
+      subscriptions: subscriptions,
       selectedId: selectedId,
       latencyProbe: latencyProbe,
+      subscriptionSource: subscriptionSource ?? SubscriptionSource(),
     );
   }
 
   List<TunnelProfile> get profiles => List.unmodifiable(_profiles);
   List<BalancerProfile> get balancers => List.unmodifiable(_balancers);
+  List<ProxySubscription> get subscriptions => List.unmodifiable(_subscriptions);
   bool get refreshingLatency => _refreshingLatency;
+  bool get refreshingSubscriptions => _refreshingSubscriptions;
+  bool subscriptionRefreshing(String id) =>
+      _refreshingSubscriptions || _refreshingSubscriptionIds.contains(id);
+
+  ProxySubscription? subscriptionForProfile(String profileId) {
+    for (final subscription in _subscriptions) {
+      if (subscription.profileIds.contains(profileId)) return subscription;
+    }
+    return null;
+  }
+
+  bool isSubscriptionProfile(String profileId) =>
+      subscriptionForProfile(profileId) != null;
+
+  List<ProfileGroupInfo> get profileGroups {
+    final subscriptionByProfileId = <String, ProxySubscription>{
+      for (final subscription in _subscriptions)
+        for (final profileId in subscription.profileIds) profileId: subscription,
+    };
+    final groupedIds = <String, List<String>>{};
+    final titles = <String, String>{};
+    final subscriptionsByKey = <String, ProxySubscription?>{};
+
+    for (final profile in _profiles) {
+      final subscription = subscriptionByProfileId[profile.id];
+      late final String key;
+      late final String title;
+      if (subscription != null) {
+        key = 'subscription:${subscription.id}';
+        title = subscription.name;
+      } else {
+        final groupName = profile.groupName.trim();
+        if (groupName.isEmpty) {
+          key = 'manual:ungrouped';
+          title = 'Серверы';
+        } else {
+          key = 'manual:group:$groupName';
+          title = groupName;
+        }
+      }
+      groupedIds.putIfAbsent(key, () => <String>[]).add(profile.id);
+      titles[key] = title;
+      subscriptionsByKey[key] = subscription;
+    }
+
+    return List.unmodifiable([
+      for (final entry in groupedIds.entries)
+        ProfileGroupInfo(
+          key: entry.key,
+          title: titles[entry.key]!,
+          profileIds: List.unmodifiable(entry.value),
+          subscription: subscriptionsByKey[entry.key],
+        ),
+    ]);
+  }
+
+  String profileGroupKey(String profileId) {
+    final subscription = subscriptionForProfile(profileId);
+    if (subscription != null) return 'subscription:${subscription.id}';
+    final profile = _profileById(profileId);
+    if (profile == null || profile.groupName.trim().isEmpty) {
+      return 'manual:ungrouped';
+    }
+    return 'manual:group:${profile.groupName.trim()}';
+  }
+
+  List<String> effectiveBalancerMemberIds(BalancerProfile balancer) {
+    final ids = <String>{
+      for (final id in balancer.memberIds)
+        if (_profileById(id) != null) id,
+    };
+    if (balancer.memberGroupKeys.isNotEmpty) {
+      final groupsByKey = <String, ProfileGroupInfo>{
+        for (final group in profileGroups) group.key: group,
+      };
+      for (final key in balancer.memberGroupKeys) {
+        final group = groupsByKey[key];
+        if (group != null) ids.addAll(group.profileIds);
+      }
+    }
+    return List.unmodifiable(ids);
+  }
+
+  List<TunnelProfile> effectiveBalancerMembers(BalancerProfile balancer) {
+    final members = <TunnelProfile>[];
+    for (final id in effectiveBalancerMemberIds(balancer)) {
+      final profile = _profileById(id);
+      if (profile != null) members.add(profile);
+    }
+    return List.unmodifiable(members);
+  }
+
+  List<String> get manualGroupNames => List.unmodifiable(
+        profileGroups
+            .where((group) => group.isManualGroup)
+            .map((group) => group.title),
+      );
+
+  Future<int> setProfilesGroup(
+    Iterable<String> profileIds,
+    String? groupName,
+  ) async {
+    final normalized = groupName?.trim() ?? '';
+    if (normalized.length > 80) {
+      throw const FormatException('Название группы слишком длинное');
+    }
+    final ids = profileIds.toSet();
+    if (ids.isEmpty) return 0;
+    final subscriptionIds = <String>{
+      for (final subscription in _subscriptions) ...subscription.profileIds,
+    };
+    var changed = 0;
+    for (var index = 0; index < _profiles.length; index++) {
+      final profile = _profiles[index];
+      if (!ids.contains(profile.id) || subscriptionIds.contains(profile.id)) {
+        continue;
+      }
+      if (profile.groupName == normalized) continue;
+      _profiles[index] = normalized.isEmpty
+          ? profile.copyWith(clearGroup: true)
+          : profile.copyWith(groupName: normalized);
+      changed += 1;
+    }
+    if (changed == 0) return 0;
+    await _repository.saveProfiles(_profiles);
+    _notifyListeners();
+    return changed;
+  }
+
+  Future<void> renameProfileGroup(String oldName, String newName) async {
+    final oldValue = oldName.trim();
+    final newValue = newName.trim();
+    if (oldValue.isEmpty || newValue.isEmpty) {
+      throw const FormatException('Укажи название группы');
+    }
+    if (newValue.length > 80) {
+      throw const FormatException('Название группы слишком длинное');
+    }
+    if (oldValue == newValue) return;
+    for (var index = 0; index < _profiles.length; index++) {
+      final profile = _profiles[index];
+      if (profile.groupName == oldValue && !isSubscriptionProfile(profile.id)) {
+        _profiles[index] = profile.copyWith(groupName: newValue);
+      }
+    }
+    final oldKey = 'manual:group:$oldValue';
+    final newKey = 'manual:group:$newValue';
+    for (var index = 0; index < _balancers.length; index++) {
+      final balancer = _balancers[index];
+      if (!balancer.memberGroupKeys.contains(oldKey)) continue;
+      _balancers[index] = balancer.copyWith(
+        memberGroupKeys: {
+          for (final key in balancer.memberGroupKeys)
+            if (key == oldKey) newKey else key,
+        }.toList(growable: false),
+      );
+    }
+    await _repository.saveProfiles(_profiles);
+    await _repository.saveBalancers(_balancers);
+    _notifyListeners();
+  }
+
+  Future<void> deleteProfileGroup(
+    String name, {
+    bool deleteProfilesWithGroup = false,
+  }) async {
+    final normalized = name.trim();
+    final ids = _profiles
+        .where(
+          (profile) => profile.groupName == normalized &&
+              !isSubscriptionProfile(profile.id),
+        )
+        .map((profile) => profile.id)
+        .toSet();
+    if (ids.isEmpty) return;
+    final groupKey = 'manual:group:$normalized';
+    for (var index = 0; index < _balancers.length; index++) {
+      final balancer = _balancers[index];
+      if (!balancer.memberGroupKeys.contains(groupKey)) continue;
+      _balancers[index] = balancer.copyWith(
+        memberIds: deleteProfilesWithGroup
+            ? balancer.memberIds
+            : <String>{...balancer.memberIds, ...ids}.toList(growable: false),
+        memberGroupKeys: balancer.memberGroupKeys
+            .where((key) => key != groupKey)
+            .toList(growable: false),
+      );
+    }
+    if (deleteProfilesWithGroup) {
+      await deleteProfiles(ids);
+      return;
+    }
+    await setProfilesGroup(ids, null);
+    await _repository.saveBalancers(_balancers);
+  }
+
+  Future<void> reorderSubscriptions(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _subscriptions.length) return;
+    if (newIndex < 0 || newIndex >= _subscriptions.length || oldIndex == newIndex) {
+      return;
+    }
+    final moved = _subscriptions.removeAt(oldIndex);
+    _subscriptions.insert(newIndex, moved);
+
+    final subscriptionIds = <String>{
+      for (final subscription in _subscriptions) ...subscription.profileIds,
+    };
+    final slots = <int>[];
+    final profilesBySubscription = <String, List<TunnelProfile>>{
+      for (final subscription in _subscriptions) subscription.id: <TunnelProfile>[],
+    };
+    for (var index = 0; index < _profiles.length; index++) {
+      final profile = _profiles[index];
+      if (!subscriptionIds.contains(profile.id)) continue;
+      slots.add(index);
+      final owner = subscriptionForProfile(profile.id);
+      if (owner != null) profilesBySubscription[owner.id]!.add(profile);
+    }
+    final reorderedProfiles = <TunnelProfile>[
+      for (final subscription in _subscriptions)
+        ...profilesBySubscription[subscription.id]!,
+    ];
+    if (reorderedProfiles.length == slots.length) {
+      for (var index = 0; index < slots.length; index++) {
+        _profiles[slots[index]] = reorderedProfiles[index];
+      }
+    }
+
+    await _repository.saveProfiles(_profiles);
+    await _repository.saveSubscriptions(_subscriptions);
+    _notifyListeners();
+  }
+
+  Future<void> reorderProfileGroups(
+    List<String> sectionKeys,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (oldIndex < 0 || oldIndex >= sectionKeys.length) return;
+    if (newIndex < 0 || newIndex >= sectionKeys.length || oldIndex == newIndex) {
+      return;
+    }
+
+    final reorderedKeys = List<String>.from(sectionKeys);
+    final moved = reorderedKeys.removeAt(oldIndex);
+    reorderedKeys.insert(newIndex, moved);
+    final sectionKeySet = sectionKeys.toSet();
+    final profilesBySection = <String, List<TunnelProfile>>{};
+    final selectedSlots = <int>[];
+    for (var index = 0; index < _profiles.length; index++) {
+      final profile = _profiles[index];
+      final key = profileGroupKey(profile.id);
+      if (!sectionKeySet.contains(key)) continue;
+      selectedSlots.add(index);
+      profilesBySection.putIfAbsent(key, () => <TunnelProfile>[]).add(profile);
+    }
+
+    final reordered = <TunnelProfile>[
+      for (final key in reorderedKeys) ...?profilesBySection[key],
+    ];
+    if (reordered.length != selectedSlots.length) return;
+    for (var index = 0; index < selectedSlots.length; index++) {
+      _profiles[selectedSlots[index]] = reordered[index];
+    }
+    await _repository.saveProfiles(_profiles);
+    _notifyListeners();
+  }
+
+  Future<void> reorderProfilesInScope(
+    List<String> scopeIds,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (oldIndex < 0 || oldIndex >= scopeIds.length) return;
+    if (newIndex < 0 ||
+        newIndex >= scopeIds.length ||
+        newIndex == oldIndex) {
+      return;
+    }
+    final reorderedIds = List<String>.from(scopeIds);
+    final moved = reorderedIds.removeAt(oldIndex);
+    reorderedIds.insert(newIndex, moved);
+    final byId = <String, TunnelProfile>{
+      for (final profile in _profiles) profile.id: profile,
+    };
+    var replacementIndex = 0;
+    for (var index = 0; index < _profiles.length; index++) {
+      if (!scopeIds.contains(_profiles[index].id)) continue;
+      final replacement = byId[reorderedIds[replacementIndex++]];
+      if (replacement != null) _profiles[index] = replacement;
+    }
+    await _repository.saveProfiles(_profiles);
+    _notifyListeners();
+  }
 
   /// Whether the injected direct TCP probe is protected from an active VPN
   /// TUN. See [LatencyProbe.canMeasureWhileVpnActive].
@@ -108,12 +470,8 @@ class ProfilesController extends ChangeNotifier {
   }
 
   TunnelTarget? _resolveBalancer(BalancerProfile balancer) {
-    final members = <TunnelProfile>[];
-    for (final id in balancer.memberIds) {
-      final profile = _profileById(id);
-      if (profile != null) members.add(profile);
-    }
-    if (members.length < 2) return null;
+    final members = effectiveBalancerMembers(balancer);
+    if (members.isEmpty) return null;
     final fallbackProfileId = balancer.fallbackProfileId;
     final fallbackProfile =
         fallbackProfileId == null ? null : _profileById(fallbackProfileId);
@@ -129,6 +487,508 @@ class ProfilesController extends ChangeNotifier {
       if (profile.id == id) return profile;
     }
     return null;
+  }
+
+  Future<SubscriptionSyncResult> importSubscription(String url) async {
+    final normalizedUrl = url.trim();
+    final existingIndex = _subscriptions.indexWhere(
+      (subscription) => subscription.url == normalizedUrl,
+    );
+    final existing = existingIndex >= 0 ? _subscriptions[existingIndex] : null;
+    final id = existing?.id ?? ProxySubscription.idForUrl(normalizedUrl);
+    final revision = _subscriptionRevisions[id] ?? 0;
+    final loaded = await _loadSubscription(normalizedUrl);
+    return _applySubscription(
+      id: id,
+      url: normalizedUrl,
+      existing: existing,
+      fetched: loaded.fetched,
+      parsed: loaded.parsed,
+      expectedRevision: revision,
+    );
+  }
+
+  Future<SubscriptionSyncResult> refreshSubscription(String id) async {
+    if (_refreshingSubscriptionIds.contains(id)) {
+      throw const FormatException('Подписка уже обновляется');
+    }
+    ProxySubscription? existing;
+    for (final item in _subscriptions) {
+      if (item.id == id) {
+        existing = item;
+        break;
+      }
+    }
+    if (existing == null) {
+      throw const FormatException('Подписка не найдена');
+    }
+    final revision = _subscriptionRevisions[id] ?? 0;
+    _refreshingSubscriptionIds.add(id);
+    _notifyListeners();
+    try {
+      final loaded = await _loadSubscription(existing.url);
+      return await _applySubscription(
+        id: existing.id,
+        url: existing.url,
+        existing: existing,
+        fetched: loaded.fetched,
+        parsed: loaded.parsed,
+        expectedRevision: revision,
+      );
+    } finally {
+      _refreshingSubscriptionIds.remove(id);
+      _notifyListeners();
+    }
+  }
+
+  Future<_LoadedSubscription> _loadSubscription(String url) async {
+    const userAgents = <String>[
+      'OrexRay/Subscription',
+      // Some panels choose the subscription representation from User-Agent.
+      // Retry only after the native OrexRay request fails so ordinary
+      // providers never receive an impersonated compatibility UA.
+      'v2rayN/7.15.2 OrexRay/Subscription',
+    ];
+    FormatException? firstError;
+    for (final userAgent in userAgents) {
+      try {
+        final fetched = await _subscriptionSource.loadUrl(
+          url,
+          userAgent: userAgent,
+        );
+        final parsed = _subscriptionParser.parse(fetched.body);
+        return _LoadedSubscription(fetched: fetched, parsed: parsed);
+      } on FormatException catch (error) {
+        firstError ??= error;
+      }
+    }
+    throw firstError ?? const FormatException('Не удалось прочитать подписку');
+  }
+
+  Future<SubscriptionMetadataResult?> _loadSubscriptionMetadata(
+    String url,
+  ) async {
+    const userAgents = <String>[
+      'OrexRay/Subscription',
+      'v2rayN/7.15.2 OrexRay/Subscription',
+    ];
+    SubscriptionMetadataResult? firstResult;
+    FormatException? firstError;
+    for (final userAgent in userAgents) {
+      try {
+        final result = await _subscriptionSource.loadMetadataUrl(
+          url,
+          userAgent: userAgent,
+        );
+        if (result == null) return null;
+        firstResult ??= result;
+        if (!result.isEmpty) return result;
+      } on FormatException catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstResult != null) return firstResult;
+    if (firstError != null) throw firstError;
+    return null;
+  }
+
+  Future<int> refreshSubscriptionMetadataIfDue({
+    Duration minimumInterval = const Duration(minutes: 10),
+    DateTime? now,
+  }) async {
+    if (_disposed ||
+        _subscriptions.isEmpty ||
+        _metadataRefreshInFlight ||
+        minimumInterval <= Duration.zero) {
+      return 0;
+    }
+
+    _metadataRefreshInFlight = true;
+    final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    final intervalMs = minimumInterval.inMilliseconds;
+    var touched = 0;
+    var changed = false;
+    try {
+      for (final snapshot in List<ProxySubscription>.from(_subscriptions)) {
+        if (_disposed) break;
+        if (_refreshingSubscriptionIds.contains(snapshot.id) ||
+            snapshot.metadataHeadUnsupported) {
+          continue;
+        }
+        final lastCheck = snapshot.lastMetadataCheckEpochMs;
+        if (lastCheck != null && nowMs - lastCheck < intervalMs) continue;
+        final lastAttempt = _lastMetadataRefreshAttemptEpochMs[snapshot.id];
+        if (lastAttempt != null && nowMs - lastAttempt < intervalMs) continue;
+        _lastMetadataRefreshAttemptEpochMs[snapshot.id] = nowMs;
+
+        try {
+          final metadata = await _loadSubscriptionMetadata(snapshot.url);
+          if (metadata == null || metadata.isEmpty) {
+            // Persist this across app restarts. A provider that rejects HEAD or
+            // returns no useful subscription headers should not be probed again
+            // solely for metadata until a normal GET refresh gives it another
+            // chance and clears the flag.
+            final index =
+                _subscriptions.indexWhere((item) => item.id == snapshot.id);
+            if (index >= 0) {
+              _subscriptions[index] = _subscriptions[index].copyWith(
+                metadataHeadUnsupported: true,
+                lastMetadataCheckEpochMs: nowMs,
+              );
+              changed = true;
+            }
+            continue;
+          }
+          if (_disposed) break;
+          final index = _subscriptions.indexWhere((item) => item.id == snapshot.id);
+          if (index < 0) continue;
+          final current = _subscriptions[index];
+          final title = metadata.profileTitle?.trim();
+          _subscriptions[index] = current.copyWith(
+            name: title != null && title.isNotEmpty ? title : null,
+            lastMetadataCheckEpochMs: nowMs,
+            updateIntervalHours: metadata.updateIntervalHours,
+            userInfo: metadata.userInfo,
+            supportUrl: metadata.supportUrl,
+            webPageUrl: metadata.webPageUrl,
+            announce: metadata.announce,
+          );
+          touched += 1;
+          changed = true;
+        } on Object {
+          // Metadata refresh is best-effort. A failed HEAD request must not
+          // affect the existing subscription or its server list.
+        }
+      }
+      if (changed) {
+        await _repository.saveSubscriptions(_subscriptions);
+        if (!_disposed) _notifyListeners();
+      }
+      return touched;
+    } finally {
+      _metadataRefreshInFlight = false;
+    }
+  }
+
+  Future<List<SubscriptionSyncResult>> refreshSubscriptionsIfDue({
+    required int minimumIntervalHours,
+    DateTime? now,
+  }) async {
+    if (_disposed ||
+        minimumIntervalHours <= 0 ||
+        _subscriptions.isEmpty ||
+        _autoRefreshInFlight) {
+      return const [];
+    }
+
+    _autoRefreshInFlight = true;
+    final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    final retryCooldownMs = const Duration(minutes: 15).inMilliseconds;
+    final results = <SubscriptionSyncResult>[];
+    try {
+      for (final subscription
+          in List<ProxySubscription>.from(_subscriptions)) {
+        if (_disposed) break;
+        final providerInterval = subscription.updateIntervalHours ?? 0;
+        final effectiveHours = providerInterval > minimumIntervalHours
+            ? providerInterval
+            : minimumIntervalHours;
+        final intervalMs = Duration(hours: effectiveHours).inMilliseconds;
+        final lastUpdated = subscription.lastUpdatedEpochMs;
+        if (lastUpdated != null && nowMs - lastUpdated < intervalMs) continue;
+
+        final lastAttempt = _lastAutoRefreshAttemptEpochMs[subscription.id];
+        if (lastAttempt != null && nowMs - lastAttempt < retryCooldownMs) {
+          continue;
+        }
+        _lastAutoRefreshAttemptEpochMs[subscription.id] = nowMs;
+
+        try {
+          results.add(await refreshSubscription(subscription.id));
+        } on Object {
+          // Automatic refresh is best-effort. Keep the previous subscription
+          // intact and let a later app resume/start retry after the cooldown.
+        }
+      }
+      return List.unmodifiable(results);
+    } finally {
+      _autoRefreshInFlight = false;
+    }
+  }
+
+  Future<List<SubscriptionSyncResult>> refreshAllSubscriptions() async {
+    if (_refreshingSubscriptions ||
+        _autoRefreshInFlight ||
+        _subscriptions.isEmpty) {
+      return const [];
+    }
+    _refreshingSubscriptions = true;
+    _notifyListeners();
+    final results = <SubscriptionSyncResult>[];
+    try {
+      for (final subscription in List<ProxySubscription>.from(_subscriptions)) {
+        if (_disposed) break;
+        try {
+          results.add(await refreshSubscription(subscription.id));
+        } on Object {
+          // One unavailable provider must not stop the remaining subscriptions.
+          // Its existing profiles are preserved by refreshSubscription.
+        }
+      }
+      return List.unmodifiable(results);
+    } finally {
+      _refreshingSubscriptions = false;
+      _notifyListeners();
+    }
+  }
+
+  Future<void> deleteSubscription(String id) async {
+    final index = _subscriptions.indexWhere((item) => item.id == id);
+    if (index < 0) return;
+    final subscription = _subscriptions[index];
+    // Invalidate any GET request which started before this deletion.
+    _subscriptionRevisions[id] = (_subscriptionRevisions[id] ?? 0) + 1;
+    _lastAutoRefreshAttemptEpochMs.remove(subscription.id);
+    _lastMetadataRefreshAttemptEpochMs.remove(subscription.id);
+    final removedIds = subscription.profileIds.toSet();
+    final workingProfiles = List<TunnelProfile>.from(_profiles)
+      ..removeWhere((profile) => removedIds.contains(profile.id));
+    final subscriptionGroupKey = 'subscription:${subscription.id}';
+    final workingBalancers = _rewriteBalancersAfterProfileRemoval(
+      _balancers.map(
+        (balancer) => balancer.memberGroupKeys.contains(subscriptionGroupKey)
+            ? balancer.copyWith(
+                memberGroupKeys: balancer.memberGroupKeys
+                    .where((key) => key != subscriptionGroupKey)
+                    .toList(growable: false),
+              )
+            : balancer,
+      ),
+      removedIds,
+    );
+    final workingSubscriptions = List<ProxySubscription>.from(_subscriptions)
+      ..removeAt(index);
+    var selectedId = _selectedId;
+    final remainingTargetIds = <String>{
+      ...workingProfiles.map((profile) => profile.id),
+      ...workingBalancers.map((balancer) => balancer.id),
+    };
+    if (selectedId == null || !remainingTargetIds.contains(selectedId)) {
+      selectedId = workingProfiles.isNotEmpty
+          ? workingProfiles.first.id
+          : workingBalancers.isNotEmpty
+              ? workingBalancers.first.id
+              : null;
+    }
+
+    await _repository.saveProfiles(workingProfiles);
+    await _repository.saveBalancers(workingBalancers);
+    await _repository.saveSubscriptions(workingSubscriptions);
+    await _repository.saveSelectedId(selectedId);
+    if (_disposed) return;
+    _profiles
+      ..clear()
+      ..addAll(workingProfiles);
+    _balancers
+      ..clear()
+      ..addAll(workingBalancers);
+    _subscriptions
+      ..clear()
+      ..addAll(workingSubscriptions);
+    _selectedId = selectedId;
+    _notifyListeners();
+  }
+
+  Future<SubscriptionSyncResult> _applySubscription({
+    required String id,
+    required String url,
+    required ProxySubscription? existing,
+    required SubscriptionFetchResult fetched,
+    required SubscriptionParseResult parsed,
+    required int expectedRevision,
+  }) async {
+    // The HTTP request completed, but the subscription may have been deleted
+    // while it was pending. Never re-create or overwrite it from stale data.
+    if (_disposed ||
+        (_subscriptionRevisions[id] ?? 0) != expectedRevision ||
+        (existing != null &&
+            !_subscriptions.any((subscription) => subscription.id == id))) {
+      throw StateError('Подписка удалена или изменена во время обновления');
+    }
+    if (parsed.profiles.isEmpty) {
+      throw const FormatException('В подписке нет поддерживаемых серверов');
+    }
+
+    final oldIds = existing?.profileIds.toSet() ?? <String>{};
+    final workingProfiles = List<TunnelProfile>.from(_profiles);
+    var insertionIndex = workingProfiles.indexWhere(
+      (profile) => oldIds.contains(profile.id),
+    );
+    if (insertionIndex < 0) insertionIndex = 0;
+    final oldProfiles = <String, TunnelProfile>{
+      for (final profile in workingProfiles)
+        if (oldIds.contains(profile.id)) profile.id: profile,
+    };
+    workingProfiles.removeWhere((profile) => oldIds.contains(profile.id));
+    insertionIndex = insertionIndex.clamp(0, workingProfiles.length).toInt();
+
+    final imported = <TunnelProfile>[];
+    final newIds = <String>{};
+    for (final sourceProfile in parsed.profiles) {
+      _validateProfileInput(sourceProfile);
+      final derivedId = _subscriptionProfileId(id, sourceProfile.id);
+      if (!newIds.add(derivedId)) continue;
+      final old = oldProfiles[derivedId];
+      imported.add(
+        sourceProfile.copyWith(
+          id: derivedId,
+          latencyMs: old?.latencyMs,
+          pingStatus: old?.pingStatus ?? PingStatus.unknown,
+          clearLatency: old == null,
+        ),
+      );
+    }
+    if (workingProfiles.length + imported.length > _maxProfiles) {
+      throw const FormatException('Можно сохранить не больше 500 профилей');
+    }
+    workingProfiles.insertAll(insertionIndex, imported);
+
+    final removedIds = oldIds.difference(newIds);
+    final workingBalancers = _rewriteBalancersAfterProfileRemoval(
+      _balancers,
+      removedIds,
+    );
+    final title = _firstNonEmpty([
+      parsed.profileTitle,
+      fetched.profileTitle,
+      existing?.name,
+      Uri.tryParse(url)?.host,
+      'Подписка',
+    ]);
+    // Support is provider metadata, not something OrexRay infers from node
+    // remarks. A full subscription refresh is the source of truth: when the
+    // provider no longer sends support-url, remove any previously stored value.
+    final resolvedSupportUrl = parsed.supportUrl ?? fetched.supportUrl ?? '';
+    final subscription = ProxySubscription(
+      id: id,
+      url: url,
+      name: title,
+      profileIds: List.unmodifiable(imported.map((profile) => profile.id)),
+      lastUpdatedEpochMs: DateTime.now().millisecondsSinceEpoch,
+      lastMetadataCheckEpochMs: DateTime.now().millisecondsSinceEpoch,
+      updateIntervalHours: parsed.updateIntervalHours ??
+          fetched.updateIntervalHours ??
+          existing?.updateIntervalHours,
+      userInfo: parsed.userInfo ?? fetched.userInfo ?? existing?.userInfo ?? '',
+      supportUrl: resolvedSupportUrl,
+      webPageUrl:
+          parsed.webPageUrl ?? fetched.webPageUrl ?? existing?.webPageUrl ?? '',
+      announce: parsed.announce ?? fetched.announce ?? existing?.announce ?? '',
+      notices: List.unmodifiable(parsed.notices),
+    );
+    final workingSubscriptions = List<ProxySubscription>.from(_subscriptions);
+    final subscriptionIndex =
+        workingSubscriptions.indexWhere((item) => item.id == id);
+    if (subscriptionIndex >= 0) {
+      workingSubscriptions[subscriptionIndex] = subscription;
+    } else {
+      workingSubscriptions.insert(0, subscription);
+    }
+
+    var selectedId = _selectedId;
+    final remainingTargetIds = <String>{
+      ...workingProfiles.map((profile) => profile.id),
+      ...workingBalancers.map((balancer) => balancer.id),
+    };
+    if (selectedId == null || !remainingTargetIds.contains(selectedId)) {
+      selectedId = imported.isNotEmpty
+          ? imported.first.id
+          : workingProfiles.isNotEmpty
+              ? workingProfiles.first.id
+              : workingBalancers.isNotEmpty
+                  ? workingBalancers.first.id
+                  : null;
+    }
+
+    await _repository.saveProfiles(workingProfiles);
+    await _repository.saveBalancers(workingBalancers);
+    await _repository.saveSubscriptions(workingSubscriptions);
+    await _repository.saveSelectedId(selectedId);
+
+    // A successful full GET is the reset point for lightweight HEAD metadata
+    // probing. Drop the in-memory HEAD cooldown together with the persisted
+    // metadataHeadUnsupported flag so a provider can be probed again after a
+    // normal refresh. This also avoids stale cooldown timestamps if the system
+    // clock moves backwards between the HEAD attempt and the full refresh.
+    _lastMetadataRefreshAttemptEpochMs.remove(id);
+
+    if (_disposed) {
+      return SubscriptionSyncResult(
+        subscription: subscription,
+        addedCount: newIds.difference(oldIds).length,
+        updatedCount: newIds.intersection(oldIds).length,
+        removedCount: removedIds.length,
+        skippedUnsupported: parsed.skippedUnsupported,
+      );
+    }
+
+    _profiles
+      ..clear()
+      ..addAll(workingProfiles);
+    _balancers
+      ..clear()
+      ..addAll(workingBalancers);
+    _subscriptions
+      ..clear()
+      ..addAll(workingSubscriptions);
+    _selectedId = selectedId;
+    _subscriptionRevisions[id] = expectedRevision + 1;
+    _notifyListeners();
+    return SubscriptionSyncResult(
+      subscription: subscription,
+      addedCount: newIds.difference(oldIds).length,
+      updatedCount: newIds.intersection(oldIds).length,
+      removedCount: removedIds.length,
+      skippedUnsupported: parsed.skippedUnsupported,
+    );
+  }
+
+  List<BalancerProfile> _rewriteBalancersAfterProfileRemoval(
+    Iterable<BalancerProfile> source,
+    Set<String> removedIds,
+  ) {
+    if (removedIds.isEmpty) return List<BalancerProfile>.from(source);
+    final result = <BalancerProfile>[];
+    for (final balancer in source) {
+      final members = balancer.memberIds
+          .where((member) => !removedIds.contains(member))
+          .toList(growable: false);
+      if (members.isEmpty && balancer.memberGroupKeys.isEmpty) continue;
+      final fallbackRemoved = balancer.fallbackProfileId != null &&
+          removedIds.contains(balancer.fallbackProfileId);
+      result.add(
+        balancer.copyWith(
+          memberIds: members,
+          clearFallback: fallbackRemoved,
+        ),
+      );
+    }
+    return result;
+  }
+
+  String _subscriptionProfileId(String subscriptionId, String sourceId) {
+    return sha256
+        .convert(utf8.encode('$subscriptionId:$sourceId'))
+        .toString()
+        .substring(0, 32);
+  }
+
+  String _firstNonEmpty(Iterable<String?> values) {
+    for (final value in values) {
+      final trimmed = value?.trim() ?? '';
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return 'Подписка';
   }
 
   /// Imports every URI format represented by [OutboundProtocol].
@@ -149,6 +1009,7 @@ class ProfilesController extends ChangeNotifier {
     if (existingIndex >= 0) {
       final old = _profiles[existingIndex];
       _profiles[existingIndex] = profile.copyWith(
+        groupName: old.groupName,
         latencyMs: old.latencyMs,
         pingStatus: old.pingStatus,
       );
@@ -190,6 +1051,7 @@ class ProfilesController extends ChangeNotifier {
         final old = working[index];
         working[index] = profile.copyWith(
           id: old.id,
+          groupName: old.groupName,
           latencyMs: old.latencyMs,
           pingStatus: old.pingStatus,
         );
@@ -292,6 +1154,7 @@ class ProfilesController extends ChangeNotifier {
     String? id,
     required String name,
     required List<String> memberIds,
+    List<String> memberGroupKeys = const [],
     required BalancerStrategy strategy,
     required String probeUrl,
     required int probeIntervalSeconds,
@@ -301,6 +1164,18 @@ class ProfilesController extends ChangeNotifier {
         .toSet()
         .where((value) => _profileById(value) != null)
         .toList(growable: false);
+    final availableGroups = <String, ProfileGroupInfo>{
+      for (final group in profileGroups) group.key: group,
+    };
+    final uniqueGroupKeys = memberGroupKeys
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty && availableGroups.containsKey(value))
+        .toSet()
+        .toList(growable: false);
+    final effectiveMembers = <String>{...uniqueMembers};
+    for (final key in uniqueGroupKeys) {
+      effectiveMembers.addAll(availableGroups[key]!.profileIds);
+    }
     if (name.trim().isEmpty) {
       throw const FormatException('Укажи имя балансировщика');
     }
@@ -313,8 +1188,8 @@ class ProfilesController extends ChangeNotifier {
     if (memberIds.length > _maxProfiles) {
       throw const FormatException('Слишком много участников балансировщика');
     }
-    if (uniqueMembers.length < 2) {
-      throw const FormatException('Выбери минимум два профиля');
+    if (effectiveMembers.isEmpty) {
+      throw const FormatException('Выбери хотя бы один профиль или папку');
     }
     final uri = Uri.tryParse(probeUrl.trim());
     final needsObservation = strategy == BalancerStrategy.leastPing ||
@@ -348,6 +1223,7 @@ class ProfilesController extends ChangeNotifier {
       id: id ?? 'balancer-${DateTime.now().microsecondsSinceEpoch}',
       name: name.trim(),
       memberIds: uniqueMembers,
+      memberGroupKeys: uniqueGroupKeys,
       strategy: strategy,
       probeUrl: probeUrl.trim(),
       probeIntervalSeconds: probeIntervalSeconds.clamp(30, 3600).toInt(),
@@ -396,10 +1272,20 @@ class ProfilesController extends ChangeNotifier {
     _profiles.removeWhere((profile) => profile.id == id);
     _balancers.removeWhere((balancer) => balancer.id == id);
     if (wasProfile) {
+      for (var index = 0; index < _subscriptions.length; index++) {
+        final subscription = _subscriptions[index];
+        if (subscription.profileIds.contains(id)) {
+          _subscriptions[index] = subscription.copyWith(
+            profileIds: subscription.profileIds
+                .where((profileId) => profileId != id)
+                .toList(growable: false),
+          );
+        }
+      }
       _balancers.removeWhere((balancer) {
         final remaining =
             balancer.memberIds.where((member) => member != id).length;
-        return remaining < 2;
+        return remaining == 0 && balancer.memberGroupKeys.isEmpty;
       });
       for (var index = 0; index < _balancers.length; index++) {
         final balancer = _balancers[index];
@@ -433,11 +1319,21 @@ class ProfilesController extends ChangeNotifier {
     if (removedIds.isEmpty) return;
 
     _profiles.removeWhere((profile) => removedIds.contains(profile.id));
+    for (var index = 0; index < _subscriptions.length; index++) {
+      final subscription = _subscriptions[index];
+      if (subscription.profileIds.any(removedIds.contains)) {
+        _subscriptions[index] = subscription.copyWith(
+          profileIds: subscription.profileIds
+              .where((profileId) => !removedIds.contains(profileId))
+              .toList(growable: false),
+        );
+      }
+    }
     _balancers.removeWhere((balancer) {
       final remaining = balancer.memberIds
           .where((member) => !removedIds.contains(member))
           .length;
-      return remaining < 2;
+      return remaining == 0 && balancer.memberGroupKeys.isEmpty;
     });
     for (var index = 0; index < _balancers.length; index++) {
       final balancer = _balancers[index];
@@ -777,6 +1673,7 @@ class ProfilesController extends ChangeNotifier {
     if (_disposed) return;
     await _repository.saveProfiles(_profiles);
     await _repository.saveBalancers(_balancers);
+    await _repository.saveSubscriptions(_subscriptions);
     await _repository.saveSelectedId(_selectedId);
   }
 
