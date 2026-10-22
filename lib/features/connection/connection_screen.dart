@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_models.dart';
-import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_confirm_dialog.dart';
 import '../../shared/widgets/orex_edit_dialog.dart';
 import '../../shared/widgets/orex_proxy_copy.dart';
@@ -26,7 +26,7 @@ class ConnectionScreen extends StatelessWidget {
       builder: (context, _) {
         final locked = !tunnel.canChangeMode;
         final disabledColor = Theme.of(context).disabledColor;
-        final editableIconColor = locked ? disabledColor : OrexColors.copper;
+        final editableIconColor = locked ? disabledColor : OrexPalette.of(context).accent;
         final chevronColor = locked ? disabledColor : null;
         return ListView(
           padding: const EdgeInsets.all(20),
@@ -58,7 +58,7 @@ class ConnectionScreen extends StatelessWidget {
                           enabled: !locked,
                           secondary: Icon(
                             _modeIcon(mode),
-                            color: OrexColors.copper,
+                            color: OrexPalette.of(context).accent,
                           ),
                           title: Text(mode.title),
                           subtitle: Text(mode.description),
@@ -143,7 +143,7 @@ class ConnectionScreen extends StatelessWidget {
                 const Divider(height: 1),
                 SwitchListTile(
                   secondary:
-                      const Icon(Icons.lan_rounded, color: OrexColors.copper),
+                      Icon(Icons.lan_rounded, color: OrexPalette.of(context).accent),
                   title: const Text('Доступ из локальной сети'),
                   subtitle:
                       const Text('Слушать 0.0.0.0 вместо только localhost'),
@@ -154,8 +154,8 @@ class ConnectionScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(Icons.multiple_stop_rounded,
-                      color: OrexColors.copper),
+                  secondary: Icon(Icons.multiple_stop_rounded,
+                      color: OrexPalette.of(context).accent),
                   title: const Text('Прокси параллельно VPN'),
                   subtitle: const Text(
                     'Оставлять SOCKS5 и HTTP доступными, пока работает TUN/VPN',

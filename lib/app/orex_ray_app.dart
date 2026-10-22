@@ -16,6 +16,8 @@ import '../platform/android/android_startup_controller.dart';
 import '../platform/windows/windows_lifecycle_controller.dart';
 import '../shared/theme/glass.dart';
 import '../shared/theme/orex_theme.dart';
+import '../shared/theme/orex_palette.dart';
+import '../shared/widgets/squirrel_mascot.dart';
 import '../shared/theme/theme_controller.dart';
 
 class OrexRayApp extends StatefulWidget {
@@ -174,13 +176,33 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'OrexRay',
-      theme: OrexTheme.light.copyWith(
-        extensions: [OrexGlassAppearance(enabled: widget.theme.glassEnabled)],
+      theme: OrexTheme.withColors(Brightness.light, widget.theme.colors).copyWith(
+        extensions: [
+          OrexPalette.resolve(Brightness.light, widget.theme.colors),
+          OrexGlassAppearance(
+            enabled: widget.theme.glassEnabled,
+            opacity: widget.theme.selectedTheme?.glassOpacity,
+            blur: widget.theme.selectedTheme?.glassBlur,
+            glow: widget.theme.selectedTheme?.glassGlow ?? 0,
+          ),
+          OrexMascotAppearance(filePath: widget.theme.mascotPath),
+        ],
       ),
-      darkTheme: OrexTheme.dark.copyWith(
-        extensions: [OrexGlassAppearance(enabled: widget.theme.glassEnabled)],
+      darkTheme: OrexTheme.withColors(Brightness.dark, widget.theme.colors).copyWith(
+        extensions: [
+          OrexPalette.resolve(Brightness.dark, widget.theme.colors),
+          OrexGlassAppearance(
+            enabled: widget.theme.glassEnabled,
+            opacity: widget.theme.selectedTheme?.glassOpacity,
+            blur: widget.theme.selectedTheme?.glassBlur,
+            glow: widget.theme.selectedTheme?.glassGlow ?? 0,
+          ),
+          OrexMascotAppearance(filePath: widget.theme.mascotPath),
+        ],
       ),
-      themeMode: widget.theme.mode,
+      themeMode: widget.theme.selectedTheme == null
+          ? ThemeMode.dark
+          : (widget.theme.selectedTheme!.light ? ThemeMode.light : ThemeMode.dark),
       home: AppShell(
         tunnel: _tunnel,
         profiles: widget.profiles,

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/apps/app_routing_controller.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/settings_section.dart';
 
 class AppsScreen extends StatefulWidget {
@@ -70,7 +71,7 @@ class _AppsScreenState extends State<AppsScreen> {
                                 value: mode,
                                 secondary: Icon(
                                   _modeIcon(mode),
-                                  color: OrexColors.copper,
+                                  color: OrexPalette.of(context).accent,
                                 ),
                                 title: Text(mode.title),
                                 subtitle: Text(mode.description),
@@ -290,9 +291,8 @@ class _AppIconState extends State<_AppIcon> {
         valueListenable: _icon,
         builder: (context, bytes, _) {
           if (bytes == null) {
-            return const Icon(
-              Icons.android_rounded,
-              color: OrexColors.copper,
+            return Icon(Icons.android_rounded,
+              color: OrexPalette.of(context).accent,
             );
           }
           return ClipRRect(
@@ -303,9 +303,8 @@ class _AppIconState extends State<_AppIcon> {
               gaplessPlayback: true,
               cacheWidth: 96,
               cacheHeight: 96,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.android_rounded,
-                color: OrexColors.copper,
+              errorBuilder: (_, __, ___) => Icon(Icons.android_rounded,
+                color: OrexPalette.of(context).accent,
               ),
             ),
           );

@@ -29,6 +29,71 @@ void main() {
     expect(decoration.gradient, isNull);
   });
 
+  testWidgets('custom glass opacity and glow affect the panel', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark.copyWith(
+        extensions: [const OrexGlassAppearance(
+          enabled: true,
+          opacity: 0.35,
+          blur: 8,
+          glow: 0.75,
+        )],
+      ),
+      home: const Scaffold(body: GlassPanel(child: Text('OrexRay'))),
+    ));
+    final panel = tester.widget<Container>(
+      find.descendant(
+        of: find.byType(GlassPanel),
+        matching: find.byType(Container),
+      ).first,
+    );
+    final decoration = panel.decoration! as BoxDecoration;
+    expect(decoration.color!.a, closeTo(0.35, 0.001));
+    expect(find.byType(BackdropFilter), findsOneWidget);
+  });
+
+  testWidgets('negative glow casts a dark shadow; zero keeps classic unglowed',
+      (tester) async {
+    Future<Color?> shadowColor(double glow) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: OrexTheme.dark.copyWith(
+          extensions: [OrexGlassAppearance(glow: glow)],
+        ),
+        home: const Scaffold(body: GlassPanel(child: Text('Panel'))),
+      ));
+      // Theme extensions animate between successive pumpWidget calls.
+      // Sample only the settled appearance, not the previous halo.
+      await tester.pumpAndSettle();
+      final decorated = tester.widgetList<DecoratedBox>(
+        find.descendant(
+          of: find.byType(GlassPanel),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      for (final widget in decorated) {
+        final decoration = widget.decoration;
+        if (decoration is BoxDecoration &&
+            decoration.boxShadow != null &&
+            decoration.boxShadow!.isNotEmpty) {
+          return decoration.boxShadow!.first.color;
+        }
+      }
+      return null;
+    }
+
+    final dark = await shadowColor(-0.85);
+    expect(dark, isNotNull);
+    final darkColor = dark!;
+    expect(darkColor.r, 0);
+    expect(darkColor.g, 0);
+    expect(darkColor.b, 0);
+    final neutral = await shadowColor(0);
+    expect(neutral, isNull);
+    final bright = await shadowColor(0.85);
+    expect(bright, isNotNull);
+    expect(bright, isNot(equals(darkColor)));
+  });
+
   testWidgets('glass switch persists and defaults to on', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final theme = await ThemeController.load();

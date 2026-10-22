@@ -354,13 +354,14 @@ class ProxyLinkParser {
   }
 
   ({String user, String password}) _credentials(Uri uri) {
-    final value = _decode(uri.userInfo);
-    if (value.isEmpty) return (user: '', password: '');
-    final separator = value.indexOf(':');
-    if (separator < 0) return (user: value, password: '');
+    final raw = uri.userInfo;
+    if (raw.isEmpty) return (user: '', password: '');
+    // Split before decoding: a username may contain an escaped colon (%3A).
+    final separator = raw.indexOf(':');
+    if (separator < 0) return (user: _decode(raw), password: '');
     return (
-      user: value.substring(0, separator),
-      password: value.substring(separator + 1),
+      user: _decode(raw.substring(0, separator)),
+      password: _decode(raw.substring(separator + 1)),
     );
   }
 

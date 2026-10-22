@@ -4,6 +4,7 @@ import 'package:simple_icons/simple_icons.dart';
 
 import '../../core/egress/egress_identity.dart';
 import '../theme/orex_theme.dart';
+import '../theme/orex_palette.dart';
 
 class EgressAvatar extends StatelessWidget {
   const EgressAvatar({
@@ -23,6 +24,14 @@ class EgressAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final value = identity;
     final radius = size * 0.31;
+    final palette = OrexPalette.of(context);
+    final original = palette.accent == OrexColors.copper &&
+        palette.secondary == OrexColors.ochre;
+    final foreground = original
+        ? OrexColors.cream
+        : (ThemeData.estimateBrightnessForColor(palette.accent) == Brightness.dark
+            ? Colors.white
+            : Colors.black);
     return SizedBox.square(
       dimension: size,
       child: Stack(
@@ -33,21 +42,25 @@ class EgressAvatar extends StatelessWidget {
             height: size,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              gradient: selected ? OrexColors.copperGradient : null,
-              color: selected ? null : OrexColors.copper.withValues(alpha: 0.12),
+              gradient: selected
+                  ? (original
+                      ? OrexColors.copperGradient
+                      : LinearGradient(colors: [palette.accent, palette.secondary]))
+                  : null,
+              color: selected ? null : palette.accent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(size * 0.31),
             ),
             child: value == null
                 ? Icon(
                     selected ? Icons.check_rounded : fallbackIcon,
-                    color: selected ? OrexColors.cream : OrexColors.copper,
+                    color: selected ? foreground : palette.accent,
                     size: size * 0.5,
                   )
                 : _CountryFlag(
                     countryCode: value.countryCode,
                     size: size,
                     fallbackColor:
-                        selected ? OrexColors.cream : OrexColors.copper,
+                        selected ? foreground : palette.accent,
                   ),
           ),
           if (value?.warp == true)
@@ -63,7 +76,7 @@ class EgressAvatar extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.surface,
                     shape: BoxShape.circle,
-                    border: Border.all(color: OrexColors.copper, width: 1.5),
+                    border: Border.all(color: palette.accent, width: 1.5),
                   ),
                   child: Icon(
                     SimpleIcons.cloudflare,

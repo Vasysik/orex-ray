@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/app_version.dart';
 import '../../platform/windows/windows_elevation_controller.dart';
-import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_confirm_dialog.dart';
 import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
@@ -41,13 +41,13 @@ class AboutScreen extends StatelessWidget {
           title: 'Версия',
           children: [
             ListTile(
-              leading: const Icon(Icons.apps_rounded, color: OrexColors.copper),
+              leading: Icon(Icons.apps_rounded, color: OrexPalette.of(context).accent),
               title: const Text('OrexRay'),
               subtitle: Text(appVersion.settingsSubtitle),
             ),
             const Divider(height: 1),
             ListTile(
-              leading: const Icon(Icons.copy_rounded, color: OrexColors.copper),
+              leading: Icon(Icons.copy_rounded, color: OrexPalette.of(context).accent),
               title: const Text('Скопировать информацию'),
               subtitle: const Text('Для баг-репорта и диагностики'),
               mouseCursor: SystemMouseCursors.click,
@@ -70,8 +70,8 @@ class AboutScreen extends StatelessWidget {
           title: 'Движок',
           subtitle: 'Версия и обслуживание сетевого движка.',
           children: [
-            const ListTile(
-              leading: Icon(Icons.hub_rounded, color: OrexColors.copper),
+             ListTile(
+              leading: Icon(Icons.hub_rounded, color: OrexPalette.of(context).accent),
               title: Text('Xray Core'),
               subtitle: Text('VLESS · REALITY · TLS · TUN · SOCKS5 · HTTP'),
             ),
@@ -171,9 +171,8 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
       builder: (context, _) {
         final canRepair = widget.tunnel.canReinstallXrayCore;
         return ListTile(
-          leading: const Icon(
-            Icons.system_update_alt_rounded,
-            color: OrexColors.copper,
+          leading: Icon(Icons.system_update_alt_rounded,
+            color: OrexPalette.of(context).accent,
           ),
           title: const Text('Переустановить Xray Core'),
           subtitle: Text(

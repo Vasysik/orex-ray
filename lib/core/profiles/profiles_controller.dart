@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -9,6 +10,7 @@ import '../tunnel/tunnel_models.dart';
 import 'latency_probe.dart';
 import 'profile_repository.dart';
 import 'proxy_link_parser.dart';
+import 'proxy_link_exporter.dart';
 import 'proxy_subscription.dart';
 import 'subscription_parser.dart';
 import 'subscription_source.dart';
@@ -105,6 +107,21 @@ class ProfilesController extends ChangeNotifier {
   final Set<String> _refreshingSubscriptionIds = <String>{};
   // Invalidates in-flight downloads after a subscription is removed or changed.
   final Map<String, int> _subscriptionRevisions = <String, int>{};
+  Future<void> _subscriptionMutationQueue = Future<void>.value();
+
+  Future<T> _serializeSubscriptionMutation<T>(
+    Future<T> Function() operation,
+  ) async {
+    final previous = _subscriptionMutationQueue;
+    final completed = Completer<void>();
+    _subscriptionMutationQueue = completed.future;
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      completed.complete();
+    }
+  }
   final Map<String, int> _lastAutoRefreshAttemptEpochMs = <String, int>{};
   final Map<String, int> _lastMetadataRefreshAttemptEpochMs = <String, int>{};
   bool _disposed = false;
@@ -607,7 +624,6 @@ class ProfilesController extends ChangeNotifier {
     final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
     final intervalMs = minimumInterval.inMilliseconds;
     var touched = 0;
-    var changed = false;
     try {
       for (final snapshot in List<ProxySubscription>.from(_subscriptions)) {
         if (_disposed) break;
@@ -620,49 +636,52 @@ class ProfilesController extends ChangeNotifier {
         final lastAttempt = _lastMetadataRefreshAttemptEpochMs[snapshot.id];
         if (lastAttempt != null && nowMs - lastAttempt < intervalMs) continue;
         _lastMetadataRefreshAttemptEpochMs[snapshot.id] = nowMs;
+        final expectedRevision = _subscriptionRevisions[snapshot.id] ?? 0;
 
         try {
           final metadata = await _loadSubscriptionMetadata(snapshot.url);
-          if (metadata == null || metadata.isEmpty) {
-            // Persist this across app restarts. A provider that rejects HEAD or
-            // returns no useful subscription headers should not be probed again
-            // solely for metadata until a normal GET refresh gives it another
-            // chance and clears the flag.
-            final index =
-                _subscriptions.indexWhere((item) => item.id == snapshot.id);
-            if (index >= 0) {
-              _subscriptions[index] = _subscriptions[index].copyWith(
+          await _serializeSubscriptionMutation(() async {
+            if (_disposed ||
+                (_subscriptionRevisions[snapshot.id] ?? 0) !=
+                    expectedRevision) {
+              return;
+            }
+            final index = _subscriptions.indexWhere(
+              (item) => item.id == snapshot.id && item.url == snapshot.url,
+            );
+            if (index < 0) return;
+            final current = _subscriptions[index];
+            final ProxySubscription updated;
+            if (metadata == null || metadata.isEmpty) {
+              // Unsupported HEAD remains disabled until the next full GET.
+              updated = current.copyWith(
                 metadataHeadUnsupported: true,
                 lastMetadataCheckEpochMs: nowMs,
               );
-              changed = true;
+            } else {
+              final title = metadata.profileTitle?.trim();
+              updated = current.copyWith(
+                name: title != null && title.isNotEmpty ? title : null,
+                lastMetadataCheckEpochMs: nowMs,
+                updateIntervalHours: metadata.updateIntervalHours,
+                userInfo: metadata.userInfo,
+                supportUrl: metadata.supportUrl,
+                webPageUrl: metadata.webPageUrl,
+                announce: metadata.announce,
+              );
             }
-            continue;
-          }
-          if (_disposed) break;
-          final index = _subscriptions.indexWhere((item) => item.id == snapshot.id);
-          if (index < 0) continue;
-          final current = _subscriptions[index];
-          final title = metadata.profileTitle?.trim();
-          _subscriptions[index] = current.copyWith(
-            name: title != null && title.isNotEmpty ? title : null,
-            lastMetadataCheckEpochMs: nowMs,
-            updateIntervalHours: metadata.updateIntervalHours,
-            userInfo: metadata.userInfo,
-            supportUrl: metadata.supportUrl,
-            webPageUrl: metadata.webPageUrl,
-            announce: metadata.announce,
-          );
-          touched += 1;
-          changed = true;
+            final working = List<ProxySubscription>.from(_subscriptions);
+            working[index] = updated;
+            await _repository.saveSubscriptions(working);
+            if (_disposed) return;
+            _subscriptions[index] = updated;
+            if (metadata != null && !metadata.isEmpty) touched++;
+            _notifyListeners();
+          });
         } on Object {
-          // Metadata refresh is best-effort. A failed HEAD request must not
-          // affect the existing subscription or its server list.
+          // Lightweight metadata is best effort. A failed HEAD or persistence
+          // operation must never affect the already working server profiles.
         }
-      }
-      if (changed) {
-        await _repository.saveSubscriptions(_subscriptions);
-        if (!_disposed) _notifyListeners();
       }
       return touched;
     } finally {
@@ -743,6 +762,7 @@ class ProfilesController extends ChangeNotifier {
   }
 
   Future<void> deleteSubscription(String id) async {
+    return _serializeSubscriptionMutation(() async {
     final index = _subscriptions.indexWhere((item) => item.id == id);
     if (index < 0) return;
     final subscription = _subscriptions[index];
@@ -781,10 +801,12 @@ class ProfilesController extends ChangeNotifier {
               : null;
     }
 
-    await _repository.saveProfiles(workingProfiles);
-    await _repository.saveBalancers(workingBalancers);
-    await _repository.saveSubscriptions(workingSubscriptions);
-    await _repository.saveSelectedId(selectedId);
+    await _repository.saveSubscriptionState(
+      profiles: workingProfiles,
+      balancers: workingBalancers,
+      subscriptions: workingSubscriptions,
+      selectedId: selectedId,
+    );
     if (_disposed) return;
     _profiles
       ..clear()
@@ -797,6 +819,7 @@ class ProfilesController extends ChangeNotifier {
       ..addAll(workingSubscriptions);
     _selectedId = selectedId;
     _notifyListeners();
+    });
   }
 
   Future<SubscriptionSyncResult> _applySubscription({
@@ -807,6 +830,7 @@ class ProfilesController extends ChangeNotifier {
     required SubscriptionParseResult parsed,
     required int expectedRevision,
   }) async {
+    return _serializeSubscriptionMutation(() async {
     // The HTTP request completed, but the subscription may have been deleted
     // while it was pending. Never re-create or overwrite it from stale data.
     if (_disposed ||
@@ -910,10 +934,12 @@ class ProfilesController extends ChangeNotifier {
                   : null;
     }
 
-    await _repository.saveProfiles(workingProfiles);
-    await _repository.saveBalancers(workingBalancers);
-    await _repository.saveSubscriptions(workingSubscriptions);
-    await _repository.saveSelectedId(selectedId);
+    await _repository.saveSubscriptionState(
+      profiles: workingProfiles,
+      balancers: workingBalancers,
+      subscriptions: workingSubscriptions,
+      selectedId: selectedId,
+    );
 
     // A successful full GET is the reset point for lightweight HEAD metadata
     // probing. Drop the in-memory HEAD cooldown together with the persisted
@@ -951,6 +977,7 @@ class ProfilesController extends ChangeNotifier {
       removedCount: removedIds.length,
       skippedUnsupported: parsed.skippedUnsupported,
     );
+    });
   }
 
   List<BalancerProfile> _rewriteBalancersAfterProfileRemoval(
@@ -1096,6 +1123,14 @@ class ProfilesController extends ChangeNotifier {
       updatedCount: updatedCount,
       skippedUnsupported: decoded.skippedUnsupported,
     );
+  }
+
+  String exportProfileLink(String profileId) {
+    final profile = _profileById(profileId);
+    if (profile == null) {
+      throw const FormatException('Профиль не найден');
+    }
+    return const ProxyLinkExporter().export(profile);
   }
 
   String exportXrayJson({String? profileId}) {

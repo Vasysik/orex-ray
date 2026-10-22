@@ -5,6 +5,7 @@ import '../../core/geodata/geodata_controller.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_edit_dialog.dart';
 import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
@@ -50,7 +51,7 @@ class GeoDataScreen extends StatelessWidget {
               ],
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.folder_open_rounded, color: OrexColors.copper),
+                leading: Icon(Icons.folder_open_rounded, color: OrexPalette.of(context).accent),
                 title: const Text('Каталог данных'),
                 subtitle: Text(
                   controller.directoryPath,
@@ -66,7 +67,7 @@ class GeoDataScreen extends StatelessWidget {
             subtitle: 'Правила применяются сверху вниз при следующем подключении.',
             children: [
               SwitchListTile(
-                secondary: const Icon(Icons.alt_route_rounded, color: OrexColors.copper),
+                secondary: Icon(Icons.alt_route_rounded, color: OrexPalette.of(context).accent),
                 title: const Text('Использовать GeoData в маршрутах'),
                 subtitle: const Text(
                   'Включает правила geoip:… и geosite:… в Xray-конфиг',
@@ -127,7 +128,7 @@ class GeoDataScreen extends StatelessWidget {
             subtitle: 'Скачанные файлы проверяются по SHA-256 перед заменой.',
             children: [
               SwitchListTile(
-                secondary: const Icon(Icons.sync_rounded, color: OrexColors.copper),
+                secondary: Icon(Icons.sync_rounded, color: OrexPalette.of(context).accent),
                 title: const Text('Автоматически проверять обновления'),
                 subtitle: Text(
                   controller.lastCheckedAt == null
@@ -139,7 +140,7 @@ class GeoDataScreen extends StatelessWidget {
               ),
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.schedule_rounded, color: OrexColors.copper),
+                leading: Icon(Icons.schedule_rounded, color: OrexPalette.of(context).accent),
                 title: const Text('Интервал проверки'),
                 trailing: DropdownButton<int>(
                   value: controller.updateIntervalHours,
@@ -238,7 +239,7 @@ class _AssetTile extends StatelessWidget {
     return ListTile(
       leading: Icon(
         asset.installed ? Icons.check_circle_rounded : Icons.cloud_download_outlined,
-        color: asset.installed ? OrexColors.online : OrexColors.copper,
+        color: asset.installed ? OrexColors.online : OrexPalette.of(context).accent,
       ),
       title: Text(asset.name),
       subtitle: Text(
@@ -277,7 +278,7 @@ class _RuleTile extends StatelessWidget {
     final shown = value.trim().isEmpty ? 'Пример: $example' : value;
     return ListTile(
       enabled: enabled,
-      leading: Icon(icon, color: enabled ? OrexColors.copper : null),
+      leading: Icon(icon, color: enabled ? OrexPalette.of(context).accent : null),
       title: Text(title),
       subtitle: Text(shown, maxLines: 2, overflow: TextOverflow.ellipsis),
       trailing: const Icon(Icons.chevron_right_rounded),

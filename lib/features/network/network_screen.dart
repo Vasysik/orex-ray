@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/settings/connection_settings_controller.dart';
-import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_edit_dialog.dart';
 import '../../shared/widgets/settings_section.dart';
 
@@ -41,7 +41,7 @@ class NetworkScreen extends StatelessWidget {
                           preset == DnsPreset.custom
                               ? Icons.edit_rounded
                               : Icons.dns_rounded,
-                          color: OrexColors.copper,
+                          color: OrexPalette.of(context).accent,
                         ),
                         title: Text(preset.title),
                         subtitle: Text(
@@ -57,8 +57,8 @@ class NetworkScreen extends StatelessWidget {
               if (settings.dnsPreset == DnsPreset.custom) ...[
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.edit_note_rounded,
-                      color: OrexColors.copper),
+                  leading: Icon(Icons.edit_note_rounded,
+                      color: OrexPalette.of(context).accent),
                   title: const Text('Адреса DNS'),
                   subtitle: Text(
                     settings.customDns.isEmpty
@@ -77,8 +77,8 @@ class NetworkScreen extends StatelessWidget {
             title: 'Маршрутизация',
             children: [
               SwitchListTile(
-                secondary: const Icon(Icons.home_work_outlined,
-                    color: OrexColors.copper),
+                secondary: Icon(Icons.home_work_outlined,
+                    color: OrexPalette.of(context).accent),
                 title: const Text('Локальные сети напрямую'),
                 subtitle:
                     const Text('Не отправлять частные IP-диапазоны через Xray'),
@@ -87,8 +87,8 @@ class NetworkScreen extends StatelessWidget {
               ),
               const Divider(height: 1),
               SwitchListTile(
-                secondary: const Icon(Icons.manage_search_rounded,
-                    color: OrexColors.copper),
+                secondary: Icon(Icons.manage_search_rounded,
+                    color: OrexPalette.of(context).accent),
                 title: const Text('Sniffing протоколов'),
                 subtitle: const Text(
                     'Определять HTTP, TLS и QUIC для корректной маршрутизации'),
@@ -114,9 +114,8 @@ class NetworkScreen extends StatelessWidget {
                     for (final preset in LatencyProbePreset.values)
                       RadioListTile<LatencyProbePreset>(
                         value: preset,
-                        secondary: const Icon(
-                          Icons.speed_rounded,
-                          color: OrexColors.copper,
+                        secondary: Icon(Icons.speed_rounded,
+                          color: OrexPalette.of(context).accent,
                         ),
                         title: Text(preset.title),
                         subtitle: Text(
@@ -133,9 +132,8 @@ class NetworkScreen extends StatelessWidget {
                 const Divider(height: 1),
               if (settings.latencyProbePreset == LatencyProbePreset.custom)
                 ListTile(
-                  leading: const Icon(
-                    Icons.link_rounded,
-                    color: OrexColors.copper,
+                  leading: Icon(Icons.link_rounded,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Изменить URL'),
                   subtitle: Text(settings.customLatencyProbeUrl),

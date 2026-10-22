@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'orex_modal_sheet_surface.dart';
-import '../theme/orex_theme.dart';
+import '../theme/orex_palette.dart';
 
 class OrexChoiceSheetOption<T> {
   const OrexChoiceSheetOption({
@@ -93,13 +93,13 @@ class _OrexChoiceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: leading ?? Icon(icon, color: OrexColors.copper),
+      leading: leading ?? Icon(icon, color: OrexPalette.of(context).accent),
       title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: subtitle == null
           ? null
           : Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: selected
-          ? const Icon(Icons.check_circle, color: OrexColors.copper)
+          ? Icon(Icons.check_circle, color: OrexPalette.of(context).accent)
           : const Icon(Icons.chevron_right),
       mouseCursor: SystemMouseCursors.click,
       onTap: onTap,

@@ -15,6 +15,7 @@ import '../../core/tunnel/tunnel_models.dart';
 import '../../platform/external_url_launcher.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/egress_avatar.dart';
 import '../../shared/widgets/orex_adaptive_header.dart';
 import '../../shared/widgets/orex_choice_sheet.dart';
@@ -32,7 +33,7 @@ enum _ProfileCreateAction {
   balancer,
 }
 
-enum _XrayJsonExportAction { copy, saveFile }
+enum _XrayJsonExportAction { copyLink, copy, saveFile }
 
 class _ProfileSection {
   const _ProfileSection({
@@ -246,18 +247,32 @@ class ProfilesScreen extends StatelessWidget {
       return;
     }
 
-    final exportingMultiple = profileId == null;
+    final singleId = profileId ??
+        (selectedIds != null && selectedIds.length == 1
+            ? selectedIds.single
+            : null);
+    final exportingMultiple = singleId == null;
     final exportCount = selectedIds?.length ?? profiles.profiles.length;
     final action = await showOrexChoiceSheet<_XrayJsonExportAction>(
       context,
       title: exportingMultiple ? 'Экспорт $exportCount профилей' : 'Экспорт профиля',
       options: [
+        if (singleId != null)
+          const OrexChoiceSheetOption<_XrayJsonExportAction>(
+            value: _XrayJsonExportAction.copyLink,
+            icon: Icons.link_rounded,
+            title: 'Скопировать ссылку',
+            subtitle: 'Поделиться одним сервером через proxy-ссылку',
+          ),
         OrexChoiceSheetOption<_XrayJsonExportAction>(
           value: _XrayJsonExportAction.copy,
           icon: Icons.content_copy_rounded,
-          title:
-              exportingMultiple ? 'Копировать массив JSON' : 'Копировать JSON',
-          subtitle: exportingMultiple
+          title: selectedIds != null
+              ? 'Копировать массив JSON'
+              : exportingMultiple
+                  ? 'Копировать массив JSON'
+                  : 'Копировать JSON',
+          subtitle: selectedIds != null || exportingMultiple
               ? 'Выбранные профили как массив полных Xray-конфигов'
               : 'Полный Xray-конфиг профиля в буфер обмена',
         ),
@@ -272,10 +287,21 @@ class ProfilesScreen extends StatelessWidget {
     if (action == null || !context.mounted) return;
 
     try {
-      final payload = selectedIds == null
-          ? profiles.exportXrayJson(profileId: profileId)
-          : profiles.exportSelectedXrayJson(selectedIds);
+      final payload = action == _XrayJsonExportAction.copyLink
+          ? ''
+          : selectedIds == null
+              ? profiles.exportXrayJson(profileId: profileId)
+              : profiles.exportSelectedXrayJson(selectedIds);
       switch (action) {
+        case _XrayJsonExportAction.copyLink:
+          final link = profiles.exportProfileLink(singleId!);
+          await Clipboard.setData(ClipboardData(text: link));
+          if (!context.mounted) return;
+          OrexNotice.show(
+            context,
+            const SnackBar(content: Text('Ссылка профиля скопирована')),
+          );
+          break;
         case _XrayJsonExportAction.copy:
           await Clipboard.setData(ClipboardData(text: payload));
           if (!context.mounted) return;
@@ -309,7 +335,7 @@ class ProfilesScreen extends StatelessWidget {
       if (!context.mounted) return;
       OrexNotice.show(
         context,
-        SnackBar(content: Text('Не удалось экспортировать JSON: $error')),
+        SnackBar(content: Text('Не удалось экспортировать профиль: $error')),
       );
     }
   }
@@ -620,9 +646,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
   }
 
   Future<void> _pingSelected() async {
-    if (!_selectingServers ||
-        _selectedProfileIds.isEmpty ||
-        tunnel.refreshingLatency) {
+    if (_selectedProfileIds.isEmpty || tunnel.refreshingLatency) {
       return;
     }
     await tunnel.refreshProfileLatencies(
@@ -1492,14 +1516,12 @@ class _ProfilesHeader extends StatelessWidget {
         ),
       ]);
     } else {
-      if (serverSelection) {
-        actions.add(OrexHeaderAction(
-          tooltip: 'Пинг',
-          label: 'Пинг',
-          icon: Icons.network_ping_rounded,
-          onPressed: refreshingLatency ? null : () => onPingSelected(),
-        ));
-      }
+      actions.add(OrexHeaderAction(
+        tooltip: 'Пинг',
+        label: 'Пинг',
+        icon: Icons.network_ping_rounded,
+        onPressed: refreshingLatency ? null : () => onPingSelected(),
+      ));
       actions.add(OrexHeaderAction(
         tooltip: 'Экспорт',
         label: 'Экспорт',
@@ -1567,7 +1589,7 @@ class _SectionTitle extends StatelessWidget {
         Text(
           title.toUpperCase(),
           style: textTheme.bodySmall?.copyWith(
-            color: OrexColors.copper,
+            color: OrexPalette.of(context).accent,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.1,
           ),
@@ -1597,7 +1619,7 @@ class _SectionTitle extends StatelessWidget {
                   Text(
                     'ВЫДЕЛЕНО',
                     style: textTheme.bodySmall?.copyWith(
-                      color: OrexColors.copper,
+                      color: OrexPalette.of(context).accent,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.7,
                     ),
@@ -1626,7 +1648,7 @@ class _NestedGroupChildren extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(
           left: BorderSide(
-            color: OrexColors.copper.withValues(alpha: 0.34),
+            color: OrexPalette.of(context).accent.withValues(alpha: 0.34),
             width: 2,
           ),
         ),
@@ -1681,7 +1703,7 @@ class _ProfileGroupHeader extends StatelessWidget {
       child: GlassPanel(
         borderRadius: 18,
         blur: 14,
-        tint: selectedCount > 0 ? OrexColors.copper : null,
+        tint: selectedCount > 0 ? OrexPalette.of(context).accent : null,
         opacity: selectedCount > 0 ? 0.24 : 0.34,
         child: ListTile(
           dense: true,
@@ -1689,9 +1711,8 @@ class _ProfileGroupHeader extends StatelessWidget {
           mouseCursor: SystemMouseCursors.click,
           onTap: onToggle,
           onLongPress: onLongPress,
-          leading: const Icon(
-            Icons.folder_outlined,
-            color: OrexColors.copper,
+          leading: Icon(Icons.folder_outlined,
+            color: OrexPalette.of(context).accent,
           ),
           title: Text(
             title,
@@ -1932,7 +1953,7 @@ class _SubscriptionCard extends StatelessWidget {
       child: GlassPanel(
         borderRadius: 18,
         blur: 16,
-        tint: selectedCount > 0 ? OrexColors.copper : null,
+        tint: selectedCount > 0 ? OrexPalette.of(context).accent : null,
         opacity: selectedCount > 0 ? 0.24 : 0.42,
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
@@ -1947,9 +1968,8 @@ class _SubscriptionCard extends StatelessWidget {
               ListTile(
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                leading: const Icon(
-                  Icons.cloud_sync_outlined,
-                  color: OrexColors.copper,
+                leading: Icon(Icons.cloud_sync_outlined,
+                  color: OrexPalette.of(context).accent,
                 ),
                 title: Text(
                   subscription.name,
@@ -2049,7 +2069,7 @@ class _SubscriptionCard extends StatelessWidget {
                 child: Text(
                   subscription.announce,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: OrexColors.copper,
+                        color: OrexPalette.of(context).accent,
                         fontWeight: FontWeight.w600,
                       ),
                 ),
@@ -2191,7 +2211,7 @@ class _SubscriptionMetadataPanel extends StatelessWidget {
                 Text(
                   'Осталось ${_formatSubscriptionBytes(remaining)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: OrexColors.copper,
+                        color: OrexPalette.of(context).accent,
                         fontWeight: FontWeight.w600,
                       ),
                 ),
@@ -2205,7 +2225,7 @@ class _SubscriptionMetadataPanel extends StatelessWidget {
               value: usageFraction,
               backgroundColor:
                   Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.10),
-              color: OrexColors.copper,
+              color: OrexPalette.of(context).accent,
             ),
           ),
           const SizedBox(height: 8),
@@ -2372,7 +2392,7 @@ class _ProfileCard extends StatelessWidget {
       child: GlassPanel(
         borderRadius: 22,
         blur: dragging ? 0 : 18,
-        tint: multiSelected ? OrexColors.copper : null,
+        tint: multiSelected ? OrexPalette.of(context).accent : null,
         opacity: dragging
             ? 0.88
             : multiSelected
@@ -2499,7 +2519,7 @@ class _PingBadge extends StatelessWidget {
         : latency < 100
             ? OrexColors.online
             : latency < 1000
-                ? OrexColors.copper
+                ? OrexPalette.of(context).accent
                 : OrexColors.danger;
     return InkWell(
       borderRadius: BorderRadius.circular(999),
@@ -3487,7 +3507,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                         : group.isManualFolder
                             ? Icons.folder_outlined
                             : Icons.folder_open_outlined,
-                    color: OrexColors.copper,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: Text(
                     group.title,

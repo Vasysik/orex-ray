@@ -9,7 +9,7 @@ import '../../core/geodata/geodata_controller.dart';
 import '../../core/profiles/profiles_controller.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/glass.dart';
-import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/theme/theme_controller.dart';
 import '../../shared/widgets/responsive_breakpoints.dart';
 import '../../shared/widgets/responsive_motion.dart';
@@ -72,7 +72,7 @@ class _DesktopSideNavigation extends StatelessWidget {
                   duration: const Duration(milliseconds: 160),
                   decoration: BoxDecoration(
                     color: selected
-                        ? OrexColors.copper.withValues(alpha: 0.14)
+                        ? OrexPalette.of(context).accent.withValues(alpha: 0.14)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(16),
                   ),
@@ -84,7 +84,7 @@ class _DesktopSideNavigation extends StatelessWidget {
                         destination.icon,
                         size: 23,
                         color: selected
-                            ? OrexColors.copper
+                            ? OrexPalette.of(context).accent
                             : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       const SizedBox(height: 3),
@@ -94,7 +94,7 @@ class _DesktopSideNavigation extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: selected
-                                  ? OrexColors.copper
+                                  ? OrexPalette.of(context).accent
                                   : Theme.of(context)
                                       .colorScheme
                                       .onSurfaceVariant,
@@ -371,14 +371,14 @@ class _AppShellState extends State<AppShell> {
                                       value == 3 ? _moreIndex : value,
                                     );
                                   },
-                                  destinations: const [
+                                  destinations: [
                                     NavigationDestination(
                                       icon: Icon(
                                         Icons.power_settings_new_rounded,
                                       ),
                                       selectedIcon: Icon(
                                         Icons.power_settings_new_rounded,
-                                        color: OrexColors.copper,
+                                        color: OrexPalette.of(context).accent,
                                       ),
                                       label: 'Главная',
                                     ),
@@ -386,7 +386,7 @@ class _AppShellState extends State<AppShell> {
                                       icon: Icon(Icons.storage_rounded),
                                       selectedIcon: Icon(
                                         Icons.storage_rounded,
-                                        color: OrexColors.copper,
+                                        color: OrexPalette.of(context).accent,
                                       ),
                                       label: 'Профили',
                                     ),
@@ -394,7 +394,7 @@ class _AppShellState extends State<AppShell> {
                                       icon: Icon(Icons.route_rounded),
                                       selectedIcon: Icon(
                                         Icons.route_rounded,
-                                        color: OrexColors.copper,
+                                        color: OrexPalette.of(context).accent,
                                       ),
                                       label: 'Подключение',
                                     ),
@@ -402,7 +402,7 @@ class _AppShellState extends State<AppShell> {
                                       icon: Icon(Icons.more_horiz_rounded),
                                       selectedIcon: Icon(
                                         Icons.more_horiz_rounded,
-                                        color: OrexColors.copper,
+                                        color: OrexPalette.of(context).accent,
                                       ),
                                       label: 'Ещё',
                                     ),

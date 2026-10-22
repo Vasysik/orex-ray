@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/glass.dart';
-import '../theme/orex_theme.dart';
+import '../theme/orex_palette.dart';
 import 'responsive_motion.dart';
 
 class SettingsSection extends StatelessWidget {
@@ -34,7 +34,7 @@ class SettingsSection extends StatelessWidget {
                   title.toUpperCase(),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         letterSpacing: 1.1,
-                        color: OrexColors.copper,
+                        color: OrexPalette.of(context).accent,
                         fontWeight: FontWeight.w700,
                       ),
                 ),
@@ -81,10 +81,10 @@ class SettingsPageHeader extends StatelessWidget {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: OrexColors.copper.withValues(alpha: 0.14),
+            color: OrexPalette.of(context).accent.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Icon(icon, color: OrexColors.copper),
+          child: Icon(icon, color: OrexPalette.of(context).accent),
         ),
         const SizedBox(width: 14),
         Expanded(

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'orex_palette.dart';
+
 /// Фирменная палитра Orex: тёплое дерево, медь, охра и крем.
 class OrexColors {
   OrexColors._();
@@ -57,6 +59,81 @@ class OrexTheme {
 
   static ThemeData get dark => _build(Brightness.dark);
   static ThemeData get light => _build(Brightness.light);
+
+  static ThemeData withColors(
+    Brightness brightness,
+    Map<String, Color> overrides,
+  ) {
+    final base = _build(brightness);
+    if (overrides.isEmpty) return base;
+    final palette = OrexPalette.resolve(brightness, overrides);
+    final onAccent = ThemeData.estimateBrightnessForColor(palette.accent) ==
+            Brightness.dark
+        ? Colors.white
+        : Colors.black;
+    return base.copyWith(
+      colorScheme: base.colorScheme.copyWith(
+        primary: palette.accent,
+        onPrimary: onAccent,
+        secondary: palette.secondary,
+        surface: palette.surface,
+        onSurface: palette.text,
+        onSurfaceVariant: palette.mutedText,
+        outline: palette.border,
+        outlineVariant: palette.border.withValues(alpha: 0.65),
+        surfaceContainer: palette.surface,
+        surfaceContainerLow: palette.surface,
+        surfaceContainerHigh: palette.surface,
+      ),
+      scaffoldBackgroundColor: palette.background,
+      textTheme: base.textTheme.apply(
+        bodyColor: palette.text,
+        displayColor: palette.text,
+      ).copyWith(
+        bodySmall: base.textTheme.bodySmall?.copyWith(color: palette.mutedText),
+      ),
+      iconTheme: IconThemeData(color: palette.accent),
+      listTileTheme: ListTileThemeData(
+        iconColor: palette.accent,
+        selectedColor: palette.accent,
+      ),
+      chipTheme: base.chipTheme.copyWith(
+        selectedColor: palette.accent.withValues(alpha: 0.20),
+        side: BorderSide(color: palette.border),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: base.outlinedButtonTheme.style?.copyWith(
+          side: WidgetStatePropertyAll(BorderSide(color: palette.border)),
+        ),
+      ),
+      dividerColor: palette.border,
+      dividerTheme: DividerThemeData(color: palette.border, thickness: 1, space: 1),
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor: Colors.transparent,
+        indicatorColor: palette.accent.withValues(alpha: 0.2),
+        selectedIconTheme: IconThemeData(color: palette.accent),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: Colors.transparent,
+        indicatorColor: palette.accent.withValues(alpha: 0.2),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: base.filledButtonTheme.style?.copyWith(
+          backgroundColor: WidgetStatePropertyAll(palette.accent),
+          foregroundColor: WidgetStatePropertyAll(onAccent),
+        ),
+      ),
+      dialogTheme: base.dialogTheme.copyWith(
+        backgroundColor: palette.surface,
+        iconColor: palette.accent,
+      ),
+      snackBarTheme: base.snackBarTheme.copyWith(
+        backgroundColor: palette.surface,
+        contentTextStyle: TextStyle(color: palette.text),
+        actionTextColor: palette.accent,
+      ),
+    );
+  }
 
   static ThemeData _build(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
