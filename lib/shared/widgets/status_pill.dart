@@ -1,23 +1,19 @@
 import 'package:flutter/material.dart';
 
-import '../theme/orex_theme.dart';
 
 class StatusPill extends StatelessWidget {
   const StatusPill({
     super.key,
     required this.label,
-    required this.active,
-    this.color,
+    required this.color,
   });
 
   final String label;
-  final bool active;
-  final Color? color;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedColor =
-        color ?? (active ? OrexColors.online : OrexColors.copper);
+    final resolvedColor = color;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(

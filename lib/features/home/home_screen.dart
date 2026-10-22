@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/egress/egress_identity.dart';
 import '../../core/tunnel/tunnel_models.dart';
+import '../../shared/theme/connection_visual_status.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/widgets/egress_avatar.dart';
@@ -154,22 +155,12 @@ class _Header extends StatelessWidget {
       ],
     );
 
-    final profile = snapshot.profile;
     final pingStatus = snapshot.isConnected
-        ? tunnel.effectivePingStatusFor(profile)
+        ? tunnel.effectivePingStatusFor(snapshot.profile)
         : PingStatus.unknown;
-    final routeFailed = _routeFailed(pingStatus);
-    final routeConfirmed = pingStatus == PingStatus.success;
-    final label = routeFailed
-        ? 'Нет ответа'
-        : switch (snapshot.status) {
-            TunnelStatus.connected when routeConfirmed => 'Защищено',
-            TunnelStatus.connected => 'Проверка',
-            TunnelStatus.connecting => 'Подключение',
-            TunnelStatus.disconnecting => 'Отключение',
-            TunnelStatus.error => 'Ошибка',
-            TunnelStatus.disconnected => 'Не подключено',
-          };
+    final visualStatus =
+        ConnectionVisualStatus.fromSnapshot(snapshot, pingStatus);
+    final label = visualStatus.label;
 
     double textWidth(String value, TextStyle? style) {
       final painter = TextPainter(
@@ -214,8 +205,7 @@ class _Header extends StatelessWidget {
                   const SizedBox(width: 16),
                   StatusPill(
                     label: label,
-                    active: snapshot.isConnected && routeConfirmed,
-                    color: routeFailed ? OrexColors.danger : null,
+                    color: visualStatus.color,
                   ),
                 ],
               )
@@ -383,7 +373,7 @@ class _ConnectionHero extends StatelessWidget {
     final pingStatus = active
         ? tunnel.effectivePingStatusFor(profile)
         : PingStatus.unknown;
-    final routeFailed = _routeFailed(pingStatus);
+    final routeFailed = ConnectionVisualStatus.isRouteFailed(pingStatus);
     final fallbackMessage = snapshot.message ??
         (hasProfile
             ? 'Готовы подключить ${profile.name}'
@@ -464,14 +454,11 @@ class _ConnectButton extends StatelessWidget {
     final disconnecting = snapshot.status == TunnelStatus.disconnecting;
     final busy = connecting || disconnecting;
     final canTap = enabled && !disconnecting;
-    final routeFailed = active && _routeFailed(pingStatus);
+    final routeFailed = active && ConnectionVisualStatus.isRouteFailed(pingStatus);
     final pingConfirmed = active && pingStatus == PingStatus.success;
     final healthConfirmed = routeFailed || pingConfirmed;
-    final glowColor = routeFailed
-        ? OrexColors.danger
-        : pingConfirmed
-            ? OrexColors.online
-            : OrexColors.copper;
+    final glowColor =
+        ConnectionVisualStatus.fromSnapshot(snapshot, pingStatus).color;
     return Semantics(
       button: true,
       enabled: canTap,
@@ -1246,23 +1233,29 @@ class _ProxyDetails extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 4,
-          runSpacing: 8,
-          children: [
-            _ProxyAddressChip(
-              protocol: 'SOCKS5',
-              port: tunnel.socksProxyPort,
-              uriScheme: 'socks5',
-              allowLan: tunnel.proxyAllowsLan,
-            ),
-            _ProxyAddressChip(
-              protocol: 'HTTP',
-              port: tunnel.httpProxyPort,
-              uriScheme: 'http',
-              allowLan: tunnel.proxyAllowsLan,
-            ),
-          ],
+        // Keep both endpoints on a single line while resizing the window.
+        // On very narrow cards, scroll horizontally instead of wrapping and
+        // causing the card height to jump.
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ProxyAddressChip(
+                protocol: 'SOCKS5',
+                port: tunnel.socksProxyPort,
+                uriScheme: 'socks5',
+                allowLan: tunnel.proxyAllowsLan,
+              ),
+              const SizedBox(width: 4),
+              _ProxyAddressChip(
+                protocol: 'HTTP',
+                port: tunnel.httpProxyPort,
+                uriScheme: 'http',
+                allowLan: tunnel.proxyAllowsLan,
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 10),
         Wrap(
@@ -1381,9 +1374,6 @@ String _pingLabel(TunnelController tunnel, TunnelTarget? target) {
   final ping = tunnel.effectiveLatencyFor(target);
   return ping == null ? '—' : '$ping мс';
 }
-
-bool _routeFailed(PingStatus status) =>
-    status == PingStatus.timeout || status == PingStatus.unavailable;
 
 String _statusTitle(TunnelStatus status) => switch (status) {
       TunnelStatus.disconnected => 'Не подключено',

@@ -120,6 +120,15 @@ void main() {
       closeTo(16, 0.5),
     );
 
+    // SOCKS5 and HTTP must stay on the same line during window resizing,
+    // including when the combined addresses exceed the right card width.
+    void expectProxyEndpointsSingleLine() {
+      final socks = tester.getRect(find.text('SOCKS5 :20808'));
+      final http = tester.getRect(find.text('HTTP :20809'));
+      expect(socks.center.dy, closeTo(http.center.dy, 0.5));
+    }
+    expectProxyEndpointsSingleLine();
+
     // Check the narrowest split width, where the proxy header may wrap.
     // Both columns must still share their top and bottom edges.
     await tester.binding.setSurfaceSize(const Size(700, 900));
@@ -130,6 +139,7 @@ void main() {
     expect(narrowLeft.top, closeTo(narrowTopRight.top, 0.5));
     expect(narrowLeft.bottom, closeTo(narrowBottomRight.bottom, 0.5));
     expect(find.text('Локальный прокси'), findsOneWidget);
+    expectProxyEndpointsSingleLine();
 
     await tester.binding.setSurfaceSize(const Size(680, 900));
     await tester.pumpAndSettle();
@@ -138,6 +148,7 @@ void main() {
         lessThan(10));
     expect(tester.getCenter(hero).dy, lessThan(tester.getCenter(profile).dy));
     expect(find.text('Текущий режим'), findsNothing);
+    expectProxyEndpointsSingleLine();
   });
 
   testWidgets('home shows accurate local proxy configuration and status',

@@ -685,6 +685,8 @@ bool RestartElevated() {
 
 TrayStatus ParseTrayStatus(const std::string& value) {
   if (value == "connected") return TrayStatus::kConnected;
+  if (value == "checking") return TrayStatus::kChecking;
+  if (value == "unavailable") return TrayStatus::kUnavailable;
   if (value == "connecting") return TrayStatus::kConnecting;
   if (value == "disconnecting") return TrayStatus::kDisconnecting;
   if (value == "timeout") return TrayStatus::kTimeout;
@@ -820,10 +822,21 @@ bool FlutterWindow::OnCreate() {
             result->Error("invalid_arguments", "Tray state is missing");
             return;
           }
+          const auto color = ReadIntArgument(*arguments, "colorRgb");
+          const auto mark = ReadIntArgument(*arguments, "markRgb");
+          if (!color.has_value() || color.value() < 0 ||
+              color.value() > 0xFFFFFF || !mark.has_value() ||
+              mark.value() < 0 || mark.value() > 0xFFFFFF) {
+            result->Error("invalid_arguments", "Tray RGB color is missing");
+            return;
+          }
           tray_icon_.Update(
               ParseTrayStatus(ReadStringArgument(*arguments, "status")),
               Utf8ToWide(ReadStringArgument(*arguments, "targetName")),
-              ReadBoolArgument(*arguments, "canDisconnect"));
+              ReadBoolArgument(*arguments, "canDisconnect"),
+              Utf8ToWide(ReadStringArgument(*arguments, "label")),
+              static_cast<std::uint32_t>(color.value()),
+              static_cast<std::uint32_t>(mark.value()));
           result->Success(flutter::EncodableValue());
           return;
         }

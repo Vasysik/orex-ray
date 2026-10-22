@@ -46,26 +46,6 @@ Color ArgbColor(unsigned char red, unsigned char green, unsigned char blue,
   return Color(alpha, red, green, blue);
 }
 
-Color StatusColor(TrayStatus status) {
-  switch (status) {
-    case TrayStatus::kConnected:
-      return ArgbColor(143, 179, 106);
-    case TrayStatus::kConnecting:
-      return ArgbColor(212, 121, 57);
-    case TrayStatus::kDisconnecting:
-      return ArgbColor(133, 65, 50);
-    case TrayStatus::kTimeout:
-    case TrayStatus::kError:
-      return ArgbColor(207, 102, 121);
-    case TrayStatus::kDisconnected:
-    default:
-      return ArgbColor(179, 154, 130);
-  }
-}
-
-Color CreamColor() {
-  return ArgbColor(252, 250, 250);
-}
 
 void CopyTooltip(wchar_t* destination, size_t destination_size,
                  const std::wstring& value) {
@@ -270,10 +250,14 @@ void TrayIcon::Remove() {
 }
 
 void TrayIcon::Update(TrayStatus status, const std::wstring& target_name,
-                      bool can_disconnect) {
+                      bool can_disconnect, const std::wstring& label,
+                      std::uint32_t color_rgb, std::uint32_t mark_rgb) {
   status_ = status;
   target_name_ = target_name;
   can_disconnect_ = can_disconnect;
+  label_ = label;
+  color_rgb_ = color_rgb;
+  mark_rgb_ = mark_rgb;
   ApplyIcon();
 
   if (!added_ || owner_ == nullptr) return;
@@ -315,7 +299,7 @@ UINT TrayIcon::ShowContextMenu(HWND owner, POINT point) const {
   return command;
 }
 
-HICON TrayIcon::CreateStatusIcon(TrayStatus status) const {
+HICON TrayIcon::CreateStatusIcon() const {
   GdiplusScope gdiplus;
   if (!gdiplus.active()) return nullptr;
 
@@ -326,14 +310,21 @@ HICON TrayIcon::CreateStatusIcon(TrayStatus status) const {
   graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
   graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
 
-  SolidBrush background(StatusColor(status));
+  // UI and tray colors have a single owner: ConnectionVisualStatus (Dart).
+  SolidBrush background(ArgbColor(
+      static_cast<unsigned char>((color_rgb_ >> 16) & 0xFF),
+      static_cast<unsigned char>((color_rgb_ >> 8) & 0xFF),
+      static_cast<unsigned char>(color_rgb_ & 0xFF)));
   graphics.FillEllipse(&background, 0.0f, 0.0f, static_cast<Gdiplus::REAL>(kIconSize),
                        static_cast<Gdiplus::REAL>(kIconSize));
 
   DrawOrexMark(&graphics, RectF(0.0f, 0.0f,
                                 static_cast<Gdiplus::REAL>(kIconSize),
                                 static_cast<Gdiplus::REAL>(kIconSize)),
-               CreamColor());
+               ArgbColor(
+                   static_cast<unsigned char>((mark_rgb_ >> 16) & 0xFF),
+                   static_cast<unsigned char>((mark_rgb_ >> 8) & 0xFF),
+                   static_cast<unsigned char>(mark_rgb_ & 0xFF)));
 
   HBITMAP color_bitmap = nullptr;
   if (bitmap.GetHBITMAP(Color(0, 0, 0, 0), &color_bitmap) != Gdiplus::Ok ||
@@ -361,7 +352,16 @@ HICON TrayIcon::CreateStatusIcon(TrayStatus status) const {
 }
 
 std::wstring TrayIcon::StatusText() const {
+  if (!label_.empty()) {
+    return status_ == TrayStatus::kConnected && !target_name_.empty()
+               ? label_ + L" \u00b7 " + target_name_
+               : label_;
+  }
   switch (status_) {
+    case TrayStatus::kChecking:
+      return WideFromUtf8(u8"Проверка");
+    case TrayStatus::kUnavailable:
+      return WideFromUtf8(u8"Нет ответа");
     case TrayStatus::kConnected:
       return target_name_.empty() ? WideFromUtf8(u8"Защищено")
                                   : WideFromUtf8(u8"Защищено · ") + target_name_;
@@ -384,7 +384,7 @@ std::wstring TrayIcon::TooltipText() const {
 }
 
 void TrayIcon::ApplyIcon() {
-  HICON next_icon = CreateStatusIcon(status_);
+  HICON next_icon = CreateStatusIcon();
   if (next_icon == nullptr) return;
   if (status_icon_ != nullptr) DestroyIcon(status_icon_);
   status_icon_ = next_icon;
