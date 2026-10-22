@@ -152,6 +152,29 @@ void main() {
     expect(updated.pingStatus, PingStatus.success);
   });
 
+  test('deleted subscription is not resurrected by a late refresh', () async {
+    SharedPreferences.setMockInitialValues({});
+    const first = 'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
+        '?encryption=none&security=none&type=tcp#One';
+    const second = 'vless://bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb@two.example:443'
+        '?encryption=none&security=none&type=tcp#Two';
+    final pending = Completer<SubscriptionFetchResult>();
+    final source = _DelayedSubscriptionSource(
+      const SubscriptionFetchResult(body: first), pending);
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+
+    await profiles.importSubscription('https://sub.example/slow');
+    final id = profiles.subscriptions.single.id;
+    final refresh = profiles.refreshSubscription(id);
+    await Future<void>.delayed(Duration.zero);
+    await profiles.deleteSubscription(id);
+    pending.complete(const SubscriptionFetchResult(body: second));
+    await expectLater(refresh, throwsA(isA<StateError>()));
+    expect(profiles.subscriptions, isEmpty);
+    expect(profiles.profiles, isEmpty);
+  });
+
   test('subscription refresh replaces only nodes owned by that source', () async {
     SharedPreferences.setMockInitialValues({});
     const first =
@@ -251,6 +274,36 @@ vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443?encryption=none&sec
 
     await profiles.refreshSubscription(profiles.subscriptions.single.id);
     expect(profiles.subscriptions.single.supportUrl, isEmpty);
+  });
+
+  test('manual refresh continues when one provider fails', () async {
+    SharedPreferences.setMockInitialValues({});
+    const one = 'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
+        '?encryption=none&security=none&type=tcp#One';
+    const two = 'vless://bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb@two.example:443'
+        '?encryption=none&security=none&type=tcp#Two';
+    const three = 'vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@three.example:443'
+        '?encryption=none&security=none&type=tcp#Three';
+    final source = _ByUrlSubscriptionSource({
+      'https://sub.example/good': [
+        const SubscriptionFetchResult(body: two),
+        const SubscriptionFetchResult(body: three),
+      ],
+      'https://sub.example/bad': [
+        const SubscriptionFetchResult(body: one),
+        const FormatException('Unavailable'),
+        const FormatException('Unavailable'),
+      ],
+    });
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+    await profiles.importSubscription('https://sub.example/good');
+    await profiles.importSubscription('https://sub.example/bad');
+    final results = await profiles.refreshAllSubscriptions();
+    expect(results, hasLength(1));
+    expect(results.single.subscription.url, 'https://sub.example/good');
+    expect(profiles.profiles.map((profile) => profile.name).toSet(),
+        {'One', 'Three'});
   });
 
   test('auto-refresh updates stale subscriptions on app-resume checks', () async {
@@ -1097,6 +1150,20 @@ vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443?encryption=none&sec
   });
 }
 
+class _DelayedSubscriptionSource extends SubscriptionSource {
+  _DelayedSubscriptionSource(this.first, this.pending);
+  final SubscriptionFetchResult first;
+  final Completer<SubscriptionFetchResult> pending;
+  int calls = 0;
+
+  @override
+  Future<SubscriptionFetchResult> loadUrl(
+    String value, {String userAgent = 'OrexRay/Subscription'}) {
+    calls++;
+    return calls == 1 ? Future.value(first) : pending.future;
+  }
+}
+
 class _SequenceSubscriptionSource extends SubscriptionSource {
   _SequenceSubscriptionSource(
     this.responses, {
@@ -1130,6 +1197,22 @@ class _SequenceSubscriptionSource extends SubscriptionSource {
     metadataUserAgents.add(userAgent);
     if (_metadataIndex >= metadataResponses.length) return null;
     return metadataResponses[_metadataIndex++];
+  }
+}
+
+class _ByUrlSubscriptionSource extends SubscriptionSource {
+  _ByUrlSubscriptionSource(this.responses);
+  final Map<String, List<Object>> responses;
+
+  @override
+  Future<SubscriptionFetchResult> loadUrl(
+    String url, {String userAgent = 'OrexRay/Subscription'}) async {
+    final entries = responses[url];
+    if (entries == null || entries.isEmpty) throw FormatException(url);
+    final next = entries.removeAt(0);
+    if (next is SubscriptionFetchResult) return next;
+    if (next is FormatException) throw next;
+    throw StateError('Unexpected response');
   }
 }
 

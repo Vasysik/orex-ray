@@ -103,6 +103,8 @@ class ProfilesController extends ChangeNotifier {
   bool _autoRefreshInFlight = false;
   bool _metadataRefreshInFlight = false;
   final Set<String> _refreshingSubscriptionIds = <String>{};
+  // Invalidates in-flight downloads after a subscription is removed or changed.
+  final Map<String, int> _subscriptionRevisions = <String, int>{};
   final Map<String, int> _lastAutoRefreshAttemptEpochMs = <String, int>{};
   final Map<String, int> _lastMetadataRefreshAttemptEpochMs = <String, int>{};
   bool _disposed = false;
@@ -494,6 +496,7 @@ class ProfilesController extends ChangeNotifier {
     );
     final existing = existingIndex >= 0 ? _subscriptions[existingIndex] : null;
     final id = existing?.id ?? ProxySubscription.idForUrl(normalizedUrl);
+    final revision = _subscriptionRevisions[id] ?? 0;
     final loaded = await _loadSubscription(normalizedUrl);
     return _applySubscription(
       id: id,
@@ -501,6 +504,7 @@ class ProfilesController extends ChangeNotifier {
       existing: existing,
       fetched: loaded.fetched,
       parsed: loaded.parsed,
+      expectedRevision: revision,
     );
   }
 
@@ -518,6 +522,7 @@ class ProfilesController extends ChangeNotifier {
     if (existing == null) {
       throw const FormatException('Подписка не найдена');
     }
+    final revision = _subscriptionRevisions[id] ?? 0;
     _refreshingSubscriptionIds.add(id);
     _notifyListeners();
     try {
@@ -528,6 +533,7 @@ class ProfilesController extends ChangeNotifier {
         existing: existing,
         fetched: loaded.fetched,
         parsed: loaded.parsed,
+        expectedRevision: revision,
       );
     } finally {
       _refreshingSubscriptionIds.remove(id);
@@ -722,7 +728,12 @@ class ProfilesController extends ChangeNotifier {
     try {
       for (final subscription in List<ProxySubscription>.from(_subscriptions)) {
         if (_disposed) break;
-        results.add(await refreshSubscription(subscription.id));
+        try {
+          results.add(await refreshSubscription(subscription.id));
+        } on Object {
+          // One unavailable provider must not stop the remaining subscriptions.
+          // Its existing profiles are preserved by refreshSubscription.
+        }
       }
       return List.unmodifiable(results);
     } finally {
@@ -735,6 +746,8 @@ class ProfilesController extends ChangeNotifier {
     final index = _subscriptions.indexWhere((item) => item.id == id);
     if (index < 0) return;
     final subscription = _subscriptions[index];
+    // Invalidate any GET request which started before this deletion.
+    _subscriptionRevisions[id] = (_subscriptionRevisions[id] ?? 0) + 1;
     _lastAutoRefreshAttemptEpochMs.remove(subscription.id);
     _lastMetadataRefreshAttemptEpochMs.remove(subscription.id);
     final removedIds = subscription.profileIds.toSet();
@@ -792,7 +805,16 @@ class ProfilesController extends ChangeNotifier {
     required ProxySubscription? existing,
     required SubscriptionFetchResult fetched,
     required SubscriptionParseResult parsed,
+    required int expectedRevision,
   }) async {
+    // The HTTP request completed, but the subscription may have been deleted
+    // while it was pending. Never re-create or overwrite it from stale data.
+    if (_disposed ||
+        (_subscriptionRevisions[id] ?? 0) != expectedRevision ||
+        (existing != null &&
+            !_subscriptions.any((subscription) => subscription.id == id))) {
+      throw StateError('Подписка удалена или изменена во время обновления');
+    }
     if (parsed.profiles.isEmpty) {
       throw const FormatException('В подписке нет поддерживаемых серверов');
     }
@@ -920,6 +942,7 @@ class ProfilesController extends ChangeNotifier {
       ..clear()
       ..addAll(workingSubscriptions);
     _selectedId = selectedId;
+    _subscriptionRevisions[id] = expectedRevision + 1;
     _notifyListeners();
     return SubscriptionSyncResult(
       subscription: subscription,
