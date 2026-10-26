@@ -12,6 +12,8 @@ class OrexPalette extends ThemeExtension<OrexPalette> {
     required this.text,
     required this.mutedText,
     required this.border,
+    required this.success,
+    required this.danger,
   });
 
   static const roles = <String, String>{
@@ -22,6 +24,8 @@ class OrexPalette extends ThemeExtension<OrexPalette> {
     'text': 'Основной текст',
     'mutedText': 'Второстепенный текст',
     'border': 'Границы',
+    'success': 'Успешное соединение',
+    'danger': 'Ошибка / предупреждение',
   };
 
   final Color accent;
@@ -31,6 +35,8 @@ class OrexPalette extends ThemeExtension<OrexPalette> {
   final Color text;
   final Color mutedText;
   final Color border;
+  final Color success;
+  final Color danger;
 
   static OrexPalette resolve(
     Brightness brightness,
@@ -47,6 +53,8 @@ class OrexPalette extends ThemeExtension<OrexPalette> {
       mutedText: get('mutedText', dark ? OrexColors.darkTextSoft : OrexColors.lightTextSoft),
       border: get('border', (dark ? OrexColors.ochreLight : OrexColors.copperBright)
           .withValues(alpha: dark ? 0.18 : 0.28)),
+      success: get('success', OrexColors.online),
+      danger: get('danger', OrexColors.danger),
     );
   }
 
@@ -58,6 +66,8 @@ class OrexPalette extends ThemeExtension<OrexPalette> {
         'text' => text,
         'mutedText' => mutedText,
         'border' => border,
+        'success' => success,
+        'danger' => danger,
         _ => throw ArgumentError.value(key, 'key', 'Unknown color role'),
       };
 
@@ -74,6 +84,8 @@ class OrexPalette extends ThemeExtension<OrexPalette> {
     Color? text,
     Color? mutedText,
     Color? border,
+    Color? success,
+    Color? danger,
   }) => OrexPalette(
         accent: accent ?? this.accent,
         secondary: secondary ?? this.secondary,
@@ -82,6 +94,8 @@ class OrexPalette extends ThemeExtension<OrexPalette> {
         text: text ?? this.text,
         mutedText: mutedText ?? this.mutedText,
         border: border ?? this.border,
+        success: success ?? this.success,
+        danger: danger ?? this.danger,
       );
 
   @override

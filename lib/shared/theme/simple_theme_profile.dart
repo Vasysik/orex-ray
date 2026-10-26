@@ -12,6 +12,7 @@ class SimpleThemeProfile {
     this.mascotPath = '',
     this.builtin = false,
     this.light = false,
+    this.glassEnabled = true,
     this.glassOpacity = defaultGlassOpacity,
     this.glassBlur = defaultGlassBlur,
     this.glassGlow = defaultGlassGlow,
@@ -38,6 +39,7 @@ class SimpleThemeProfile {
   final String mascotPath;
   final bool builtin;
   final bool light;
+  final bool glassEnabled;
   final double glassOpacity;
   final double glassBlur;
   final double glassGlow;
@@ -48,6 +50,7 @@ class SimpleThemeProfile {
     String? mascotPath,
     bool? builtin,
     bool? light,
+    bool? glassEnabled,
     double? glassOpacity,
     double? glassBlur,
     double? glassGlow,
@@ -58,15 +61,17 @@ class SimpleThemeProfile {
         mascotPath: mascotPath ?? this.mascotPath,
         builtin: builtin ?? this.builtin,
         light: light ?? this.light,
+        glassEnabled: glassEnabled ?? this.glassEnabled,
         glassOpacity: glassOpacity ?? this.glassOpacity,
         glassBlur: glassBlur ?? this.glassBlur,
         glassGlow: glassGlow ?? this.glassGlow,
       );
 
-  Map<String, double> get glassJson => {
+  Map<String, Object> get glassJson => {
         'opacity': glassOpacity,
         'blur': glassBlur,
         'glow': glassGlow,
+        'enabled': glassEnabled,
       };
 
   static (double, double, double) parseGlass(Object? source) {
@@ -120,6 +125,8 @@ class SimpleThemeProfile {
       mascotPath: json['mascotPath'] is String ? json['mascotPath'] as String : '',
       builtin: json['builtin'] == true,
       light: json['light'] == true,
+      glassEnabled: (json['glass'] is Map)
+          ? (json['glass'] as Map)['enabled'] != false : true,
       glassOpacity: opacity,
       glassBlur: blur,
       glassGlow: glow,

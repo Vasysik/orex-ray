@@ -47,8 +47,73 @@ class ThemeController extends ChangeNotifier {
     return null;
   }
 
-  Map<String, Color> get colors => selectedTheme?.colors ?? const {};
-  String get mascotPath => selectedTheme?.mascotPath ?? '';
+  // Unsaved theme editor state. Remains active across screen navigation,
+  // but is never written to SharedPreferences until Save is pressed.
+  SimpleThemeProfile? _draft;
+  Uint8List? _draftMascotBytes;
+  bool _draftMascotReset = false;
+  String? get editingThemeId => _draft?.id;
+  SimpleThemeProfile? get editingTheme => _draft == null ? null : selectedTheme;
+  SimpleThemeProfile? get activeTheme => _draft ?? selectedTheme;
+  Map<String, Color> get colors => activeTheme?.colors ?? const {};
+  String get mascotPath => _draftMascotReset ? '' : (activeTheme?.mascotPath ?? '');
+  Uint8List? get mascotBytes => _draftMascotBytes;
+  bool get draftMascotReset => _draftMascotReset;
+  bool get effectiveGlassEnabled =>
+      _glassEnabled && (activeTheme?.glassEnabled ?? true);
+
+  void startEditing(String id) {
+    final target = _themes.where((t) => t.id == id && !t.builtin).firstOrNull;
+    if (target == null || id != _selectedId) {
+      throw const FormatException('Выберите свою тему для редактирования');
+    }
+    if (_draft?.id == id) return;
+    _draft = target;
+    _draftMascotBytes = null;
+    _draftMascotReset = false;
+    notifyListeners();
+  }
+
+  void updateEditing({
+    String? name,
+    Map<String, Color>? colors,
+    bool? light,
+    bool? glassEnabled,
+    double? opacity,
+    double? blur,
+    double? glow,
+    Uint8List? mascotBytes,
+    bool resetMascot = false,
+  }) {
+    final current = _draft;
+    if (current == null) return;
+    _draft = current.copyWith(
+      name: name,
+      colors: colors ?? current.colors,
+      light: light,
+      glassEnabled: glassEnabled,
+      glassOpacity: opacity,
+      glassBlur: blur,
+      glassGlow: glow,
+    );
+    if (mascotBytes != null) {
+      _draftMascotBytes = mascotBytes;
+      _draftMascotReset = false;
+    } else if (resetMascot) {
+      _draftMascotBytes = null;
+      _draftMascotReset = true;
+    }
+    notifyListeners();
+  }
+
+  void cancelEditing() {
+    if (_draft == null) return;
+    _draft = null;
+    _draftMascotBytes = null;
+    _draftMascotReset = false;
+    notifyListeners();
+  }
+
 
   static Future<ThemeController> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -104,36 +169,42 @@ class ThemeController extends ChangeNotifier {
         );
         continue;
       }
-      if (profile.id == 'preset_cabbage' &&
-          profile.colors['background'] == const Color(0xFFF0F9D1)) {
+      if (profile.id == 'preset_cabbage' && profile.builtin &&
+          profile.colors['background'] != const Color(0xFF0E140A)) {
         profiles[i] = profile.copyWith(
           colors: {
-            'accent': const Color(0xFFAACD81),
-            'secondary': const Color(0xFF789C5D),
-            'background': const Color(0xFF101A0E),
-            'surface': const Color(0xFF23351B),
-            'text': const Color(0xFFF0F6E8),
-            'mutedText': const Color(0xFFB1C5A1),
-            'border': const Color(0xFF516C45),
+            'accent': const Color(0xFFC9E279),
+            'secondary': const Color(0xFFAACD56),
+            'background': const Color(0xFF0E140A),
+            'surface': const Color(0xFF1C2812),
+            'text': const Color(0xFFFAFAF3),
+            'mutedText': const Color(0xFFDDE9BE),
+            'border': const Color(0xFF6F953A),
           },
           light: false,
-          glassOpacity: 0.58,
-          glassGlow: 0.09,
+          glassOpacity: 0.60,
+          glassGlow: 0,
         );
-      } else if (profile.id == 'preset_noir' &&
-          profile.colors['background'] == const Color(0xFF090A0B)) {
+      } else if (profile.id == 'preset_noir' && profile.builtin) {
+        // Cached old Noir palettes were almost black. The built-in preset
+        // is immutable, so upgrading it never alters custom user copies.
         profiles[i] = profile.copyWith(
+          name: 'Серая тема Орешка',
           colors: {
-            'accent': const Color(0xFFAAAAAA),
-            'secondary': const Color(0xFF686868),
-            'background': const Color(0xFF050506),
-            'surface': const Color(0xFF0E0F10),
-            'text': const Color(0xFFE8E8E8),
-            'mutedText': const Color(0xFF9D9D9D),
-            'border': const Color(0xFF323334),
+            'accent': const Color(0xFF4F8FB8),
+            'secondary': const Color(0xFF356E97),
+            'background': const Color(0xFF202020),
+            'surface': const Color(0xFF2B2B2B),
+            'text': const Color(0xFFF5F5F5),
+            'mutedText': const Color(0xFFB8B8B8),
+            'border': const Color(0xFF454545),
+            'success': const Color(0xFF6CCB75),
+            'danger': const Color(0xFFFF7373),
           },
-          glassOpacity: 0.67,
-          glassGlow: 0.06,
+          glassEnabled: false,
+          glassOpacity: 0.90,
+          glassBlur: 0,
+          glassGlow: 0,
         );
       }
     }
@@ -174,6 +245,7 @@ class ThemeController extends ChangeNotifier {
       mascotPath: source?.mascotPath ?? '',
       builtin: false,
       light: source?.light ?? false,
+      glassEnabled: source?.glassEnabled ?? true,
       glassOpacity: source?.glassOpacity ?? SimpleThemeProfile.defaultGlassOpacity,
       glassBlur: source?.glassBlur ?? SimpleThemeProfile.defaultGlassBlur,
       glassGlow: source?.glassGlow ?? SimpleThemeProfile.defaultGlassGlow,
@@ -191,6 +263,7 @@ class ThemeController extends ChangeNotifier {
     if (_selectedId == id) {
       return;
     }
+    cancelEditing();
     _selectedId = id;
     await _saveThemes();
   }
@@ -243,6 +316,8 @@ class ThemeController extends ChangeNotifier {
       mascotPath: path,
       builtin: true,
       light: data['light'] == true,
+      glassEnabled: (data['glass'] is Map)
+          ? (data['glass'] as Map)['enabled'] != false : true,
       glassOpacity: opacity,
       glassBlur: blur,
       glassGlow: glow,
@@ -298,6 +373,7 @@ class ThemeController extends ChangeNotifier {
     required String name,
     required Map<String, Color> colors,
     required bool light,
+    bool glassEnabled = true,
     required double opacity,
     required double blur,
     required double glow,
@@ -315,6 +391,7 @@ class ThemeController extends ChangeNotifier {
       name: name.trim(),
       colors: Map.of(colors),
       light: light,
+      glassEnabled: glassEnabled,
       glassOpacity: opacity,
       glassBlur: blur,
       glassGlow: glow,
@@ -489,6 +566,8 @@ class ThemeController extends ChangeNotifier {
       colors: colors,
       mascotPath: path,
       light: raw['light'] == true,
+      glassEnabled: (raw['glass'] is Map)
+          ? (raw['glass'] as Map)['enabled'] != false : true,
       glassOpacity: opacity,
       glassBlur: blur,
       glassGlow: glow,

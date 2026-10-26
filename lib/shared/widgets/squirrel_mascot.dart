@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -7,13 +8,15 @@ import '../theme/orex_theme.dart';
 
 /// Provides an optional mascot image to existing SquirrelMascot widgets.
 class OrexMascotAppearance extends ThemeExtension<OrexMascotAppearance> {
-  const OrexMascotAppearance({this.filePath = ''});
+  const OrexMascotAppearance({this.filePath = '', this.bytes});
 
   final String filePath;
+  final Uint8List? bytes;
 
   @override
-  OrexMascotAppearance copyWith({String? filePath}) =>
-      OrexMascotAppearance(filePath: filePath ?? this.filePath);
+  OrexMascotAppearance copyWith({String? filePath, Uint8List? bytes}) =>
+      OrexMascotAppearance(filePath: filePath ?? this.filePath,
+          bytes: bytes ?? this.bytes);
 
   @override
   OrexMascotAppearance lerp(
@@ -45,6 +48,9 @@ class SquirrelMascot extends StatelessWidget {
         ? ''
         : (Theme.of(context)
             .extension<OrexMascotAppearance>()?.filePath ?? '');
+    final bytes = forceDefault
+        ? null
+        : Theme.of(context).extension<OrexMascotAppearance>()?.bytes;
     final palette = OrexPalette.of(context);
     final decodeWidth = (size * MediaQuery.devicePixelRatioOf(context))
         .round()
@@ -62,7 +68,7 @@ class SquirrelMascot extends StatelessWidget {
             BoxShadow(
               // The classic icon keeps its original copper halo regardless of
               // which custom palette is currently active.
-              color: (selectedPath.isEmpty
+              color: (selectedPath.isEmpty && bytes == null
                       ? OrexColors.copper
                       : palette.accent)
                   .withValues(alpha: 0.28),
@@ -72,7 +78,9 @@ class SquirrelMascot extends StatelessWidget {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: selectedPath.isEmpty
+        child: bytes != null
+            ? Image.memory(bytes, fit: BoxFit.cover, cacheWidth: decodeWidth)
+            : selectedPath.isEmpty
             ? Image.asset(
                 'assets/images/orexray_logo.png',
                 fit: BoxFit.cover,

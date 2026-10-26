@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/features/appearance/appearance_screen.dart';
-import 'package:orex_ray/features/appearance/simple_theme_editor_screen.dart';
+import 'package:orex_ray/features/appearance/live_theme_editor_screen.dart';
 import 'package:orex_ray/shared/theme/orex_theme.dart';
 import 'package:orex_ray/shared/theme/theme_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';

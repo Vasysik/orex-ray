@@ -214,8 +214,12 @@ void main() {
     expect((lime['colors'] as Map)['background'], '#FF0E140A');
     expect((lime['colors'] as Map)['surface'], '#FF1C2812');
     expect((lime['colors'] as Map)['accent'], '#FFC9E279');
-    expect((noir['colors'] as Map)['background'], '#FF050506');
-    expect((noir['colors'] as Map)['surface'], '#FF121314');
+    expect(noir['name'], 'Серая тема Орешка');
+    expect((noir['colors'] as Map)['accent'], '#FF4F8FB8');
+    expect((noir['colors'] as Map)['secondary'], '#FF356E97');
+    expect((noir['colors'] as Map)['background'], '#FF202020');
+    expect((noir['colors'] as Map)['surface'], '#FF2B2B2B');
+    expect((noir['glass'] as Map)['enabled'], isFalse);
     // A self-contained preset must still carry its own mascot bytes.
     expect(lime['mascot'], startsWith('data:image/webp;base64,'));
     expect(noir['mascot'], startsWith('data:image/webp;base64,'));
@@ -248,10 +252,86 @@ void main() {
     final controller = await ThemeController.load();
     addTearDown(controller.dispose);
     expect(controller.selectedTheme!.light, isFalse);
-    expect(controller.colors['background'], const Color(0xFF101A0E));
-    expect(controller.colors['accent'], const Color(0xFFAACD81));
+    expect(controller.colors['background'], const Color(0xFF0E140A));
+    expect(controller.colors['accent'], const Color(0xFFC9E279));
     expect(controller.customThemes.single.colors['background'],
         const Color(0xFFF0F9D1));
+  });
+
+  test('live draft is visible globally, cancel discards it, save persists',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final theme = await ThemeController.load();
+    addTearDown(theme.dispose);
+    final profile = await theme.createTheme('Test Theme');
+    expect(theme.selectedTheme!.glassEnabled, isTrue);
+    theme.startEditing(profile.id);
+    theme.updateEditing(
+      name: 'Unsaved',
+      colors: const {'accent': Color(0xFF60CDFF)},
+      glassEnabled: false,
+      glow: -0.45,
+    );
+    expect(theme.colors['accent'], const Color(0xFF60CDFF));
+    expect(theme.effectiveGlassEnabled, isFalse);
+    expect(theme.activeTheme?.glassGlow, -0.45);
+    expect(theme.editingThemeId, profile.id);
+    expect(theme.selectedTheme!.colors, isEmpty);
+    expect(theme.selectedTheme!.name, 'Test Theme');
+    final otherInstance = await ThemeController.load();
+    addTearDown(otherInstance.dispose);
+    expect(otherInstance.selectedTheme!.colors, isEmpty);
+    expect(otherInstance.selectedTheme!.glassEnabled, isTrue);
+
+    theme.cancelEditing();
+    expect(theme.editingThemeId, isNull);
+    expect(theme.colors, isEmpty);
+    expect(theme.effectiveGlassEnabled, isTrue);
+    await theme.updateThemeDesign(
+      profile.id,
+      name: 'Saved',
+      colors: const {'accent': Color(0xFF60CDFF)},
+      light: false,
+      glassEnabled: false,
+      opacity: 0.55,
+      blur: 18,
+      glow: -0.45,
+    );
+    final saved = await ThemeController.load();
+    addTearDown(saved.dispose);
+    expect(saved.selectedTheme!.name, 'Saved');
+    expect(saved.selectedTheme!.glassEnabled, isFalse);
+    expect(saved.effectiveGlassEnabled, isFalse);
+    expect(saved.colors['accent'], const Color(0xFF60CDFF));
+    final exported = jsonDecode(await saved.exportThemeJson(profile.id)) as Map;
+    expect((exported['glass'] as Map)['enabled'], isFalse);
+  });
+
+  test('gray builtin preset is migrated without changing user copies',
+      () async {
+    final old = SimpleThemeProfile(
+      id: 'preset_noir', name: 'Monochrome Noir', builtin: true,
+      colors: const {'background': Color(0xFF050506)},
+    );
+    final copy = SimpleThemeProfile(
+      id: 'user_noir', name: 'My Noir',
+      colors: const {'background': Color(0xFF050506)},
+    );
+    SharedPreferences.setMockInitialValues({
+      'orex_ray_simple_themes_v1': jsonEncode([
+        old.toStoredJson(), copy.toStoredJson(),
+      ]),
+      'orex_ray_simple_selected_theme_v1': 'preset_noir',
+    });
+    final theme = await ThemeController.load();
+    addTearDown(theme.dispose);
+    expect(theme.selectedTheme!.name, 'Серая тема Орешка');
+    expect(theme.colors['accent'], const Color(0xFF4F8FB8));
+    expect(theme.colors['secondary'], const Color(0xFF356E97));
+    expect(theme.colors['background'], const Color(0xFF202020));
+    expect(theme.effectiveGlassEnabled, isFalse);
+    expect(theme.customThemes.single.colors['background'],
+        const Color(0xFF050506));
   });
 
   test('custom accents reach Material controls but classic stays unchanged', () {

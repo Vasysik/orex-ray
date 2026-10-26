@@ -76,6 +76,7 @@ class OrexTheme {
         primary: palette.accent,
         onPrimary: onAccent,
         secondary: palette.secondary,
+        error: palette.danger,
         surface: palette.surface,
         onSurface: palette.text,
         onSurfaceVariant: palette.mutedText,

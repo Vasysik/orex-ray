@@ -10,7 +10,7 @@ import '../../shared/theme/simple_theme_profile.dart';
 import '../../shared/theme/theme_controller.dart';
 import '../../shared/widgets/settings_section.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
-import 'simple_theme_editor_screen.dart';
+import 'live_theme_editor_screen.dart';
 
 /// Compact theme selection with the original Orex styling left intact.
 class AppearanceScreen extends StatefulWidget {
@@ -23,8 +23,8 @@ class AppearanceScreen extends StatefulWidget {
 
 class _AppearanceScreenState extends State<AppearanceScreen> {
   bool _busy = false;
-  SimpleThemeProfile? _editing;
   ThemeController get theme => widget.theme;
+  SimpleThemeProfile? get _editing => theme.editingTheme;
 
   Future<void> _run(Future<void> Function() action) async {
     if (_busy) return;
@@ -44,11 +44,11 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
   void _openEditor(SimpleThemeProfile entry) {
     if (!mounted) return;
-    setState(() => _editing = entry);
+    theme.startEditing(entry.id);
   }
 
   void _closeEditor() {
-    if (mounted) setState(() => _editing = null);
+    theme.cancelEditing();
   }
 
   Future<void> _create() => _run(() async {
@@ -259,7 +259,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             selected: theme.selectedId == null,
             leading: const SquirrelMascot(size: 48, compact: true, forceDefault: true),
             title: const Text('Классический Orex'),
-            subtitle: const Text('Оригинальное оформление и белочка — без изменений'),
+            subtitle: const Text('Оригинальное оформление и белочка'),
             onTap: _busy ? null : () => _run(() => theme.selectTheme(null)),
           ),
           for (final preset in OrexBuiltinPreset.values) ...[

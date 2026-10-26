@@ -235,13 +235,13 @@ class _ErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassPanel(
       borderRadius: 20,
-      tint: OrexColors.danger,
+      tint: OrexPalette.of(context).danger,
       opacity: 0.14,
       padding: const EdgeInsets.all(16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, color: OrexColors.danger),
+          Icon(Icons.error_outline_rounded, color: OrexPalette.of(context).danger),
           const SizedBox(width: 12),
           Expanded(child: Text(message)),
         ],
@@ -1240,7 +1240,7 @@ class _ProxyDetails extends StatelessWidget {
                     status,
                     style: textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: available ? OrexColors.online : null,
+                      color: available ? OrexPalette.of(context).success : null,
                     ),
                   ),
                 ],
