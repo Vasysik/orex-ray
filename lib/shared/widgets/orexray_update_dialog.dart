@@ -26,16 +26,37 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   String? _error;
   int _received = 0;
   int _total = 0;
+  DateTime? _lastProgressRebuild;
   bool _busy = false;
   bool _permissionRequired = false;
 
   Future<void> _start() async {
     if (_busy) return;
     final token = OrexRayUpdateToken();
-    setState(() { _busy = true; _token = token; _error = null; });
+    _lastProgressRebuild = null;
+    setState(() {
+      _busy = true;
+      _token = token;
+      _error = null;
+      if (_downloaded == null) {
+        _received = 0;
+        _total = 0;
+      }
+    });
     try {
       _downloaded ??= await widget.updates.download(token, (received, total) {
-        if (mounted) setState(() { _received = received; _total = total; });
+        if (!mounted) {
+          return;
+        }
+        // Avoid rebuilding a long Markdown changelog for every network chunk.
+        final now = DateTime.now();
+        if (_lastProgressRebuild != null && received < total &&
+            now.difference(_lastProgressRebuild!) <
+                const Duration(milliseconds: 200)) {
+          return;
+        }
+        _lastProgressRebuild = now;
+        setState(() { _received = received; _total = total; });
       });
       token.check();
       final permissionRequired = await widget.updates.launchInstaller(_downloaded!);
@@ -71,8 +92,10 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     final release = widget.updates.available!;
     final palette = OrexPalette.of(context);
     final fraction = _total > 0 ? (_received / _total).clamp(0, 1).toDouble() : null;
-    final notesMaxHeight = (MediaQuery.sizeOf(context).height * 0.32)
-        .clamp(120.0, 320.0).toDouble();
+    // Reserve vertical space for the progress footer on shorter screens.
+    final notesMaxHeight = (MediaQuery.sizeOf(context).height *
+            (_busy ? 0.25 : 0.32))
+        .clamp(80.0, _busy ? 240.0 : 320.0).toDouble();
     return PopScope(
       canPop: !_busy,
       child: AlertDialog(
@@ -93,13 +116,22 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                   padding: EdgeInsets.only(top: 8),
                   child: Text('ТЕСТ: повторная установка той же версии'),
                 ),
-              // Errors and download progress never sit below the long changelog.
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: TextStyle(color: palette.danger)),
-              ],
+              const SizedBox(height: 16),
+              Text('Что нового', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              // Only release notes scroll. Download progress is pinned beneath.
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: notesMaxHeight),
+                child: SingleChildScrollView(
+                  child: MarkdownBody(
+                    key: const ValueKey('orexray-update-markdown'),
+                    data: release.notes,
+                    selectable: true,
+                  ),
+                ),
+              ),
               if (_busy) ...[
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
                 LinearProgressIndicator(value: fraction, color: palette.accent),
                 const SizedBox(height: 8),
                 Text(_total == 0
@@ -107,21 +139,10 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                     : '${(_received / 1048576).toStringAsFixed(1)} из '
                       '${(_total / 1048576).toStringAsFixed(1)} МБ '
                       '(${(100 * (fraction ?? 0)).round()}%)'),
-              ] else ...[
-                const SizedBox(height: 16),
-                Text('Что нового', style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 8),
-                // The notes scroll independently; action buttons stay visible.
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: notesMaxHeight),
-                  child: SingleChildScrollView(
-                    child: MarkdownBody(
-                      key: const ValueKey('orexray-update-markdown'),
-                      data: release.notes,
-                      selectable: true,
-                    ),
-                  ),
-                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: TextStyle(color: palette.danger)),
               ],
             ],
           ),
