@@ -29,6 +29,27 @@ void main() {
     expect(decoration.gradient, isNull);
   });
 
+  testWidgets('zero blur avoids a backdrop pass without removing glass or glow',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark.copyWith(
+        extensions: [const OrexGlassAppearance(
+          blur: 0,
+          glow: 0.5,
+        )],
+      ),
+      home: const Scaffold(
+        body: GlassPanel(isolateContentRepaints: true, child: Text('Fast glass')),
+      ),
+    ));
+    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(ClipRRect), findsWidgets);
+    expect(find.descendant(
+      of: find.byType(GlassPanel),
+      matching: find.byType(RepaintBoundary),
+    ), findsWidgets);
+  });
+
   testWidgets('custom glass opacity and glow affect the panel', (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: OrexTheme.dark.copyWith(
@@ -113,5 +134,39 @@ void main() {
     expect(theme.glassEnabled, isFalse);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('orex_ray_glass_enabled'), isFalse);
+  });
+
+  testWidgets('static ambient filters background once without card backdrop',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark,
+      home: AmbientBackground(
+        preblurred: true,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: GlassPanel(
+            staticBackdrop: true,
+            child: const Text('Fast home glass'),
+          ),
+        ),
+      ),
+    ));
+    expect(find.byType(ImageFiltered), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsNothing);
+    final panel = tester.widget<Container>(
+      find.descendant(
+        of: find.byType(GlassPanel),
+        matching: find.byType(Container),
+      ).first,
+    );
+    expect((panel.decoration! as BoxDecoration).color!.a, lessThan(1));
+  });
+
+  testWidgets('dynamic overlays preserve original live blur', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark,
+      home: const Scaffold(body: GlassPanel(child: Text('Dynamic glass'))),
+    ));
+    expect(find.byType(BackdropFilter), findsOneWidget);
   });
 }

@@ -6,14 +6,18 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/connection_visual_status.dart';
+import '../../shared/theme/orex_palette.dart';
+import '../../shared/theme/theme_controller.dart';
 import '../../features/home/tunnel_controller.dart';
 
 class WindowsLifecycleController {
   WindowsLifecycleController({
     required TunnelController tunnel,
     required ConnectionSettingsController settings,
+    ThemeController? theme,
   })  : _tunnel = tunnel,
-        _settings = settings;
+        _settings = settings,
+        _theme = theme;
 
   static const _channel = MethodChannel('ru.orex.ray/windows_lifecycle');
   static const _networkDebounce = Duration(seconds: 3);
@@ -22,6 +26,17 @@ class WindowsLifecycleController {
 
   final TunnelController _tunnel;
   final ConnectionSettingsController _settings;
+  final ThemeController? _theme;
+
+  OrexPalette? get _palette {
+    final theme = _theme;
+    if (theme == null) return null;
+    final brightness = theme.activeTheme?.light == true
+        ? Brightness.light
+        : Brightness.dark;
+    return OrexPalette.resolve(brightness, theme.colors);
+  }
+
   bool _initialized = false;
   bool _exitInProgress = false;
   String? _lastTrayState;
@@ -38,6 +53,7 @@ class WindowsLifecycleController {
     _channel.setMethodCallHandler(_handleNativeCall);
     _settings.addListener(_onSettingsChanged);
     _tunnel.addListener(_onTunnelChanged);
+    _theme?.addListener(_onThemeChanged);
     await _syncCloseBehavior();
     await _syncStartupRegistration();
     await _queueTrayStatus();
@@ -70,6 +86,10 @@ class WindowsLifecycleController {
   }
 
   void _onTunnelChanged() {
+    unawaited(_queueTrayStatus());
+  }
+
+  void _onThemeChanged() {
     unawaited(_queueTrayStatus());
   }
 
@@ -162,6 +182,7 @@ class WindowsLifecycleController {
         final visual = ConnectionVisualStatus.fromSnapshot(
           disconnecting,
           PingStatus.unknown,
+          palette: _palette,
         );
         await _trayUpdateQueue;
         await _channel.invokeMethod<void>(
@@ -194,7 +215,11 @@ class WindowsLifecycleController {
     final routePing = snapshot.isConnected
         ? _tunnel.effectivePingStatusFor(snapshot.profile)
         : PingStatus.unknown;
-    final visual = ConnectionVisualStatus.fromSnapshot(snapshot, routePing);
+    final visual = ConnectionVisualStatus.fromSnapshot(
+      snapshot,
+      routePing,
+      palette: _palette,
+    );
     final arguments = visual.trayArguments(
       snapshot: snapshot,
       targetName: targetName,
@@ -214,6 +239,7 @@ class WindowsLifecycleController {
     _recoveryDebounce?.cancel();
     _settings.removeListener(_onSettingsChanged);
     _tunnel.removeListener(_onTunnelChanged);
+    _theme?.removeListener(_onThemeChanged);
     _channel.setMethodCallHandler(null);
     _initialized = false;
   }

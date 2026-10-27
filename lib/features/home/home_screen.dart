@@ -159,8 +159,11 @@ class _Header extends StatelessWidget {
     final pingStatus = snapshot.isConnected
         ? tunnel.effectivePingStatusFor(snapshot.profile)
         : PingStatus.unknown;
-    final visualStatus =
-        ConnectionVisualStatus.fromSnapshot(snapshot, pingStatus);
+    final visualStatus = ConnectionVisualStatus.fromSnapshot(
+      snapshot,
+      pingStatus,
+      palette: OrexPalette.of(context),
+    );
     final label = visualStatus.label;
 
     double textWidth(String value, TextStyle? style) {
@@ -234,6 +237,7 @@ class _ErrorCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 20,
       tint: OrexPalette.of(context).danger,
       opacity: 0.14,
@@ -261,6 +265,7 @@ class _ModeSelector extends StatelessWidget {
     if (modes.length < 2) return const SizedBox.shrink();
 
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 22,
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -388,7 +393,9 @@ class _ConnectionHero extends StatelessWidget {
         : fallbackMessage;
 
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 28,
+      isolateContentRepaints: !showStatusText,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       child: Column(
         mainAxisAlignment: showStatusText
@@ -458,9 +465,12 @@ class _ConnectButton extends StatelessWidget {
     final routeFailed = active && ConnectionVisualStatus.isRouteFailed(pingStatus);
     final pingConfirmed = active && pingStatus == PingStatus.success;
     final healthConfirmed = routeFailed || pingConfirmed;
-    final glowColor =
-        ConnectionVisualStatus.fromSnapshot(snapshot, pingStatus).color;
     final palette = OrexPalette.of(context);
+    final glowColor = ConnectionVisualStatus.fromSnapshot(
+      snapshot,
+      pingStatus,
+      palette: palette,
+    ).color;
     final classic = palette.accent == OrexColors.copper &&
         palette.secondary == OrexColors.ochre;
     final buttonInk = classic ? OrexColors.cream : palette.text;
@@ -573,7 +583,9 @@ class _MobileStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final pingLabel = _pingLabel(tunnel, snapshot.profile);
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 24,
+      isolateContentRepaints: true,
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
       child: Column(
         children: [
@@ -773,7 +785,9 @@ class _QuickInfo extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         GlassPanel(
+          staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
           borderRadius: 24,
+          isolateContentRepaints: !stretchProxyCard,
           padding: const EdgeInsets.all(20),
           child: profile == null
               ? const _NoProfileCard()
@@ -861,6 +875,7 @@ class _QuickInfo extends StatelessWidget {
         if (stretchProxyCard)
           Expanded(
             child: GlassPanel(
+              staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
               borderRadius: 24,
               padding: const EdgeInsets.all(20),
               child: _ProxyDetails(tunnel: tunnel),
@@ -868,6 +883,7 @@ class _QuickInfo extends StatelessWidget {
           )
         else
           GlassPanel(
+            staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
             borderRadius: 24,
             padding: const EdgeInsets.all(20),
             child: _ProxyDetails(tunnel: tunnel),
@@ -1106,6 +1122,7 @@ class _TrafficCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final pingLabel = _pingLabel(tunnel, snapshot.profile);
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 24,
       padding: const EdgeInsets.all(20),
       child: Row(

@@ -69,6 +69,53 @@ void main() {
     expect(find.text('Пароль (необязательно)'), findsOneWidget);
   });
 
+  testWidgets('duplicate profile names show distinct stable IDs',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    final first = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@same.example:443'
+      '?encryption=none&security=none&type=tcp#Duplicate-name',
+    );
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@same.example:443'
+      '?encryption=none&security=none&type=tcp#Duplicate-name',
+    );
+    expect(first.id, isNot(second.id));
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark,
+      home: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Duplicate-name'), findsNWidgets(2));
+    expect(find.byKey(ValueKey('duplicate-profile-id-${first.id}')),
+        findsOneWidget);
+    expect(find.byKey(ValueKey('duplicate-profile-id-${second.id}')),
+        findsOneWidget);
+    final firstBadge = tester.widget<Text>(
+      find.byKey(ValueKey('duplicate-profile-id-${first.id}')),
+    );
+    final secondBadge = tester.widget<Text>(
+      find.byKey(ValueKey('duplicate-profile-id-${second.id}')),
+    );
+    expect(firstBadge.data, isNot(secondBadge.data));
+  });
+
   testWidgets('copies selected Xray profiles as a JSON array', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final profiles = await ProfilesController.load();

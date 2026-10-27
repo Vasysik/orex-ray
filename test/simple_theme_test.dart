@@ -227,7 +227,9 @@ void main() {
     expect((noir['colors'] as Map)['secondary'], '#FFA46742');
     expect((noir['colors'] as Map)['background'], '#FF202020');
     expect((noir['colors'] as Map)['surface'], '#FF2B2B2B');
-    expect((noir['glass'] as Map)['enabled'], isFalse);
+    expect((noir['glass'] as Map)['enabled'], isTrue);
+    expect((noir['glass'] as Map)['opacity'], 0.64);
+    expect((noir['glass'] as Map)['blur'], 18);
     // A self-contained preset must still carry its own mascot bytes.
     expect(lime['mascot'], startsWith('data:image/webp;base64,'));
     expect(noir['mascot'], startsWith('data:image/webp;base64,'));
@@ -337,7 +339,10 @@ void main() {
     expect(theme.colors['accent'], const Color(0xFFCB8552));
     expect(theme.colors['secondary'], const Color(0xFFA46742));
     expect(theme.colors['background'], const Color(0xFF202020));
-    expect(theme.effectiveGlassEnabled, isFalse);
+    expect(theme.effectiveGlassEnabled, isTrue);
+    expect(theme.selectedTheme!.glassEnabled, isTrue);
+    expect(theme.selectedTheme!.glassOpacity, 0.64);
+    expect(theme.selectedTheme!.glassBlur, 18);
     expect(theme.customThemes.single.colors['background'],
         const Color(0xFF050506));
   });

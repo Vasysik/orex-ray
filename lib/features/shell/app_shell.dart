@@ -210,6 +210,8 @@ class _AppShellState extends State<AppShell> {
     ];
 
     return AmbientBackground(
+      // The content of Android home sits over stationary ambient artwork.
+      preblurred: Platform.isAndroid && _index == 0,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(

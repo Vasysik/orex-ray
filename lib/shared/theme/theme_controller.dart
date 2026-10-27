@@ -201,9 +201,9 @@ class ThemeController extends ChangeNotifier {
             'success': const Color(0xFF6CCB75),
             'danger': const Color(0xFFFF7373),
           },
-          glassEnabled: false,
-          glassOpacity: 0.90,
-          glassBlur: 0,
+          glassEnabled: true,
+          glassOpacity: 0.64,
+          glassBlur: 18,
           glassGlow: 0,
         );
       }

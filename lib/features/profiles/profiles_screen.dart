@@ -943,6 +943,13 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
       animation: Listenable.merge([profiles, tunnel.egressChanges]),
       builder: (context, _) {
         final currentProfiles = profiles.profiles;
+        // Names are display labels, not identifiers. Mark collisions without
+        // renaming imported or subscription-managed server profiles.
+        final nameCounts = <String, int>{};
+        for (final item in currentProfiles) {
+          final name = item.name.trim().toLowerCase();
+          nameCounts[name] = (nameCounts[name] ?? 0) + 1;
+        }
         final validIds = currentProfiles.map((profile) => profile.id).toSet();
         _selectedProfileIds.removeWhere((id) => !validIds.contains(id));
         if (_selectedProfileIds.isEmpty) _selectionScope = null;
@@ -986,6 +993,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
               section.subscription == null && _selectingServers;
           final card = _ProfileCard(
             profile: profile,
+            duplicateName: (nameCounts[profile.name.trim().toLowerCase()] ?? 0) > 1,
             identity: tunnel.egressIdentityFor(profile.id),
             selected: activeTarget?.id == profile.id,
             multiSelected: serverSelectionEnabled &&
@@ -2373,6 +2381,7 @@ String _relativeSubscriptionUpdate(int epochMs) {
 class _ProfileCard extends StatelessWidget {
   const _ProfileCard({
     required this.profile,
+    required this.duplicateName,
     required this.identity,
     required this.selected,
     required this.multiSelected,
@@ -2389,6 +2398,7 @@ class _ProfileCard extends StatelessWidget {
   });
 
   final TunnelProfile profile;
+  final bool duplicateName;
   final EgressIdentity? identity;
   final bool selected;
   final bool multiSelected;
@@ -2439,6 +2449,21 @@ class _ProfileCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (duplicateName) ...[
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: 'ID профиля: ${profile.id}',
+                      child: Text(
+                        '#${profile.id.length > 8 ? profile.id.substring(0, 8).toUpperCase() : profile.id.toUpperCase()}',
+                        key: ValueKey('duplicate-profile-id-${profile.id}'),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: OrexPalette.of(context).mutedText,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ],
                   ClipRect(
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
@@ -2685,7 +2710,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
     });
   }
 
-  Future<void> _readQr({bool imageOnly = false}) async {
+  Future<void> _readQr() async {
     if (_importing || _readingQr) {
       return;
     }
@@ -2695,7 +2720,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
     });
     try {
       final String? link;
-      if (Platform.isAndroid && !imageOnly) {
+      if (Platform.isAndroid) {
         link = await showDialog<String>(
           context: context,
           builder: (_) => const QrCameraDialog(),
@@ -2782,30 +2807,13 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
               ),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                TextButton.icon(
-                  onPressed: _importing || _readingQr ? null : _pasteFromClipboard,
-                  icon: const Icon(Icons.content_paste_rounded),
-                  label: const Text('Вставить из буфера'),
-                ),
-                if (Platform.isAndroid)
-                  TextButton.icon(
-                    key: const ValueKey('import-qr-camera'),
-                    onPressed: _importing || _readingQr ? null : _readQr,
-                    icon: const Icon(Icons.qr_code_scanner_rounded),
-                    label: const Text('Сканировать QR'),
-                  ),
-                TextButton.icon(
-                  key: const ValueKey('import-qr-image'),
-                  onPressed: _importing || _readingQr
-                      ? null : () => _readQr(imageOnly: true),
-                  icon: const Icon(Icons.image_outlined),
-                  label: const Text('QR из изображения'),
-                ),
-              ],
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _importing || _readingQr ? null : _pasteFromClipboard,
+                icon: const Icon(Icons.content_paste_rounded),
+                label: const Text('Вставить из буфера'),
+              ),
             ),
           ],
         ),

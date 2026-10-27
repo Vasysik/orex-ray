@@ -72,6 +72,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
       _windowsLifecycle = WindowsLifecycleController(
         tunnel: _tunnel,
         settings: widget.connectionSettings,
+        theme: widget.theme,
       );
       unawaited(_windowsLifecycle!.initialize());
     }
