@@ -62,6 +62,14 @@ void main() {
       );
       await tester.pump();
 
+      // A cold start in mobile layout must never mount the desktop sidebar.
+      // It used to be kept in the Stack with an offscreen AnimatedSlide and
+      // could briefly flash over the content as startup metrics settled.
+      expect(
+        find.byKey(const ValueKey('desktop-side-navigation-panel')),
+        findsNothing,
+      );
+
       await _tapMobileTab(tester, 'Профили');
       expect(_mobileNavigationBar(tester).selectedIndex, 1);
 
@@ -167,6 +175,11 @@ void main() {
 
     await tester.binding.setSurfaceSize(const Size(659, 800));
     await tester.pumpAndSettle();
+    // A real desktop -> mobile resize keeps the sidebar for its exit motion.
+    expect(
+      find.byKey(const ValueKey('desktop-side-navigation-panel')),
+      findsOneWidget,
+    );
     // Desktop destinations stay mounted for animation, but bottom navigation
     // becomes the interactive navigation surface below the shell breakpoint.
     final bottom = find.byType(NavigationBar);

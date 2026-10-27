@@ -99,7 +99,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     return PopScope(
       canPop: !_busy,
       child: AlertDialog(
-        title: Text(_busy ? 'Скачивание обновления' : 'Доступна новая версия OrexRay'),
+        title: Text(_busy ? 'Скачивание обновления' : 'Доступна новая версия'),
         content: SizedBox(
           width: 480,
           child: Column(

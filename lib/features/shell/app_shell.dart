@@ -143,6 +143,25 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
+  // Android can report an intermediate viewport size on the first Flutter
+  // frame. Never paint desktop navigation during that bootstrap frame.
+  bool _androidNavigationReady = !Platform.isAndroid;
+
+  // On desktop, keep the departing sidebar mounted for its slide-out when
+  // crossing the breakpoint. An initially narrow shell never mounts it.
+  bool _hasShownDesktopNavigation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _androidNavigationReady = true);
+      });
+    }
+  }
+
   static const _appsIndex = 3;
   static const _networkIndex = 4;
   static const _geoDataIndex = 5;
@@ -224,6 +243,15 @@ class _AppShellState extends State<AppShell> {
             builder: (context, constraints) {
               final desktop = constraints.maxWidth >=
                   OrexBreakpoints.shellSideNavigation;
+              // The outgoing desktop sidebar is needed only for the Windows
+              // resize animation. On Android, never leave a hidden sidebar
+              // over the mobile UI (including while the viewport settles).
+              final showDesktopSidebar = desktop
+                  ? _androidNavigationReady
+                  : !Platform.isAndroid && _hasShownDesktopNavigation;
+              if (showDesktopSidebar && desktop) {
+                _hasShownDesktopNavigation = true;
+              }
               final desktopPageIndices = Platform.isWindows
                   ? const [0, 1, 2, 4, 5, 6, 7, 8, 9]
                   : const [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -339,12 +367,13 @@ class _AppShellState extends State<AppShell> {
                         },
                       ),
                       ),
-                    Positioned(
-                      left: 12,
-                      top: 12,
-                      bottom: 12,
-                      width: 132,
-                      child: ExcludeSemantics(
+                    if (showDesktopSidebar)
+                      Positioned(
+                        left: 12,
+                        top: 12,
+                        bottom: 12,
+                        width: 132,
+                        child: ExcludeSemantics(
                         excluding: !desktop,
                         child: IgnorePointer(
                           ignoring: !desktop,
