@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/app_version.dart';
+import '../../core/update/orexray_updates.dart';
+import '../../shared/widgets/orexray_update_dialog.dart';
 import '../../platform/windows/windows_elevation_controller.dart';
 import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_confirm_dialog.dart';
@@ -17,10 +19,12 @@ class AboutScreen extends StatelessWidget {
     super.key,
     required this.appVersion,
     required this.tunnel,
+    this.updates,
   });
 
   final OrexAppVersion appVersion;
   final TunnelController tunnel;
+  final OrexRayUpdates? updates;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +49,41 @@ class AboutScreen extends StatelessWidget {
               title: const Text('OrexRay'),
               subtitle: Text(appVersion.settingsSubtitle),
             ),
+            if (updates != null) ...[
+              const Divider(height: 1),
+              AnimatedBuilder(
+                animation: updates!,
+                builder: (context, _) {
+                  final model = updates!;
+                  return ListTile(
+                    key: const ValueKey('orexray-check-updates'),
+                    leading: Icon(Icons.system_update_rounded, color: OrexPalette.of(context).accent),
+                    title: Text(model.available != null ? 'Установить обновление' : 'Проверить обновления'),
+                    subtitle: Text(switch (model.state) {
+                      OrexRayUpdateState.checking => 'Проверяем GitHub Releases…',
+                      OrexRayUpdateState.available => 'Доступна ${model.available!.tag}',
+                      OrexRayUpdateState.upToDate => 'Установлена последняя версия',
+                      OrexRayUpdateState.error => model.error ?? 'Проверка не удалась',
+                      _ => 'Источник: GitHub Releases',
+                    }),
+                    onTap: model.state == OrexRayUpdateState.checking ? null : () async {
+                      if (model.available == null) await model.check();
+                      if (!context.mounted) return;
+                      if (model.available != null) {
+                        await showOrexRayUpdateDialog(context, model);
+                      } else {
+                        OrexNotice.show(context, SnackBar(content: Text(
+                          model.error ?? 'Новых версий нет',
+                        )));
+                      }
+                    },
+                    trailing: model.state == OrexRayUpdateState.checking
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.chevron_right_rounded),
+                  );
+                },
+              ),
+            ],
             const Divider(height: 1),
             ListTile(
               leading: Icon(Icons.copy_rounded, color: OrexPalette.of(context).accent),

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../core/app_version.dart';
+import '../core/update/orexray_updates.dart';
 import '../core/apps/app_routing_controller.dart';
 import '../core/geodata/geodata_controller.dart';
 import '../core/profiles/profiles_controller.dart';
@@ -57,6 +58,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     settings: widget.connectionSettings,
   );
   WindowsLifecycleController? _windowsLifecycle;
+  OrexRayUpdates? _updates;
   bool? _lastAndroidBootSetting;
   bool? _lastStatsUiActive;
   int? _lastSubscriptionAutoUpdateHours;
@@ -79,6 +81,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     _syncPlatformStartupSettings();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncStatsUiActivity(WidgetsBinding.instance.lifecycleState);
+      unawaited(_initializeUpdates());
       _refreshSubscriptionStateIfDue();
       // One event-driven reachability check for the currently selected target.
       // A VPN that is already running uses its effective Xray route instead of
@@ -92,6 +95,13 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
         ));
       }
     });
+  }
+
+  Future<void> _initializeUpdates() async {
+    final updates = await OrexRayUpdates.create(widget.appVersion);
+    if (!mounted) { updates.dispose(); return; }
+    setState(() => _updates = updates);
+    await updates.check();
   }
 
   void _syncPlatformStartupSettings() {
@@ -168,6 +178,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     widget.theme.removeListener(_refresh);
     widget.connectionSettings.removeListener(_syncPlatformStartupSettings);
     _windowsLifecycle?.dispose();
+    _updates?.dispose();
     _tunnel.dispose();
     super.dispose();
   }
@@ -218,6 +229,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
         appRouting: widget.appRouting,
         geoData: widget.geoData,
         appVersion: widget.appVersion,
+        updates: _updates,
       ),
     );
   }

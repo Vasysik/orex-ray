@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../core/app_version.dart';
+import '../../core/update/orexray_updates.dart';
+import '../../shared/widgets/orexray_update_dialog.dart';
 import '../../core/apps/app_routing_controller.dart';
 import '../../core/geodata/geodata_controller.dart';
 import '../../core/profiles/profiles_controller.dart';
@@ -124,6 +126,7 @@ class AppShell extends StatefulWidget {
     required this.appRouting,
     required this.geoData,
     required this.appVersion,
+    this.updates,
   });
 
   final TunnelController tunnel;
@@ -133,6 +136,7 @@ class AppShell extends StatefulWidget {
   final AppRoutingController appRouting;
   final GeoDataController geoData;
   final OrexAppVersion appVersion;
+  final OrexRayUpdates? updates;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -193,6 +197,7 @@ class _AppShellState extends State<AppShell> {
         child: AboutScreen(
           appVersion: widget.appVersion,
           tunnel: widget.tunnel,
+          updates: widget.updates,
         ),
       ),
       BackdropGroup(
@@ -306,6 +311,34 @@ class _AppShellState extends State<AppShell> {
                           : const EdgeInsets.fromLTRB(0, 0, 0, 90),
                       child: content,
                     ),
+                    if (widget.updates != null)
+                      Positioned(
+                        top: 8, left: desktop ? 164 : 12, right: 12,
+                        child: AnimatedBuilder(
+                        animation: widget.updates!,
+                        builder: (context, _) {
+                          final updates = widget.updates!;
+                          if (!updates.showBanner) return const SizedBox.shrink();
+                          return Material(
+                              elevation: 6,
+                              color: OrexPalette.of(context).surface,
+                              borderRadius: BorderRadius.circular(14),
+                              child: ListTile(
+                                key: const ValueKey('orexray-update-banner'),
+                                leading: Icon(Icons.system_update_rounded, color: OrexPalette.of(context).accent),
+                                title: const Text('Доступна новая версия OrexRay'),
+                                subtitle: Text('Версия ${updates.available!.tag} · GitHub Releases'),
+                                onTap: () => showOrexRayUpdateDialog(context, updates),
+                                trailing: IconButton(
+                                  tooltip: 'Скрыть уведомление',
+                                  onPressed: updates.dismiss,
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                              ),
+                          );
+                        },
+                      ),
+                      ),
                     Positioned(
                       left: 12,
                       top: 12,
