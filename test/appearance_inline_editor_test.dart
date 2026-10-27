@@ -152,7 +152,7 @@ void main() {
           body: AmbientBackground(child: SizedBox.expand()),
         ),
       ));
-      await tester.pump();
+      await tester.pumpAndSettle();
     }
 
     final matchingFlatBackground = find.descendant(
