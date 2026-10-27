@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import '../../core/update/orexray_updates.dart';
 import '../theme/orex_palette.dart';
@@ -70,41 +71,59 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     final release = widget.updates.available!;
     final palette = OrexPalette.of(context);
     final fraction = _total > 0 ? (_received / _total).clamp(0, 1).toDouble() : null;
+    final notesMaxHeight = (MediaQuery.sizeOf(context).height * 0.32)
+        .clamp(120.0, 320.0).toDouble();
     return PopScope(
       canPop: !_busy,
       child: AlertDialog(
         title: Text(_busy ? 'Скачивание обновления' : 'Доступна новая версия OrexRay'),
         content: SizedBox(
           width: 480,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('OrexRay ${release.tag}', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text('Установлено: ${widget.updates.current.label}'),
-                const SizedBox(height: 6),
-                Text('${release.assetName} · ${(release.assetBytes / 1048576).toStringAsFixed(1)} МБ'),
-                if (orexrayUpdateTestSameVersion && release.tag == widget.updates.current.label)
-                  const Padding(padding: EdgeInsets.only(top: 8), child: Text('ТЕСТ: повторная установка той же версии')),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('OrexRay ${release.tag}', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text('Установлено: ${widget.updates.current.label}'),
+              const SizedBox(height: 6),
+              Text('${release.assetName} · ${(release.assetBytes / 1048576).toStringAsFixed(1)} МБ'),
+              if (orexrayUpdateTestSameVersion && release.tag == widget.updates.current.label)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text('ТЕСТ: повторная установка той же версии'),
+                ),
+              // Errors and download progress never sit below the long changelog.
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: TextStyle(color: palette.danger)),
+              ],
+              if (_busy) ...[
+                const SizedBox(height: 18),
+                LinearProgressIndicator(value: fraction, color: palette.accent),
+                const SizedBox(height: 8),
+                Text(_total == 0
+                    ? 'Подключение к GitHub…'
+                    : '${(_received / 1048576).toStringAsFixed(1)} из '
+                      '${(_total / 1048576).toStringAsFixed(1)} МБ '
+                      '(${(100 * (fraction ?? 0)).round()}%)'),
+              ] else ...[
                 const SizedBox(height: 16),
                 Text('Что нового', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 8),
-                SelectableText(release.notes),
-                if (_busy) ...[
-                  const SizedBox(height: 18),
-                  LinearProgressIndicator(value: fraction, color: palette.accent),
-                  const SizedBox(height: 8),
-                  Text(_total == 0 ? 'Подключение к GitHub…' :
-                    '${(_received / 1048576).toStringAsFixed(1)} из ${(_total / 1048576).toStringAsFixed(1)} МБ (${(100 * (fraction ?? 0)).round()}%)'),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!, style: TextStyle(color: palette.danger)),
-                ],
+                // The notes scroll independently; action buttons stay visible.
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: notesMaxHeight),
+                  child: SingleChildScrollView(
+                    child: MarkdownBody(
+                      key: const ValueKey('orexray-update-markdown'),
+                      data: release.notes,
+                      selectable: true,
+                    ),
+                  ),
+                ),
               ],
-            ),
+            ],
           ),
         ),
         actions: [
