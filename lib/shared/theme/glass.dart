@@ -153,15 +153,16 @@ class AmbientBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = OrexPalette.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
-    // A neutral graphite palette uses a flat background rather
-    // than the decorative blobs of the classic Orex look.
-    if (palette.background == const Color(0xFF202020) &&
-        palette.surface == const Color(0xFF2B2B2B)) {
-      return ColoredBox(color: palette.background, child: child);
-    }
     final original = palette.accent == OrexColors.copper &&
         palette.secondary == OrexColors.ochre &&
         palette.background == (dark ? OrexColors.darkBg : OrexColors.lightBg);
+    // Opaque custom themes have a plain background regardless of their HEX
+    // colors. Keep the classic Orex ambient gradient even with glass off.
+    final glassEnabled =
+        Theme.of(context).extension<OrexGlassAppearance>()?.enabled ?? true;
+    if (!glassEnabled && !original) {
+      return ColoredBox(color: palette.background, child: child);
+    }
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: original
