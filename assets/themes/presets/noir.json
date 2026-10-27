@@ -2,9 +2,10 @@
   "format": "orexray-theme",
   "version": 1,
   "name": "Серая тема Орешка",
+  "description": "Графитовые оттенки с медным акцентом и белочкой",
   "colors": {
-    "accent": "#FF4F8FB8",
-    "secondary": "#FF356E97",
+    "accent": "#FFCB8552",
+    "secondary": "#FFA46742",
     "background": "#FF202020",
     "surface": "#FF2B2B2B",
     "text": "#FFF5F5F5",

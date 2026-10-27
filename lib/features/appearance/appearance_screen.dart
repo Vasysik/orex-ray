@@ -60,7 +60,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
   Future<void> _duplicatePreset(OrexBuiltinPreset preset) => _run(() async {
     await theme.selectBuiltin(preset.id);
-    final entry = await theme.createTheme('${preset.title} — копия');
+    final entry = await theme.createTheme('${theme.selectedTheme!.name} — копия');
     _openEditor(entry);
   });
 
@@ -169,44 +169,54 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     );
   }
 
-  Widget _presetTile(OrexBuiltinPreset preset) => ListTile(
-    key: ValueKey('preset-${preset.id}'),
-    selected: theme.selectedId == preset.storageId,
-    leading: SizedBox.square(
-      dimension: 48,
-      child: FutureBuilder(
-        future: preset.loadMascotPreview(),
-        builder: (context, snapshot) {
-          final bytes = snapshot.data;
-          if (bytes == null) {
-            return CircleAvatar(
-              backgroundColor: preset.accent.withValues(alpha: 0.17),
-              child: Icon(Icons.public_rounded, color: preset.accent),
-            );
-          }
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.memory(bytes, fit: BoxFit.cover, cacheWidth: 128),
-          );
-        },
-      ),
-    ),
-    title: Text(preset.title),
-    subtitle: Text(preset.subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
-    onTap: _busy ? null : () => _run(() => theme.selectBuiltin(preset.id)),
-    trailing: PopupMenuButton<String>(
-      tooltip: 'Действия с темой',
-      onSelected: (action) {
-        switch (action) {
-          case 'copy': _duplicatePreset(preset);
-          case 'export': _export(null, preset: preset.id);
-        }
-      },
-      itemBuilder: (_) => const [
-        PopupMenuItem(value: 'copy', child: Text('Создать редактируемую копию')),
-        PopupMenuItem(value: 'export', child: Text('Экспорт JSON + маскот')),
-      ],
-    ),
+  Widget _presetTile(OrexBuiltinPreset preset) =>
+      FutureBuilder<OrexBuiltinPresetPreview?>(
+    future: preset.loadPreview(),
+    builder: (context, snapshot) {
+      final preview = snapshot.data;
+      final accent = preview?.accent ?? OrexPalette.of(context).accent;
+      final bytes = preview?.mascotBytes;
+      final failed = snapshot.connectionState == ConnectionState.done &&
+          preview == null;
+      return ListTile(
+        key: ValueKey('preset-${preset.id}'),
+        selected: theme.selectedId == preset.storageId,
+        leading: SizedBox.square(
+          dimension: 48,
+          child: bytes == null
+              ? CircleAvatar(
+                  backgroundColor: accent.withValues(alpha: 0.17),
+                  child: Icon(Icons.public_rounded, color: accent),
+                )
+              : ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(bytes, fit: BoxFit.cover, cacheWidth: 128),
+                ),
+        ),
+        title: Text(preview?.name ?? 'Загрузка темы…'),
+        subtitle: Text(
+          preview?.description ??
+              (failed ? 'Не удалось прочитать JSON пресета' : 'Загрузка описания…'),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        onTap: _busy || failed ? null : () => _run(() => theme.selectBuiltin(preset.id)),
+        trailing: PopupMenuButton<String>(
+          enabled: !_busy && !failed,
+          tooltip: 'Действия с темой',
+          onSelected: (action) {
+            switch (action) {
+              case 'copy': _duplicatePreset(preset);
+              case 'export': _export(null, preset: preset.id);
+            }
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'copy', child: Text('Создать редактируемую копию')),
+            PopupMenuItem(value: 'export', child: Text('Экспорт JSON + маскот')),
+          ],
+        ),
+      );
+    },
   );
 
   @override

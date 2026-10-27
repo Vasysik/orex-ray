@@ -2,6 +2,7 @@
   "format": "orexray-theme",
   "version": 1,
   "name": "Hardcore Red",
+  "description": "Чёрно-красная тема с белочкой",
   "colors": {
     "accent": "#FFFF303A",
     "secondary": "#FFBD001E",

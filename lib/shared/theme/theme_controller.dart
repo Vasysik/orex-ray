@@ -191,8 +191,8 @@ class ThemeController extends ChangeNotifier {
         profiles[i] = profile.copyWith(
           name: 'Серая тема Орешка',
           colors: {
-            'accent': const Color(0xFF4F8FB8),
-            'secondary': const Color(0xFF356E97),
+            'accent': const Color(0xFFCB8552),
+            'secondary': const Color(0xFFA46742),
             'background': const Color(0xFF202020),
             'surface': const Color(0xFF2B2B2B),
             'text': const Color(0xFFF5F5F5),
@@ -284,7 +284,8 @@ class ThemeController extends ChangeNotifier {
     }
     final data = jsonDecode(contents);
     if (data is! Map || data['format'] != 'orexray-theme' ||
-        data['version'] != 1 || data['name'] != preset.title) {
+        data['version'] != 1 || data['name'] is! String ||
+        (data['name'] as String).trim().isEmpty) {
       throw const FormatException('Неверный формат встроенной темы');
     }
     final colors = SimpleThemeProfile.parseColors(data['colors']);
@@ -311,7 +312,7 @@ class ThemeController extends ChangeNotifier {
         : await _storeMascot(bytes);
     final entry = SimpleThemeProfile(
       id: preset.storageId,
-      name: preset.title,
+      name: (data['name'] as String).trim(),
       colors: colors,
       mascotPath: path,
       builtin: true,

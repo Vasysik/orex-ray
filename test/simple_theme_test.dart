@@ -26,7 +26,15 @@ void main() {
       final contents = await rootBundle.loadString(preset.assetPath);
       final parsed = jsonDecode(contents) as Map<String, dynamic>;
       expect(parsed['format'], 'orexray-theme');
-      expect(parsed['name'], preset.title);
+      expect(parsed['description'], isA<String>());
+      expect((parsed['description'] as String).trim(), isNotEmpty);
+      final preview = await preset.loadPreview();
+      expect(preview, isNotNull);
+      expect(preview!.name, parsed['name']);
+      expect(preview.description, parsed['description']);
+      expect(preview.accent,
+          SimpleThemeProfile.parseColors(parsed['colors'])['accent']);
+      expect(preview.mascotBytes, isNotEmpty);
       final mascot = parsed['mascot'] as String;
       expect(mascot, startsWith('data:image/webp;base64,'));
       expect(base64Decode(mascot.split(';base64,').last), isNotEmpty);
@@ -215,8 +223,8 @@ void main() {
     expect((lime['colors'] as Map)['surface'], '#FF1C2812');
     expect((lime['colors'] as Map)['accent'], '#FFC9E279');
     expect(noir['name'], 'Серая тема Орешка');
-    expect((noir['colors'] as Map)['accent'], '#FF4F8FB8');
-    expect((noir['colors'] as Map)['secondary'], '#FF356E97');
+    expect((noir['colors'] as Map)['accent'], '#FFCB8552');
+    expect((noir['colors'] as Map)['secondary'], '#FFA46742');
     expect((noir['colors'] as Map)['background'], '#FF202020');
     expect((noir['colors'] as Map)['surface'], '#FF2B2B2B');
     expect((noir['glass'] as Map)['enabled'], isFalse);
@@ -326,8 +334,8 @@ void main() {
     final theme = await ThemeController.load();
     addTearDown(theme.dispose);
     expect(theme.selectedTheme!.name, 'Серая тема Орешка');
-    expect(theme.colors['accent'], const Color(0xFF4F8FB8));
-    expect(theme.colors['secondary'], const Color(0xFF356E97));
+    expect(theme.colors['accent'], const Color(0xFFCB8552));
+    expect(theme.colors['secondary'], const Color(0xFFA46742));
     expect(theme.colors['background'], const Color(0xFF202020));
     expect(theme.effectiveGlassEnabled, isFalse);
     expect(theme.customThemes.single.colors['background'],

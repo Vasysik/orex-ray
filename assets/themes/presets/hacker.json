@@ -2,6 +2,7 @@
   "format": "orexray-theme",
   "version": 1,
   "name": "Hacker Green",
+  "description": "Чёрно-зелёная тема с котом-хакером",
   "colors": {
     "accent": "#FF3DFF70",
     "secondary": "#FF00A83B",

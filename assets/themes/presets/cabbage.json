@@ -2,6 +2,7 @@
   "format": "orexray-theme",
   "version": 1,
   "name": "Soft Lime",
+  "description": "Мягкая салатовая тема с котом и капустой",
   "colors": {
     "accent": "#FFC9E279",
     "secondary": "#FFAACD56",
