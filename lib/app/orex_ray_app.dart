@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../core/app_version.dart';
+import '../core/update/orexray_updates.dart';
 import '../core/apps/app_routing_controller.dart';
 import '../core/geodata/geodata_controller.dart';
 import '../core/profiles/profiles_controller.dart';
@@ -16,6 +17,8 @@ import '../platform/android/android_startup_controller.dart';
 import '../platform/windows/windows_lifecycle_controller.dart';
 import '../shared/theme/glass.dart';
 import '../shared/theme/orex_theme.dart';
+import '../shared/theme/orex_palette.dart';
+import '../shared/widgets/squirrel_mascot.dart';
 import '../shared/theme/theme_controller.dart';
 
 class OrexRayApp extends StatefulWidget {
@@ -55,6 +58,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     settings: widget.connectionSettings,
   );
   WindowsLifecycleController? _windowsLifecycle;
+  OrexRayUpdates? _updates;
   bool? _lastAndroidBootSetting;
   bool? _lastStatsUiActive;
   int? _lastSubscriptionAutoUpdateHours;
@@ -70,12 +74,14 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
       _windowsLifecycle = WindowsLifecycleController(
         tunnel: _tunnel,
         settings: widget.connectionSettings,
+        theme: widget.theme,
       );
       unawaited(_windowsLifecycle!.initialize());
     }
     _syncPlatformStartupSettings();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncStatsUiActivity(WidgetsBinding.instance.lifecycleState);
+      unawaited(_initializeUpdates());
       _refreshSubscriptionStateIfDue();
       // One event-driven reachability check for the currently selected target.
       // A VPN that is already running uses its effective Xray route instead of
@@ -89,6 +95,13 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
         ));
       }
     });
+  }
+
+  Future<void> _initializeUpdates() async {
+    final updates = await OrexRayUpdates.create(widget.appVersion);
+    if (!mounted) { updates.dispose(); return; }
+    setState(() => _updates = updates);
+    await updates.check();
   }
 
   void _syncPlatformStartupSettings() {
@@ -165,6 +178,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     widget.theme.removeListener(_refresh);
     widget.connectionSettings.removeListener(_syncPlatformStartupSettings);
     _windowsLifecycle?.dispose();
+    _updates?.dispose();
     _tunnel.dispose();
     super.dispose();
   }
@@ -174,13 +188,39 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'OrexRay',
-      theme: OrexTheme.light.copyWith(
-        extensions: [OrexGlassAppearance(enabled: widget.theme.glassEnabled)],
+      theme: OrexTheme.withColors(Brightness.light, widget.theme.colors).copyWith(
+        extensions: [
+          OrexPalette.resolve(Brightness.light, widget.theme.colors),
+          OrexGlassAppearance(
+            enabled: widget.theme.effectiveGlassEnabled,
+            opacity: widget.theme.activeTheme?.glassOpacity,
+            blur: widget.theme.activeTheme?.glassBlur,
+            glow: widget.theme.activeTheme?.glassGlow ?? 0,
+          ),
+          OrexMascotAppearance(
+            filePath: widget.theme.mascotPath,
+            bytes: widget.theme.mascotBytes,
+          ),
+        ],
       ),
-      darkTheme: OrexTheme.dark.copyWith(
-        extensions: [OrexGlassAppearance(enabled: widget.theme.glassEnabled)],
+      darkTheme: OrexTheme.withColors(Brightness.dark, widget.theme.colors).copyWith(
+        extensions: [
+          OrexPalette.resolve(Brightness.dark, widget.theme.colors),
+          OrexGlassAppearance(
+            enabled: widget.theme.effectiveGlassEnabled,
+            opacity: widget.theme.activeTheme?.glassOpacity,
+            blur: widget.theme.activeTheme?.glassBlur,
+            glow: widget.theme.activeTheme?.glassGlow ?? 0,
+          ),
+          OrexMascotAppearance(
+            filePath: widget.theme.mascotPath,
+            bytes: widget.theme.mascotBytes,
+          ),
+        ],
       ),
-      themeMode: widget.theme.mode,
+      themeMode: widget.theme.activeTheme == null
+          ? ThemeMode.dark
+          : (widget.theme.activeTheme!.light ? ThemeMode.light : ThemeMode.dark),
       home: AppShell(
         tunnel: _tunnel,
         profiles: widget.profiles,
@@ -189,6 +229,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
         appRouting: widget.appRouting,
         geoData: widget.geoData,
         appVersion: widget.appVersion,
+        updates: _updates,
       ),
     );
   }

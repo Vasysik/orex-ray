@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:orex_ray/core/tunnel/tunnel_models.dart';
 import 'package:orex_ray/shared/theme/connection_visual_status.dart';
+import 'package:orex_ray/shared/theme/orex_palette.dart';
 import 'package:orex_ray/shared/theme/orex_theme.dart';
 import 'package:orex_ray/shared/widgets/status_pill.dart';
 
@@ -45,6 +46,27 @@ void main() {
         display.isProtected,
         status == TunnelStatus.connected && ping == PingStatus.success,
       );
+    }
+  });
+
+  test('checking, success, and error use the selected theme colors', () {
+    final palette = OrexPalette.resolve(Brightness.dark, const {
+      'accent': Color(0xFF5688BB),
+      'success': Color(0xFF82BA79),
+      'danger': Color(0xFFDC7186),
+    });
+    for (final (ping, expected) in [
+      (PingStatus.unknown, palette.accent),
+      (PingStatus.success, palette.success),
+      (PingStatus.timeout, palette.danger),
+    ]) {
+      final active = snapshot(TunnelStatus.connected);
+      final display = ConnectionVisualStatus.fromSnapshot(
+        active, ping, palette: palette,
+      );
+      expect(display.color, expected);
+      expect(display.trayArguments(snapshot: active, targetName: null)['colorRgb'],
+          expected.toARGB32() & 0xFFFFFF);
     }
   });
 

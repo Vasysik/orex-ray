@@ -46,6 +46,9 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
+    // The QR action makes the bottom sheet scrollable at test dimensions.
+    await tester.ensureVisible(find.text('Новый профиль'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Новый профиль'));
     await tester.pumpAndSettle();
 
@@ -64,6 +67,53 @@ void main() {
 
     expect(find.text('Имя пользователя (необязательно)'), findsOneWidget);
     expect(find.text('Пароль (необязательно)'), findsOneWidget);
+  });
+
+  testWidgets('duplicate profile names show distinct stable IDs',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    final first = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@same.example:443'
+      '?encryption=none&security=none&type=tcp#Duplicate-name',
+    );
+    final second = await profiles.importVlessLink(
+      'vless://22222222-2222-4222-8222-222222222222@same.example:443'
+      '?encryption=none&security=none&type=tcp#Duplicate-name',
+    );
+    expect(first.id, isNot(second.id));
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    addTearDown(() {
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark,
+      home: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Duplicate-name'), findsNWidgets(2));
+    expect(find.byKey(ValueKey('duplicate-profile-id-${first.id}')),
+        findsOneWidget);
+    expect(find.byKey(ValueKey('duplicate-profile-id-${second.id}')),
+        findsOneWidget);
+    final firstBadge = tester.widget<Text>(
+      find.byKey(ValueKey('duplicate-profile-id-${first.id}')),
+    );
+    final secondBadge = tester.widget<Text>(
+      find.byKey(ValueKey('duplicate-profile-id-${second.id}')),
+    );
+    expect(firstBadge.data, isNot(secondBadge.data));
   });
 
   testWidgets('copies selected Xray profiles as a JSON array', (tester) async {
@@ -273,7 +323,12 @@ void main() {
         profileTitle: 'Test subscription',
       ),
     );
-    final profiles = await ProfilesController.load(subscriptionSource: source);
+    final probe = _CountingProfilesLatencyProbe(
+      const LatencyProbeResult.success(63),
+    );
+    final profiles = await ProfilesController.load(
+      subscriptionSource: source, latencyProbe: probe,
+    );
     final settings = await ConnectionSettingsController.load(
       operatingSystem: 'linux',
     );
@@ -317,6 +372,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byTooltip('Удалить подписки'), findsOneWidget);
+    expect(find.byTooltip('Пинг'), findsOneWidget);
+    await tester.tap(find.byTooltip('Пинг'));
+    await tester.pumpAndSettle();
+    expect(probe.calls, 1);
+    expect(profiles.profiles.singleWhere(
+      (profile) => profile.name == 'Subscribed-node',
+    ).latencyMs, 63);
     expect(find.byTooltip('Группа'), findsNothing);
     expect(find.text('Manual-node'), findsOneWidget);
     expect(find.byType(Checkbox), findsOneWidget);
@@ -744,6 +806,62 @@ vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@real.example:443?encryption=none&se
     final decoded = jsonDecode(clipboardText!);
     expect(decoded, isA<Map>());
     expect((decoded as Map)['outbounds'], isA<List>());
+  });
+
+  testWidgets('copies one edited profile as a share-link', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'linux',
+    );
+    final original = await profiles.importVlessLink(
+      'vless://11111111-1111-4111-8111-111111111111@copy-one.example:443'
+      '?encryption=none&security=none&type=tcp#Copy-one',
+    );
+    await profiles.updateProfile(
+      original.copyWith(address: 'edited.example', name: 'Edited'),
+    );
+    final tunnel = TunnelController(
+      engine: const _ProfilesTestTunnelEngine(),
+      profiles: profiles,
+      settings: settings,
+    );
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    String? clipboardText;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboardText = (call.arguments as Map)['text'] as String?;
+      }
+      return null;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      tunnel.dispose();
+      profiles.dispose();
+      settings.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OrexTheme.dark,
+        home: Scaffold(
+          body: ProfilesScreen(profiles: profiles, tunnel: tunnel),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Экспорт JSON Xray'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Скопировать ссылку'));
+    await tester.pump();
+
+    expect(clipboardText, startsWith('vless://'));
+    expect(clipboardText, contains('edited.example:443'));
+    expect(clipboardText, isNot(contains('copy-one.example:443')));
   });
 
   testWidgets('busy ping check keeps the static icon in profiles',

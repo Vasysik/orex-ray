@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_version.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
-import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/theme/theme_controller.dart';
 import '../home/tunnel_controller.dart';
 
@@ -34,34 +34,6 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           _Section(
-            title: 'Оформление',
-            children: [
-              RadioGroup<ThemeMode>(
-                groupValue: theme.mode,
-                onChanged: (mode) {
-                  if (mode != null) theme.setMode(mode);
-                },
-                child: const Column(
-                  children: [
-                    RadioListTile<ThemeMode>(
-                      value: ThemeMode.dark,
-                      title: Text('Тёмная'),
-                    ),
-                    RadioListTile<ThemeMode>(
-                      value: ThemeMode.light,
-                      title: Text('Светлая'),
-                    ),
-                    RadioListTile<ThemeMode>(
-                      value: ThemeMode.system,
-                      title: Text('Системная'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _Section(
             title: 'Подключение',
             children: [
               RadioGroup<ConnectionMode>(
@@ -79,7 +51,7 @@ class SettingsScreen extends StatelessWidget {
                         enabled: tunnel.canChangeMode,
                         secondary: Icon(
                           _modeIcon(mode),
-                          color: OrexColors.copper,
+                          color: OrexPalette.of(context).accent,
                         ),
                         title: Text(mode.title),
                         subtitle: Text(mode.description),
@@ -98,17 +70,17 @@ class SettingsScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          const _Section(
+           _Section(
             title: 'Сеть',
             children: [
               ListTile(
-                leading: Icon(Icons.dns_outlined, color: OrexColors.copper),
+                leading: Icon(Icons.dns_outlined, color: OrexPalette.of(context).accent),
                 title: Text('DNS'),
                 subtitle: Text('Автоматически'),
               ),
               Divider(height: 1),
               SwitchListTile(
-                secondary: Icon(Icons.power_rounded, color: OrexColors.copper),
+                secondary: Icon(Icons.power_rounded, color: OrexPalette.of(context).accent),
                 title: Text('Автоподключение'),
                 subtitle: Text('Будет добавлено после стабилизации движков'),
                 value: false,
@@ -121,9 +93,8 @@ class SettingsScreen extends StatelessWidget {
             title: 'О приложении',
             children: [
               ListTile(
-                leading: const Icon(
-                  Icons.pets_rounded,
-                  color: OrexColors.copper,
+                leading: Icon(Icons.pets_rounded,
+                  color: OrexPalette.of(context).accent,
                 ),
                 title: const Text('OrexRay'),
                 subtitle: Text(appVersion.settingsSubtitle),
@@ -153,7 +124,7 @@ class _Section extends StatelessWidget {
             title.toUpperCase(),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   letterSpacing: 1.1,
-                  color: OrexColors.copper,
+                  color: OrexPalette.of(context).accent,
                   fontWeight: FontWeight.w700,
                 ),
           ),

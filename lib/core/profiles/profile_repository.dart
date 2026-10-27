@@ -21,6 +21,8 @@ class ProfileRepository {
   static const _secureProfilesKey = 'profiles_v1';
   static const _subscriptionsKey = 'orex_ray_subscriptions_v1';
   static const _secureSubscriptionsKey = 'subscriptions_v1';
+  static const _subscriptionJournalKey = 'orex_ray_subscription_journal_v1';
+  static const _secureSubscriptionJournalKey = 'subscription_journal_v1';
   static const _balancersKey = 'orex_ray_balancers_v1';
   static const _selectedKey = 'orex_ray_selected_target_v1';
   static const _legacySelectedKey = 'orex_ray_selected_profile_v2';
@@ -37,12 +39,14 @@ class ProfileRepository {
     final legacySubscriptionsPayload = prefs.getString(_subscriptionsKey);
 
     if (!Platform.isAndroid) {
-      return ProfileRepository._(
+      final repository = ProfileRepository._(
         prefs,
         profilesPayload: legacyPayload,
         subscriptionsPayload: legacySubscriptionsPayload,
         secureAndroidStorage: false,
       );
+      await repository._recoverSubscriptionJournal();
+      return repository;
     }
 
     try {
@@ -99,12 +103,14 @@ class ProfileRepository {
         }
       }
 
-      return ProfileRepository._(
+      final repository = ProfileRepository._(
         prefs,
         profilesPayload: securePayload,
         subscriptionsPayload: secureSubscriptionsPayload,
         secureAndroidStorage: true,
       );
+      await repository._recoverSubscriptionJournal();
+      return repository;
     } on PlatformException catch (error) {
       throw StateError(
         'Не удалось открыть защищённое хранилище профилей: '
@@ -186,6 +192,81 @@ class ProfileRepository {
 
   String? readSelectedId() =>
       _prefs.getString(_selectedKey) ?? _prefs.getString(_legacySelectedKey);
+
+  /// A write-ahead recovery journal for operations changing several storage
+  /// keys together. Replaying this state after a crash is idempotent.
+  /// Android keeps the journal in Keystore-backed secure storage.
+  Future<void> saveSubscriptionState({
+    required List<TunnelProfile> profiles,
+    required List<BalancerProfile> balancers,
+    required List<ProxySubscription> subscriptions,
+    required String? selectedId,
+  }) async {
+    final payload = jsonEncode(<String, Object?>{
+      'profiles': profiles.map((item) => item.toJson()).toList(),
+      'balancers': balancers.map((item) => item.toJson()).toList(),
+      'subscriptions': subscriptions.map((item) => item.toJson()).toList(),
+      'selectedId': selectedId,
+    });
+    if (_secureAndroidStorage) {
+      await _secureChannel.invokeMethod<void>('write', {
+        'key': _secureSubscriptionJournalKey,
+        'value': payload,
+      });
+    } else {
+      if (!await _prefs.setString(_subscriptionJournalKey, payload)) {
+        throw StateError('Не удалось сохранить журнал подписок');
+      }
+    }
+    await saveProfiles(profiles);
+    await saveBalancers(balancers);
+    await saveSubscriptions(subscriptions);
+    await saveSelectedId(selectedId);
+    await _clearSubscriptionJournal();
+  }
+
+  Future<void> _recoverSubscriptionJournal() async {
+    final payload = _secureAndroidStorage
+        ? await _secureChannel.invokeMethod<String>(
+            'read', const {'key': _secureSubscriptionJournalKey})
+        : _prefs.getString(_subscriptionJournalKey);
+    if (payload == null || payload.isEmpty) return;
+    try {
+      final record = jsonDecode(payload);
+      if (record is! Map) throw const FormatException('Invalid journal');
+      final profiles = (record['profiles'] as List)
+          .map((item) => TunnelProfile.fromJson(
+                Map<String, Object?>.from(item as Map)))
+          .toList();
+      final balancers = (record['balancers'] as List)
+          .map((item) => BalancerProfile.fromJson(
+                Map<String, Object?>.from(item as Map)))
+          .toList();
+      final subscriptions = (record['subscriptions'] as List)
+          .map((item) => ProxySubscription.fromJson(
+                Map<String, Object?>.from(item as Map)))
+          .toList();
+      await saveProfiles(profiles);
+      await saveBalancers(balancers);
+      await saveSubscriptions(subscriptions);
+      await saveSelectedId(record['selectedId'] as String?);
+      await _clearSubscriptionJournal();
+    } on Object catch (error) {
+      // Refuse partial state instead of silently discarding a saved profile.
+      throw StateError('Не удалось восстановить данные подписок: $error');
+    }
+  }
+
+  Future<void> _clearSubscriptionJournal() async {
+    if (_secureAndroidStorage) {
+      await _secureChannel.invokeMethod<void>(
+        'delete', const {'key': _secureSubscriptionJournalKey});
+    } else {
+      if (!await _prefs.remove(_subscriptionJournalKey)) {
+        throw StateError('Не удалось очистить журнал подписок');
+      }
+    }
+  }
 
   Future<void> saveProfiles(List<TunnelProfile> profiles) async {
     final payload = jsonEncode(

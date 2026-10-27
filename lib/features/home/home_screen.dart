@@ -5,6 +5,7 @@ import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/connection_visual_status.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/egress_avatar.dart';
 import '../../shared/widgets/orex_modal_sheet_surface.dart';
 import '../../shared/widgets/orex_proxy_copy.dart';
@@ -158,8 +159,11 @@ class _Header extends StatelessWidget {
     final pingStatus = snapshot.isConnected
         ? tunnel.effectivePingStatusFor(snapshot.profile)
         : PingStatus.unknown;
-    final visualStatus =
-        ConnectionVisualStatus.fromSnapshot(snapshot, pingStatus);
+    final visualStatus = ConnectionVisualStatus.fromSnapshot(
+      snapshot,
+      pingStatus,
+      palette: OrexPalette.of(context),
+    );
     final label = visualStatus.label;
 
     double textWidth(String value, TextStyle? style) {
@@ -233,14 +237,15 @@ class _ErrorCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 20,
-      tint: OrexColors.danger,
+      tint: OrexPalette.of(context).danger,
       opacity: 0.14,
       padding: const EdgeInsets.all(16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, color: OrexColors.danger),
+          Icon(Icons.error_outline_rounded, color: OrexPalette.of(context).danger),
           const SizedBox(width: 12),
           Expanded(child: Text(message)),
         ],
@@ -260,6 +265,7 @@ class _ModeSelector extends StatelessWidget {
     if (modes.length < 2) return const SizedBox.shrink();
 
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 22,
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -269,8 +275,8 @@ class _ModeSelector extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
             child: Row(
               children: [
-                const Icon(Icons.route_rounded,
-                    size: 19, color: OrexColors.copper),
+                Icon(Icons.route_rounded,
+                    size: 19, color: OrexPalette.of(context).accent),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -293,7 +299,7 @@ class _ModeSelector extends StatelessWidget {
                     value: mode,
                     icon: Icon(
                       _modeIcon(mode),
-                      color: tunnel.mode == mode ? OrexColors.copper : null,
+                      color: tunnel.mode == mode ? OrexPalette.of(context).accent : null,
                       size: 20,
                     ),
                     label: Text(mode.shortTitle),
@@ -322,7 +328,7 @@ class _ModeSelector extends StatelessWidget {
                 }),
                 backgroundColor: WidgetStateProperty.resolveWith((states) {
                   if (states.contains(WidgetState.selected)) {
-                    return OrexColors.copper.withValues(alpha: 0.24);
+                    return OrexPalette.of(context).accent.withValues(alpha: 0.24);
                   }
                   return Theme.of(context)
                       .colorScheme
@@ -387,7 +393,9 @@ class _ConnectionHero extends StatelessWidget {
         : fallbackMessage;
 
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 28,
+      isolateContentRepaints: !showStatusText,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
       child: Column(
         mainAxisAlignment: showStatusText
@@ -457,8 +465,15 @@ class _ConnectButton extends StatelessWidget {
     final routeFailed = active && ConnectionVisualStatus.isRouteFailed(pingStatus);
     final pingConfirmed = active && pingStatus == PingStatus.success;
     final healthConfirmed = routeFailed || pingConfirmed;
-    final glowColor =
-        ConnectionVisualStatus.fromSnapshot(snapshot, pingStatus).color;
+    final palette = OrexPalette.of(context);
+    final glowColor = ConnectionVisualStatus.fromSnapshot(
+      snapshot,
+      pingStatus,
+      palette: palette,
+    ).color;
+    final classic = palette.accent == OrexColors.copper &&
+        palette.secondary == OrexColors.ochre;
+    final buttonInk = classic ? OrexColors.cream : palette.text;
     return Semantics(
       button: true,
       enabled: canTap,
@@ -484,13 +499,24 @@ class _ConnectButton extends StatelessWidget {
             height: 178,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: OrexColors.copperGradient,
+              gradient: Theme.of(context).extension<OrexPalette>() == null ||
+                      (OrexPalette.of(context).accent == OrexColors.copper &&
+                       OrexPalette.of(context).secondary == OrexColors.ochre)
+                  ? OrexColors.copperGradient
+                  : LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        OrexPalette.of(context).accent,
+                        OrexPalette.of(context).secondary,
+                      ],
+                    ),
               border: Border.all(
                 // Timeout deliberately keeps the exact same cream ring and
                 // geometry as a healthy connection. Only the ambient glow
                 // changes hue, so red reads as a state rather than a second
                 // button design.
-                color: OrexColors.cream.withValues(
+                color: buttonInk.withValues(
                   alpha: healthConfirmed
                       ? 0.65
                       : active
@@ -523,19 +549,19 @@ class _ConnectButton extends StatelessWidget {
             ),
             child: Center(
               child: busy
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 42,
                       height: 42,
                       child: CircularProgressIndicator(
                         strokeWidth: 3,
-                        color: OrexColors.cream,
+                        color: buttonInk,
                       ),
                     )
                   : Icon(
                       active
                           ? Icons.power_settings_new_rounded
                           : Icons.power_rounded,
-                      color: OrexColors.cream,
+                      color: buttonInk,
                       size: 68,
                     ),
             ),
@@ -557,7 +583,9 @@ class _MobileStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final pingLabel = _pingLabel(tunnel, snapshot.profile);
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 24,
+      isolateContentRepaints: true,
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
       child: Column(
         children: [
@@ -631,7 +659,7 @@ class _MobileTrafficRow extends StatelessWidget {
     final label = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.data_usage_rounded, color: OrexColors.copper),
+        Icon(Icons.data_usage_rounded, color: OrexPalette.of(context).accent),
         const SizedBox(width: 10),
         Text('Трафик', style: labelStyle),
       ],
@@ -709,7 +737,7 @@ class _CompactMetric extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       child: Column(
         children: [
-          Icon(icon, color: OrexColors.copper, size: 20),
+          Icon(icon, color: OrexPalette.of(context).accent, size: 20),
           const SizedBox(height: 5),
           Text(
             label,
@@ -757,7 +785,9 @@ class _QuickInfo extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         GlassPanel(
+          staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
           borderRadius: 24,
+          isolateContentRepaints: !stretchProxyCard,
           padding: const EdgeInsets.all(20),
           child: profile == null
               ? const _NoProfileCard()
@@ -845,6 +875,7 @@ class _QuickInfo extends StatelessWidget {
         if (stretchProxyCard)
           Expanded(
             child: GlassPanel(
+              staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
               borderRadius: 24,
               padding: const EdgeInsets.all(20),
               child: _ProxyDetails(tunnel: tunnel),
@@ -852,6 +883,7 @@ class _QuickInfo extends StatelessWidget {
           )
         else
           GlassPanel(
+            staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
             borderRadius: 24,
             padding: const EdgeInsets.all(20),
             child: _ProxyDetails(tunnel: tunnel),
@@ -958,7 +990,7 @@ class _QuickInfo extends StatelessWidget {
                       for (final group in groups) ...[
                         ListTile(
                           dense: true,
-                          leading: Icon(group.icon, color: OrexColors.copper),
+                          leading: Icon(group.icon, color: OrexPalette.of(context).accent),
                           title: Text(
                             group.title,
                             maxLines: 1,
@@ -1050,7 +1082,7 @@ class _QuickTargetTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       trailing: selected
-          ? const Icon(Icons.check_circle, color: OrexColors.copper)
+          ? Icon(Icons.check_circle, color: OrexPalette.of(context).accent)
           : const Icon(Icons.chevron_right),
       mouseCursor: SystemMouseCursors.click,
       onTap: onTap,
@@ -1090,6 +1122,7 @@ class _TrafficCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final pingLabel = _pingLabel(tunnel, snapshot.profile);
     return GlassPanel(
+      staticBackdrop: Theme.of(context).platform == TargetPlatform.android,
       borderRadius: 24,
       padding: const EdgeInsets.all(20),
       child: Row(
@@ -1158,7 +1191,7 @@ class _Metric extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: OrexColors.copper),
+          Icon(icon, color: OrexPalette.of(context).accent),
           const SizedBox(width: 10),
           Flexible(
             child: Column(
@@ -1209,8 +1242,8 @@ class _ProxyDetails extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.settings_ethernet_rounded,
-                size: 18, color: OrexColors.copper),
+            Icon(Icons.settings_ethernet_rounded,
+                size: 18, color: OrexPalette.of(context).accent),
             const SizedBox(width: 8),
             Expanded(
               child: Wrap(
@@ -1224,7 +1257,7 @@ class _ProxyDetails extends StatelessWidget {
                     status,
                     style: textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: available ? OrexColors.online : null,
+                      color: available ? OrexPalette.of(context).success : null,
                     ),
                   ),
                 ],

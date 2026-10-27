@@ -84,6 +84,37 @@ void main() {
     expect(restored.notices, ['Осталось: 23 дня']);
   });
 
+  test('replays a subscription transaction after a partial write', () async {
+    final profile = const VlessLinkParser().parse(
+      'vless://11111111-1111-4111-8111-111111111111@recover.example:443'
+      '?encryption=none&security=none&type=tcp#Recovered',
+    );
+    const subscription = ProxySubscription(
+      id: 'sub-recovery',
+      url: 'https://example.org/sub',
+      name: 'Recovered subscription',
+      profileIds: [],
+    );
+    SharedPreferences.setMockInitialValues({
+      // Simulate interrupted saves: journal contains the complete new state
+      // while individual profile/selection keys still contain old data.
+      'orex_ray_profiles_v2': '[]',
+      'orex_ray_subscription_journal_v1': jsonEncode({
+        'profiles': [profile.toJson()],
+        'balancers': [],
+        'subscriptions': [subscription.toJson()],
+        'selectedId': profile.id,
+      }),
+    });
+    final repository = await ProfileRepository.load();
+    expect(repository.readProfiles().single.name, 'Recovered');
+    expect(repository.readSubscriptions().single.name,
+        'Recovered subscription');
+    expect(repository.readSelectedId(), profile.id);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.containsKey('orex_ray_subscription_journal_v1'), isFalse);
+  });
+
   test('persists manual profile group name', () async {
     SharedPreferences.setMockInitialValues({});
     final repository = await ProfileRepository.load();

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme/orex_theme.dart';
+import '../theme/orex_palette.dart';
 import 'responsive_motion.dart';
 
 /// An action which stays in the header even when its caption is collapsed.
@@ -38,14 +38,14 @@ class OrexAdaptiveHeader extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     required this.actions,
-    this.accentColor = OrexColors.copper,
+    this.accentColor,
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
   final List<OrexHeaderAction> actions;
-  final Color accentColor;
+  final Color? accentColor;
 
   static const double _buttonWidth = 52;
   static const double _buttonGap = 10;
@@ -54,6 +54,7 @@ class OrexAdaptiveHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final typography = Theme.of(context).textTheme;
+    final resolvedAccent = accentColor ?? OrexPalette.of(context).accent;
     final titleWidget = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -61,10 +62,10 @@ class OrexAdaptiveHeader extends StatelessWidget {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: accentColor.withValues(alpha: 0.14),
+            color: resolvedAccent.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Icon(icon, color: accentColor),
+          child: Icon(icon, color: resolvedAccent),
         ),
         const SizedBox(width: 14),
         Expanded(

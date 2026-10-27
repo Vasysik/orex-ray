@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.ResultReceiver
+import androidx.core.content.FileProvider
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
@@ -33,6 +34,7 @@ class MainActivity : FlutterActivity() {
         private const val EVENT_CHANNEL = "ru.orex.ray/tunnel_events"
         private const val SECURE_CHANNEL = "ru.orex.ray/secure_storage"
         private const val FILE_EXPORT_CHANNEL = "ru.orex.ray/file_export"
+        private const val UPDATE_CHANNEL = "ru.orex.ray/app_update"
         private const val VPN_PERMISSION_REQUEST = 7711
         private const val NOTIFICATION_PERMISSION_REQUEST = 7712
         private const val FILE_EXPORT_REQUEST = 7713
@@ -79,6 +81,15 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getPrimaryAbi" -> result.success(Build.SUPPORTED_ABIS.firstOrNull())
+                    "installApk" -> installUpdateApk(call.argument<String>("path"), result)
+                    else -> result.notImplemented()
+                }
+            }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -404,6 +415,34 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun installUpdateApk(path: String?, result: MethodChannel.Result) {
+        try {
+            val root = File(cacheDir, "orexray-updates").canonicalFile
+            val file = path?.let { File(it).canonicalFile }
+            if (file == null || file.parentFile != root ||
+                !file.isFile || !file.name.endsWith(".apk", ignoreCase = true)) {
+                result.error("invalid_apk", "Downloaded APK is missing or invalid", null)
+                return
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                !packageManager.canRequestPackageInstalls()) {
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                result.success("permission_required")
+                return
+            }
+            val uri = FileProvider.getUriForFile(this, "$packageName.orexray_update_files", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            result.success("launched")
+        } catch (e: Exception) {
+            result.error("install_failed", e.message, null)
+        }
     }
 
     private fun loadAppsAsync(result: MethodChannel.Result) {

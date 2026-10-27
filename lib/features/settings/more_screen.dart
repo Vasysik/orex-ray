@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/theme/glass.dart';
-import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/responsive_motion.dart';
 
 class MoreScreen extends StatelessWidget {
@@ -127,7 +127,7 @@ class _MoreTile extends StatelessWidget {
       child: GlassPanel(
         borderRadius: 20,
         child: ListTile(
-          leading: Icon(icon, color: OrexColors.copper),
+          leading: Icon(icon, color: OrexPalette.of(context).accent),
           title: Text(title),
           subtitle: Text(subtitle),
           trailing: const Icon(Icons.chevron_right_rounded),

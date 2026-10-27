@@ -2,21 +2,42 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'orex_palette.dart';
 import 'orex_theme.dart';
 
 /// One app-wide switch that applies to panels, including modal routes.
 class OrexGlassAppearance extends ThemeExtension<OrexGlassAppearance> {
-  const OrexGlassAppearance({this.enabled = true});
+  const OrexGlassAppearance({
+    this.enabled = true,
+    this.opacity,
+    this.blur,
+    this.glow = 0,
+  });
 
   final bool enabled;
+  /// Null means use the existing panel-specific default.
+  final double? opacity;
+  final double? blur;
+  final double glow;
 
   @override
-  OrexGlassAppearance copyWith({bool? enabled}) =>
-      OrexGlassAppearance(enabled: enabled ?? this.enabled);
+  OrexGlassAppearance copyWith({
+    bool? enabled,
+    double? opacity,
+    double? blur,
+    double? glow,
+  }) => OrexGlassAppearance(
+        enabled: enabled ?? this.enabled,
+        opacity: opacity ?? this.opacity,
+        blur: blur ?? this.blur,
+        glow: glow ?? this.glow,
+      );
 
   @override
   OrexGlassAppearance lerp(ThemeExtension<OrexGlassAppearance>? other, double t) {
-    if (other is! OrexGlassAppearance) return this;
+    if (other is! OrexGlassAppearance) {
+      return this;
+    }
     return t < 0.5 ? this : other;
   }
 }
@@ -38,6 +59,8 @@ class GlassPanel extends StatelessWidget {
     this.opacity = OrexGlassOpacity.panel,
     this.padding,
     this.tint,
+    this.isolateContentRepaints = false,
+    this.staticBackdrop = false,
   });
 
   final Widget child;
@@ -46,23 +69,33 @@ class GlassPanel extends StatelessWidget {
   final double opacity;
   final EdgeInsetsGeometry? padding;
   final Color? tint;
+  /// Keep changing card contents from repainting the glass decoration/filter.
+  /// Opt in only for cards that update often; boundaries also use GPU memory.
+  final bool isolateContentRepaints;
+  /// Glass overlay on a separately pre-blurred, immobile ambient layer.
+  /// Never use on overlays above moving content.
+  final bool staticBackdrop;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final palette = OrexPalette.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final glassEnabled =
-        theme.extension<OrexGlassAppearance>()?.enabled ?? true;
-    final baseColor = isDark ? OrexColors.darkSurface : OrexColors.lightSurface;
+    final appearance = theme.extension<OrexGlassAppearance>();
+    final glassEnabled = appearance?.enabled ?? true;
+    final effectiveOpacity = appearance?.opacity ?? opacity;
+    final effectiveBlur = appearance?.blur ?? blur;
+    final glow = appearance?.glow ?? 0.0;
+    final baseColor = palette.surface;
     final flatColor = tint == null
         ? baseColor
         : Color.alphaBlend(tint!.withValues(alpha: 0.14), baseColor);
-    final glassColor =
-        (tint ?? (isDark ? OrexColors.darkSurface : OrexColors.cream))
-            .withValues(alpha: opacity);
-    final borderColor =
-        (isDark ? OrexColors.ochreLight : OrexColors.copperBright)
-            .withValues(alpha: isDark ? 0.18 : 0.28);
+    final glassColor = (tint ??
+            ((palette.surface == (isDark ? OrexColors.darkSurface : OrexColors.lightSurface))
+                ? (isDark ? OrexColors.darkSurface : OrexColors.cream)
+                : palette.surface))
+        .withValues(alpha: effectiveOpacity);
+    final borderColor = palette.border;
 
     final panel = Container(
       padding: padding,
@@ -81,44 +114,132 @@ class GlassPanel extends StatelessWidget {
               )
             : null,
       ),
-      child: Material(type: MaterialType.transparency, child: child),
+      child: Material(
+        type: MaterialType.transparency,
+        child: isolateContentRepaints
+            ? RepaintBoundary(child: child)
+            : child,
+      ),
     );
-    if (!glassEnabled) return panel;
-    final filter = ImageFilter.blur(sigmaX: blur, sigmaY: blur);
-    final grouped = BackdropGroup.of(context) != null;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: grouped
-          ? BackdropFilter.grouped(filter: filter, child: panel)
-          : BackdropFilter(filter: filter, child: panel),
+    if (!glassEnabled) {
+      return panel;
+    }
+    // At sigma 0 the blur is an identity transform: retain the same clip,
+    // color and glow but avoid creating an unnecessary backdrop layer.
+    final Widget clipped;
+    if (staticBackdrop || effectiveBlur <= 0) {
+      clipped = ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: panel,
+      );
+    } else {
+      final filter = ImageFilter.blur(sigmaX: effectiveBlur, sigmaY: effectiveBlur);
+      final grouped = BackdropGroup.of(context) != null;
+      clipped = ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: grouped
+            ? BackdropFilter.grouped(filter: filter, child: panel)
+            : BackdropFilter(filter: filter, child: panel),
+      );
+    }
+    if (glow == 0) {
+      return clipped;
+    }
+    // Signed halo: negative values cast a dark shadow, positive values
+    // produce an accent-colored glow. Zero preserves classic Orex panels.
+    final strength = glow.abs().clamp(0.0, 0.85);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(borderRadius),
+        boxShadow: [
+          BoxShadow(
+            color: glow < 0
+                ? Colors.black.withValues(alpha: strength * 0.42)
+                : palette.accent.withValues(alpha: strength * 0.22),
+            blurRadius: 12 + strength * 26,
+            spreadRadius: strength * 2,
+          ),
+        ],
+      ),
+      child: clipped,
     );
   }
 }
 
 class AmbientBackground extends StatelessWidget {
-  const AmbientBackground({super.key, required this.child});
+  const AmbientBackground({
+    super.key,
+    required this.child,
+    this.preblurred = false,
+  });
 
   final Widget child;
+  /// Precompute the ambient layer for Android home cards; not UI overlays.
+  final bool preblurred;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return DecoratedBox(
+    final palette = OrexPalette.of(context);
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final original = palette.accent == OrexColors.copper &&
+        palette.secondary == OrexColors.ochre &&
+        palette.background == (dark ? OrexColors.darkBg : OrexColors.lightBg);
+    // Opaque custom themes have a plain background regardless of their HEX
+    // colors. Keep the classic Orex ambient gradient even with glass off.
+    final appearance = theme.extension<OrexGlassAppearance>();
+    final glassEnabled = appearance?.enabled ?? true;
+    if (!glassEnabled && !original) {
+      return ColoredBox(color: palette.background, child: child);
+    }
+    final blur = appearance?.blur ?? 18.0;
+    final usePreblur = preblurred && glassEnabled && blur > 0;
+    final ambient = DecoratedBox(
       decoration: BoxDecoration(
-        gradient: isDark ? OrexColors.ambientDark : OrexColors.ambientLight,
+        gradient: original
+            ? (dark ? OrexColors.ambientDark : OrexColors.ambientLight)
+            : RadialGradient(
+          center: const Alignment(-0.6, -0.8),
+          radius: 1.4,
+          colors: [
+            Color.alphaBlend(
+              palette.accent.withValues(alpha: 0.15),
+              palette.background,
+            ),
+            palette.background,
+          ],
+        ),
       ),
       child: Stack(
         children: [
           Positioned(
             top: -80,
             right: -60,
-            child: _Blob(OrexColors.copper.withValues(alpha: 0.22), 260),
+            child: _Blob(palette.accent.withValues(alpha: 0.22), 260),
           ),
           Positioned(
             bottom: -100,
             left: -40,
-            child: _Blob(OrexColors.ochre.withValues(alpha: 0.16), 300),
+            child: _Blob(palette.secondary.withValues(alpha: 0.16), 300),
+          ),
+          if (!usePreblur) child,
+        ],
+      ),
+    );
+    if (!usePreblur) return ambient;
+
+    // Rasterize the stationary gradient/blob layer once, keeping the same
+    // sigma as home glass. The content above remains fully responsive.
+    return ColoredBox(
+      color: palette.background,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          RepaintBoundary(
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+              child: ambient,
+            ),
           ),
           child,
         ],

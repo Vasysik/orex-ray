@@ -493,6 +493,38 @@ vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443?encryption=none&sec
     expect(profiles.subscriptions.single.name, 'HEAD works again');
   });
 
+  test('late HEAD metadata cannot override a newer full GET', () async {
+    SharedPreferences.setMockInitialValues({});
+    const node = 'vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443'
+        '?encryption=none&security=none&type=tcp#One';
+    final metadataReply = Completer<SubscriptionMetadataResult?>();
+    final source = _PendingSubscriptionMetadataSource(
+      metadataReply,
+      const [
+        SubscriptionFetchResult(body: node, userInfo: 'download=10; total=100'),
+        SubscriptionFetchResult(body: node, userInfo: 'download=75; total=100'),
+      ],
+    );
+    final profiles = await ProfilesController.load(subscriptionSource: source);
+    addTearDown(profiles.dispose);
+    await profiles.importSubscription('https://example.org/metadata');
+    final id = profiles.subscriptions.single.id;
+    final stamp = DateTime.fromMillisecondsSinceEpoch(
+      profiles.subscriptions.single.lastMetadataCheckEpochMs!,
+    );
+    final pending = profiles.refreshSubscriptionMetadataIfDue(
+      now: stamp.add(const Duration(minutes: 11)),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(source.metadataCalls, 1);
+    await profiles.refreshSubscription(id);
+    metadataReply.complete(
+      const SubscriptionMetadataResult(userInfo: 'download=20; total=100'),
+    );
+    expect(await pending, 0);
+    expect(profiles.subscriptions.single.parsedUserInfo?.usedBytes, 75);
+  });
+
   test('subscription retries once with a v2rayN-compatible user agent', () async {
     SharedPreferences.setMockInitialValues({});
     const subscribed =
@@ -561,6 +593,21 @@ vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@one.example:443?encryption=none&sec
     expect(profiles.subscriptions, isEmpty);
     expect(profiles.profiles, hasLength(1));
     expect(profiles.profiles.single.id, manual.id);
+  });
+
+  test('a single edited profile is exported as an updated share-link', () async {
+    SharedPreferences.setMockInitialValues({});
+    final profiles = await ProfilesController.load();
+    addTearDown(profiles.dispose);
+    final imported = await profiles.importVlessLink(link);
+    await profiles.updateProfile(
+      imported.copyWith(address: 'updated.example', name: 'Обновлён'),
+    );
+    final exported = profiles.exportProfileLink(imported.id);
+    expect(exported, startsWith('vless://'));
+    expect(exported, contains('updated.example'));
+    expect(exported, isNot(contains('example.com:443')));
+    expect(const VlessLinkParser().parse(exported).name, 'Обновлён');
   });
 
   test('exporting all profiles always returns a JSON array', () async {
@@ -1260,4 +1307,26 @@ class _SkippedLatencyProbe extends LatencyProbe {
   @override
   Future<LatencyProbeResult> measure(TunnelProfile profile) =>
       Future<LatencyProbeResult>.error(const LatencyMeasurementSkipped());
+}
+
+class _PendingSubscriptionMetadataSource extends SubscriptionSource {
+  _PendingSubscriptionMetadataSource(this.metadata, this.responses);
+
+  final Completer<SubscriptionMetadataResult?> metadata;
+  final List<SubscriptionFetchResult> responses;
+  int metadataCalls = 0;
+  int getCalls = 0;
+
+  @override
+  Future<SubscriptionFetchResult> loadUrl(
+    String url, {String userAgent = 'OrexRay/Subscription'}) async {
+    return responses[getCalls++];
+  }
+
+  @override
+  Future<SubscriptionMetadataResult?> loadMetadataUrl(
+    String url, {String userAgent = 'OrexRay/Subscription'}) {
+    metadataCalls++;
+    return metadata.future;
+  }
 }

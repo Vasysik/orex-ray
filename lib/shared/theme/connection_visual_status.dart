@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tunnel/tunnel_models.dart';
+import 'orex_palette.dart';
 import 'orex_theme.dart';
 
 /// One presentation contract for the connection badge and the Windows tray.
@@ -23,13 +24,17 @@ class ConnectionVisualStatus {
 
   factory ConnectionVisualStatus.fromSnapshot(
     TunnelSnapshot snapshot,
-    PingStatus routePingStatus,
-  ) {
+    PingStatus routePingStatus, {
+    OrexPalette? palette,
+  }) {
+    final accent = palette?.accent ?? OrexColors.copper;
+    final success = palette?.success ?? OrexColors.online;
+    final danger = palette?.danger ?? OrexColors.danger;
     if (snapshot.isConnected) {
       if (isRouteFailed(routePingStatus)) {
         return ConnectionVisualStatus._(
           label: 'Нет ответа',
-          color: OrexColors.danger,
+          color: danger,
           isProtected: false,
           trayStatus: routePingStatus == PingStatus.timeout
               ? 'timeout'
@@ -37,42 +42,42 @@ class ConnectionVisualStatus {
         );
       }
       if (routePingStatus == PingStatus.success) {
-        return const ConnectionVisualStatus._(
+        return ConnectionVisualStatus._(
           label: 'Защищено',
-          color: OrexColors.online,
+          color: success,
           isProtected: true,
           trayStatus: 'connected',
         );
       }
-      return const ConnectionVisualStatus._(
+      return ConnectionVisualStatus._(
         label: 'Проверка',
-        color: OrexColors.copper,
+        color: accent,
         isProtected: false,
         trayStatus: 'checking',
       );
     }
     return switch (snapshot.status) {
-      TunnelStatus.connecting => const ConnectionVisualStatus._(
+      TunnelStatus.connecting => ConnectionVisualStatus._(
           label: 'Подключение',
-          color: OrexColors.copper,
+          color: accent,
           isProtected: false,
           trayStatus: 'connecting',
         ),
-      TunnelStatus.disconnecting => const ConnectionVisualStatus._(
+      TunnelStatus.disconnecting => ConnectionVisualStatus._(
           label: 'Отключение',
-          color: OrexColors.copper,
+          color: accent,
           isProtected: false,
           trayStatus: 'disconnecting',
         ),
-      TunnelStatus.error => const ConnectionVisualStatus._(
+      TunnelStatus.error => ConnectionVisualStatus._(
           label: 'Ошибка',
-          color: OrexColors.danger,
+          color: danger,
           isProtected: false,
           trayStatus: 'error',
         ),
-      _ => const ConnectionVisualStatus._(
+      _ => ConnectionVisualStatus._(
           label: 'Не подключено',
-          color: OrexColors.copper,
+          color: accent,
           isProtected: false,
           trayStatus: 'disconnected',
         ),

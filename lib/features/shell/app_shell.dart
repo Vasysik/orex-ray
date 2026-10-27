@@ -4,12 +4,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../core/app_version.dart';
+import '../../core/update/orexray_updates.dart';
+import '../../shared/widgets/orexray_update_dialog.dart';
 import '../../core/apps/app_routing_controller.dart';
 import '../../core/geodata/geodata_controller.dart';
 import '../../core/profiles/profiles_controller.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/glass.dart';
-import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/theme/theme_controller.dart';
 import '../../shared/widgets/responsive_breakpoints.dart';
 import '../../shared/widgets/responsive_motion.dart';
@@ -72,7 +74,7 @@ class _DesktopSideNavigation extends StatelessWidget {
                   duration: const Duration(milliseconds: 160),
                   decoration: BoxDecoration(
                     color: selected
-                        ? OrexColors.copper.withValues(alpha: 0.14)
+                        ? OrexPalette.of(context).accent.withValues(alpha: 0.14)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(16),
                   ),
@@ -84,7 +86,7 @@ class _DesktopSideNavigation extends StatelessWidget {
                         destination.icon,
                         size: 23,
                         color: selected
-                            ? OrexColors.copper
+                            ? OrexPalette.of(context).accent
                             : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       const SizedBox(height: 3),
@@ -94,7 +96,7 @@ class _DesktopSideNavigation extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: selected
-                                  ? OrexColors.copper
+                                  ? OrexPalette.of(context).accent
                                   : Theme.of(context)
                                       .colorScheme
                                       .onSurfaceVariant,
@@ -124,6 +126,7 @@ class AppShell extends StatefulWidget {
     required this.appRouting,
     required this.geoData,
     required this.appVersion,
+    this.updates,
   });
 
   final TunnelController tunnel;
@@ -133,12 +136,32 @@ class AppShell extends StatefulWidget {
   final AppRoutingController appRouting;
   final GeoDataController geoData;
   final OrexAppVersion appVersion;
+  final OrexRayUpdates? updates;
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
+  // Android can report an intermediate viewport size on the first Flutter
+  // frame. Never paint desktop navigation during that bootstrap frame.
+  bool _androidNavigationReady = !Platform.isAndroid;
+
+  // On desktop, keep the departing sidebar mounted for its slide-out when
+  // crossing the breakpoint. An initially narrow shell never mounts it.
+  bool _hasShownDesktopNavigation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _androidNavigationReady = true);
+      });
+    }
+  }
+
   static const _appsIndex = 3;
   static const _networkIndex = 4;
   static const _geoDataIndex = 5;
@@ -193,6 +216,7 @@ class _AppShellState extends State<AppShell> {
         child: AboutScreen(
           appVersion: widget.appVersion,
           tunnel: widget.tunnel,
+          updates: widget.updates,
         ),
       ),
       BackdropGroup(
@@ -210,6 +234,8 @@ class _AppShellState extends State<AppShell> {
     ];
 
     return AmbientBackground(
+      // The content of Android home sits over stationary ambient artwork.
+      preblurred: Platform.isAndroid && _index == 0,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -217,6 +243,15 @@ class _AppShellState extends State<AppShell> {
             builder: (context, constraints) {
               final desktop = constraints.maxWidth >=
                   OrexBreakpoints.shellSideNavigation;
+              // The outgoing desktop sidebar is needed only for the Windows
+              // resize animation. On Android, never leave a hidden sidebar
+              // over the mobile UI (including while the viewport settles).
+              final showDesktopSidebar = desktop
+                  ? _androidNavigationReady
+                  : !Platform.isAndroid && _hasShownDesktopNavigation;
+              if (showDesktopSidebar && desktop) {
+                _hasShownDesktopNavigation = true;
+              }
               final desktopPageIndices = Platform.isWindows
                   ? const [0, 1, 2, 4, 5, 6, 7, 8, 9]
                   : const [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -304,12 +339,41 @@ class _AppShellState extends State<AppShell> {
                           : const EdgeInsets.fromLTRB(0, 0, 0, 90),
                       child: content,
                     ),
-                    Positioned(
-                      left: 12,
-                      top: 12,
-                      bottom: 12,
-                      width: 132,
-                      child: ExcludeSemantics(
+                    if (widget.updates != null)
+                      Positioned(
+                        top: 8, left: desktop ? 164 : 12, right: 12,
+                        child: AnimatedBuilder(
+                        animation: widget.updates!,
+                        builder: (context, _) {
+                          final updates = widget.updates!;
+                          if (!updates.showBanner) return const SizedBox.shrink();
+                          return Material(
+                              elevation: 6,
+                              color: OrexPalette.of(context).surface,
+                              borderRadius: BorderRadius.circular(14),
+                              child: ListTile(
+                                key: const ValueKey('orexray-update-banner'),
+                                leading: Icon(Icons.system_update_rounded, color: OrexPalette.of(context).accent),
+                                title: const Text('Доступна новая версия OrexRay'),
+                                subtitle: Text('Версия ${updates.available!.tag} · GitHub Releases'),
+                                onTap: () => showOrexRayUpdateDialog(context, updates),
+                                trailing: IconButton(
+                                  tooltip: 'Скрыть уведомление',
+                                  onPressed: updates.dismiss,
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                              ),
+                          );
+                        },
+                      ),
+                      ),
+                    if (showDesktopSidebar)
+                      Positioned(
+                        left: 12,
+                        top: 12,
+                        bottom: 12,
+                        width: 132,
+                        child: ExcludeSemantics(
                         excluding: !desktop,
                         child: IgnorePointer(
                           ignoring: !desktop,
@@ -371,14 +435,14 @@ class _AppShellState extends State<AppShell> {
                                       value == 3 ? _moreIndex : value,
                                     );
                                   },
-                                  destinations: const [
+                                  destinations: [
                                     NavigationDestination(
                                       icon: Icon(
                                         Icons.power_settings_new_rounded,
                                       ),
                                       selectedIcon: Icon(
                                         Icons.power_settings_new_rounded,
-                                        color: OrexColors.copper,
+                                        color: OrexPalette.of(context).accent,
                                       ),
                                       label: 'Главная',
                                     ),
@@ -386,7 +450,7 @@ class _AppShellState extends State<AppShell> {
                                       icon: Icon(Icons.storage_rounded),
                                       selectedIcon: Icon(
                                         Icons.storage_rounded,
-                                        color: OrexColors.copper,
+                                        color: OrexPalette.of(context).accent,
                                       ),
                                       label: 'Профили',
                                     ),
@@ -394,7 +458,7 @@ class _AppShellState extends State<AppShell> {
                                       icon: Icon(Icons.route_rounded),
                                       selectedIcon: Icon(
                                         Icons.route_rounded,
-                                        color: OrexColors.copper,
+                                        color: OrexPalette.of(context).accent,
                                       ),
                                       label: 'Подключение',
                                     ),
@@ -402,7 +466,7 @@ class _AppShellState extends State<AppShell> {
                                       icon: Icon(Icons.more_horiz_rounded),
                                       selectedIcon: Icon(
                                         Icons.more_horiz_rounded,
-                                        color: OrexColors.copper,
+                                        color: OrexPalette.of(context).accent,
                                       ),
                                       label: 'Ещё',
                                     ),

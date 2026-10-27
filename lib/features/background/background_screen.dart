@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/settings/connection_settings_controller.dart';
 import '../../platform/android/android_startup_controller.dart';
-import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
 
@@ -35,7 +35,7 @@ class BackgroundScreen extends StatelessWidget {
             children: [
               ListTile(
                 leading:
-                    const Icon(Icons.speed_rounded, color: OrexColors.copper),
+                    Icon(Icons.speed_rounded, color: OrexPalette.of(context).accent),
                 title: const Text('Интервал интерфейса'),
                 subtitle: const Text(
                   'Как часто обновлять скорость и счётчики, пока OrexRay открыт.',
@@ -60,9 +60,8 @@ class BackgroundScreen extends StatelessWidget {
               if (showAndroidNotificationSettings) ...[
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(
-                    Icons.notifications_active_outlined,
-                    color: OrexColors.copper,
+                  leading: Icon(Icons.notifications_active_outlined,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Интервал уведомления'),
                   subtitle: const Text(
@@ -88,9 +87,8 @@ class BackgroundScreen extends StatelessWidget {
               ],
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(
-                  Icons.timer_outlined,
-                  color: OrexColors.copper,
+                leading: Icon(Icons.timer_outlined,
+                  color: OrexPalette.of(context).accent,
                 ),
                 title: const Text('Интервал пинга'),
                 subtitle: Text(
@@ -117,9 +115,8 @@ class BackgroundScreen extends StatelessWidget {
               if (showAndroidNotificationSettings) ...[
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(
-                    Icons.notifications_rounded,
-                    color: OrexColors.copper,
+                  leading: Icon(Icons.notifications_rounded,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Показывать уведомления'),
                   subtitle: const Text(
@@ -131,9 +128,8 @@ class BackgroundScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(
-                    Icons.notifications_active_outlined,
-                    color: OrexColors.copper,
+                  secondary: Icon(Icons.notifications_active_outlined,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Скорость в уведомлении'),
                   subtitle: const Text(
@@ -145,9 +141,8 @@ class BackgroundScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(
-                    Icons.network_ping_rounded,
-                    color: OrexColors.copper,
+                  secondary: Icon(Icons.network_ping_rounded,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Пинг в уведомлении'),
                   subtitle: const Text(
@@ -167,9 +162,8 @@ class BackgroundScreen extends StatelessWidget {
                 'и возврате в приложение.',
             children: [
               ListTile(
-                leading: const Icon(
-                  Icons.cloud_sync_outlined,
-                  color: OrexColors.copper,
+                leading: Icon(Icons.cloud_sync_outlined,
+                  color: OrexPalette.of(context).accent,
                 ),
                 title: const Text('Автообновление подписок'),
                 subtitle: const Text(
@@ -196,9 +190,8 @@ class BackgroundScreen extends StatelessWidget {
               ),
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(
-                  Icons.monitor_heart_outlined,
-                  color: OrexColors.copper,
+                leading: Icon(Icons.monitor_heart_outlined,
+                  color: OrexPalette.of(context).accent,
                 ),
                 title: const Text('Метаданные подписок'),
                 subtitle: const Text(
@@ -232,9 +225,8 @@ class BackgroundScreen extends StatelessWidget {
               subtitle: 'Поведение окна и фоновой работы OrexRay.',
               children: [
                 SwitchListTile(
-                  secondary: const Icon(
-                    Icons.login_rounded,
-                    color: OrexColors.copper,
+                  secondary: Icon(Icons.login_rounded,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Запускать вместе с Windows'),
                   subtitle: const Text(
@@ -245,9 +237,8 @@ class BackgroundScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(
-                    Icons.flash_on_rounded,
-                    color: OrexColors.copper,
+                  secondary: Icon(Icons.flash_on_rounded,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Подключаться при запуске'),
                   subtitle: const Text(
@@ -258,9 +249,8 @@ class BackgroundScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(
-                    Icons.system_update_alt_rounded,
-                    color: OrexColors.copper,
+                  secondary: Icon(Icons.system_update_alt_rounded,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Сворачивать в трей при закрытии'),
                   subtitle: const Text(
@@ -272,9 +262,8 @@ class BackgroundScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(
-                    Icons.admin_panel_settings_outlined,
-                    color: OrexColors.copper,
+                  secondary: Icon(Icons.admin_panel_settings_outlined,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Запускать с правами администратора'),
                   subtitle: const Text(
@@ -295,9 +284,8 @@ class BackgroundScreen extends StatelessWidget {
                   'OrexRay работает как foreground VPN-service, даже когда интерфейс закрыт.',
               children: [
                 SwitchListTile(
-                  secondary: const Icon(
-                    Icons.flash_on_rounded,
-                    color: OrexColors.copper,
+                  secondary: Icon(Icons.flash_on_rounded,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title:
                       const Text('Подключаться после запуска и перезагрузки'),
@@ -309,9 +297,8 @@ class BackgroundScreen extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(
-                    Icons.restart_alt_rounded,
-                    color: OrexColors.copper,
+                  secondary: Icon(Icons.restart_alt_rounded,
+                    color: OrexPalette.of(context).accent,
                   ),
                   title: const Text('Восстанавливать после убийства процесса'),
                   subtitle: const Text(
@@ -320,8 +307,8 @@ class BackgroundScreen extends StatelessWidget {
                   onChanged: settings.setRestartServiceOnKill,
                 ),
                 const Divider(height: 1),
-                const ListTile(
-                  leading: Icon(Icons.eco_outlined, color: OrexColors.copper),
+                 ListTile(
+                  leading: Icon(Icons.eco_outlined, color: OrexPalette.of(context).accent),
                   title: Text('Энергосбережение'),
                   subtitle: Text(
                       'В фоне stats-loop полностью останавливается, если скорость в уведомлении выключена; VPN и watchdog продолжают работать.'),

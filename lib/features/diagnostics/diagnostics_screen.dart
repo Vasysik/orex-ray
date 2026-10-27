@@ -10,6 +10,7 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
+import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_adaptive_header.dart';
 import '../../shared/widgets/orex_confirm_dialog.dart';
 import '../../shared/widgets/orex_notice.dart';
@@ -142,7 +143,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           children: [
             ListTile(
               leading:
-                  const Icon(Icons.terminal_rounded, color: OrexColors.copper),
+                  Icon(Icons.terminal_rounded, color: OrexPalette.of(context).accent),
               title: const Text('Уровень логов'),
               subtitle: Text(_logLevelTitle(widget.settings.logLevel)),
               trailing: DropdownButton<String>(
