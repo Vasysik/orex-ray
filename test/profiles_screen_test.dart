@@ -46,6 +46,9 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
+    // The QR action makes the bottom sheet scrollable at test dimensions.
+    await tester.ensureVisible(find.text('Новый профиль'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Новый профиль'));
     await tester.pumpAndSettle();
 

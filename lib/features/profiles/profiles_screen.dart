@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -24,9 +25,11 @@ import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
+import 'qr_import.dart';
 
 enum _ProfileCreateAction {
   importLink,
+  qrCode,
   subscription,
   importXrayJson,
   newProfile,
@@ -75,6 +78,12 @@ class ProfilesScreen extends StatelessWidget {
           subtitle: 'VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP',
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
+          value: _ProfileCreateAction.qrCode,
+          icon: Icons.qr_code_scanner_rounded,
+          title: 'Импорт через QR',
+          subtitle: 'Камера на Android или изображение QR на Windows',
+        ),
+        OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.subscription,
           icon: Icons.sync_rounded,
           title: 'Импорт подписки',
@@ -106,6 +115,9 @@ class ProfilesScreen extends StatelessWidget {
       case _ProfileCreateAction.importLink:
         await _showImportDialog(context);
         break;
+      case _ProfileCreateAction.qrCode:
+        await _showImportDialog(context, openQrOnStart: true);
+        break;
       case _ProfileCreateAction.subscription:
         await _showSubscriptionDialog(context);
         break;
@@ -121,10 +133,15 @@ class ProfilesScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _showImportDialog(BuildContext context) async {
+  Future<void> _showImportDialog(BuildContext context, {
+    bool openQrOnStart = false,
+  }) async {
     final profile = await showDialog<TunnelProfile>(
       context: context,
-      builder: (context) => _ImportLinkDialog(profiles: profiles),
+      builder: (context) => _ImportLinkDialog(
+        profiles: profiles,
+        openQrOnStart: openQrOnStart,
+      ),
     );
     if (profile == null || !context.mounted) return;
     OrexNotice.show(
@@ -2617,9 +2634,13 @@ class _BalancerCard extends StatelessWidget {
 }
 
 class _ImportLinkDialog extends StatefulWidget {
-  const _ImportLinkDialog({required this.profiles});
+  const _ImportLinkDialog({
+    required this.profiles,
+    this.openQrOnStart = false,
+  });
 
   final ProfilesController profiles;
+  final bool openQrOnStart;
 
   @override
   State<_ImportLinkDialog> createState() => _ImportLinkDialogState();
@@ -2629,6 +2650,19 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
   final TextEditingController _controller = TextEditingController();
   String? _error;
   bool _importing = false;
+  bool _readingQr = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openQrOnStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_readQr());
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -2649,6 +2683,52 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
       _controller.selection = TextSelection.collapsed(offset: text.length);
       _error = null;
     });
+  }
+
+  Future<void> _readQr({bool imageOnly = false}) async {
+    if (_importing || _readingQr) {
+      return;
+    }
+    setState(() {
+      _readingQr = true;
+      _error = null;
+    });
+    try {
+      final String? link;
+      if (Platform.isAndroid && !imageOnly) {
+        link = await showDialog<String>(
+          context: context,
+          builder: (_) => const QrCameraDialog(),
+        );
+      } else {
+        link = await QrLinkImport.pickFromImage();
+      }
+      if (!mounted || link == null) {
+        return;
+      }
+      if (!QrLinkImport.isSupportedLink(link)) {
+        throw const FormatException('QR не содержит поддерживаемую ссылку профиля');
+      }
+      setState(() {
+        _controller.text = link!.trim();
+        _controller.selection = TextSelection.collapsed(
+          offset: _controller.text.length,
+        );
+        _error = null;
+      });
+    } on FormatException catch (error) {
+      if (mounted) {
+        setState(() => _error = error.message);
+      }
+    } on Object {
+      if (mounted) {
+        setState(() => _error = 'Не удалось распознать QR-код');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _readingQr = false);
+      }
+    }
   }
 
   Future<void> _submit() async {
@@ -2702,13 +2782,30 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
               ),
             ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _importing ? null : _pasteFromClipboard,
-                icon: const Icon(Icons.content_paste_rounded),
-                label: const Text('Вставить из буфера обмена'),
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                TextButton.icon(
+                  onPressed: _importing || _readingQr ? null : _pasteFromClipboard,
+                  icon: const Icon(Icons.content_paste_rounded),
+                  label: const Text('Вставить из буфера'),
+                ),
+                if (Platform.isAndroid)
+                  TextButton.icon(
+                    key: const ValueKey('import-qr-camera'),
+                    onPressed: _importing || _readingQr ? null : _readQr,
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                    label: const Text('Сканировать QR'),
+                  ),
+                TextButton.icon(
+                  key: const ValueKey('import-qr-image'),
+                  onPressed: _importing || _readingQr
+                      ? null : () => _readQr(imageOnly: true),
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('QR из изображения'),
+                ),
+              ],
             ),
           ],
         ),
