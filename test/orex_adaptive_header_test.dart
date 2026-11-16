@@ -78,7 +78,7 @@ void main() {
                 tooltip: 'Обновить диагностику', label: 'Обновить',
                 icon: Icons.refresh_rounded, onPressed: () { refreshes++; },
               ),
-              const OrexHeaderAction(
+              OrexHeaderAction(
                 tooltip: 'Скопировать отчёт', label: 'Скопировать отчёт',
                 icon: Icons.copy_rounded, onPressed: null,
               ),

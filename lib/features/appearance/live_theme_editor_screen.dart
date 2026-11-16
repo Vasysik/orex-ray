@@ -7,6 +7,7 @@ import '../../shared/theme/orex_palette.dart';
 import '../../shared/theme/simple_theme_profile.dart';
 import '../../shared/theme/theme_controller.dart';
 import '../../shared/widgets/settings_section.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// Inline controls for a transient app-wide theme draft. Navigating away does
 /// not dispose the draft: the entire application uses it until Save / Cancel.
@@ -163,12 +164,12 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: DecoratedBox(
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [Colors.white, Colors.transparent],
                               ),
                             ),
-                            child: const DecoratedBox(
+                            child: DecoratedBox(
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   begin: Alignment.topCenter,
@@ -198,9 +199,9 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
                   );
                 }),
                 const SizedBox(height: 12),
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('Оттенок'),
+                  child: Text('Оттенок'.tr),
                 ),
                 Container(
                   height: 12,
@@ -218,7 +219,7 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
                   onChanged: (hue) => change(picker.withHue(hue)),
                 ),
                 Row(children: [
-                  const Text('Непрозрачность'),
+                  Text('Непрозрачность'.tr),
                   Expanded(child: Slider(
                     value: picker.alpha,
                     onChanged: (alpha) => change(picker.withAlpha(alpha)),
@@ -239,11 +240,11 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Отмена'),
+                child: Text('Отмена'.tr),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(dialogContext, picker.toColor()),
-                child: const Text('Применить'),
+                child: Text('Применить'.tr),
               ),
             ],
           );
@@ -262,12 +263,12 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
 
   Future<void> _chooseMascot() async {
     try {
-      final file = await openFile(acceptedTypeGroups: const [
-        XTypeGroup(label: 'Изображение', extensions: ['png', 'jpg', 'jpeg', 'webp']),
+      final file = await openFile(acceptedTypeGroups: [
+        XTypeGroup(label: 'Изображение'.tr, extensions: ['png', 'jpg', 'jpeg', 'webp']),
       ]);
       if (file == null) return;
       if (await file.length() > ThemeController.maxMascotBytes) {
-        throw const FormatException('Маскот больше 6 МБ');
+        throw FormatException('Маскот больше 6 МБ'.tr);
       }
       final bytes = await file.readAsBytes();
       if (!mounted) return;
@@ -350,26 +351,24 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
     return Center(child: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 740),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const Padding(
+        Padding(
           padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Text('Изменения сразу видны во всём OrexRay. Можно перейти '
-              'в другие разделы и вернуться сюда. «Назад к темам» отменяет '
-              'несохранённые изменения.'),
+          child: Text('Изменения сразу видны во всём OrexRay. Можно перейти в другие разделы и вернуться сюда. «Назад к темам» отменяет несохранённые изменения.'.tr),
         ),
         const SizedBox(height: 12),
-        SettingsSection(title: 'Общее', children: [
+        SettingsSection(title: 'Общее'.tr, children: [
           Padding(
             padding: const EdgeInsets.all(16),
             child: TextField(
               controller: _name,
               maxLength: 80,
               onChanged: (_) => _applyLive(),
-              decoration: const InputDecoration(labelText: 'Название темы'),
+              decoration: InputDecoration(labelText: 'Название темы'.tr),
             ),
           ),
           SwitchListTile(
-            title: const Text('Светлое оформление'),
-            subtitle: const Text('Использовать светлые элементы интерфейса'),
+            title: Text('Светлое оформление'.tr),
+            subtitle: Text('Использовать светлые элементы интерфейса'.tr),
             value: _light,
             onChanged: (value) {
               setState(() => _light = value);
@@ -378,7 +377,7 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
           ),
         ]),
         const SizedBox(height: 16),
-        SettingsSection(title: 'Палитра', children: [
+        SettingsSection(title: 'Палитра'.tr, children: [
           Padding(
             padding: const EdgeInsets.all(12),
             child: Wrap(spacing: 12, runSpacing: 12, children: [
@@ -390,10 +389,10 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
                   decoration: InputDecoration(
                     labelText: OrexPalette.roles[role],
                     errorText: _parseColor(_colors[role]!.text) == null
-                        ? 'HEX: #RRGGBB или #AARRGGBB'
+                        ? 'HEX: #RRGGBB или #AARRGGBB'.tr
                         : null,
                     prefixIcon: IconButton(
-                      tooltip: 'Выбрать цвет из палитры',
+                      tooltip: 'Выбрать цвет из палитры'.tr,
                       onPressed: () => _chooseColor(role),
                       icon: Container(
                         width: 22, height: 22,
@@ -412,11 +411,11 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
           ),
         ]),
         const SizedBox(height: 16),
-        SettingsSection(title: 'Стекло', children: [
+        SettingsSection(title: 'Стекло'.tr, children: [
           SwitchListTile(
             key: const ValueKey('theme-glass-enabled'),
-            title: const Text('Использовать стекло в этой теме'),
-            subtitle: const Text('Выключает размытие, прозрачность и свечение'),
+            title: Text('Использовать стекло в этой теме'.tr),
+            subtitle: Text('Выключает размытие, прозрачность и свечение'.tr),
             value: _glassEnabled,
             onChanged: (enabled) {
               setState(() => _glassEnabled = enabled);
@@ -424,30 +423,30 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
             },
           ),
           if (_glassEnabled) ...[
-            _slider('Прозрачность панелей', 1 - _opacity, 0.05, 0.85,
+            _slider('Прозрачность панелей'.tr, 1 - _opacity, 0.05, 0.85,
               '${((1 - _opacity) * 100).round()}%',
               (value) => _opacity = 1 - value, divisions: 16),
-            _slider('Размытие', _blur, 0, 36, '${_blur.round()} px',
+            _slider('Размытие'.tr, _blur, 0, 36, '${_blur.round()} px',
               (value) => _blur = value, divisions: 36),
-            _slider('Затенение / свечение', _glow, -0.85, 0.85,
+            _slider('Затенение / свечение'.tr, _glow, -0.85, 0.85,
               '${(_glow * 100).round() > 0 ? '+' : ''}${(_glow * 100).round()}%',
               (value) => _glow = value, divisions: 34),
           ],
         ]),
         const SizedBox(height: 16),
-        SettingsSection(title: 'Маскот', children: [
+        SettingsSection(title: 'Маскот'.tr, children: [
           ListTile(
             key: const ValueKey('theme-mascot-picker'),
             leading: const Icon(Icons.upload_file_rounded),
-            title: const Text('Выбрать изображение'),
-            subtitle: const Text('PNG, JPEG или WebP до 6 МБ'),
+            title: Text('Выбрать изображение'.tr),
+            subtitle: Text('PNG, JPEG или WebP до 6 МБ'.tr),
             onTap: _chooseMascot,
           ),
           if (_selectedImage != null ||
               (!_resetMascot && widget.initial.mascotPath.isNotEmpty))
             ListTile(
               leading: const Icon(Icons.restore),
-              title: const Text('Вернуть стандартную белочку'),
+              title: Text('Вернуть стандартную белочку'.tr),
               onTap: () {
                 setState(() {
                   _resetMascot = true;
@@ -461,13 +460,13 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
         Row(children: [
           OutlinedButton(
             onPressed: _saving ? null : widget.onClose,
-            child: const Text('Отменить'),
+            child: Text('Отменить'.tr),
           ),
           const SizedBox(width: 12),
           Expanded(child: FilledButton.icon(
             onPressed: _saving ? null : _save,
             icon: const Icon(Icons.check_rounded),
-            label: const Text('Сохранить тему'),
+            label: Text('Сохранить тему'.tr),
           )),
         ]),
       ]),

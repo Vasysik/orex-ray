@@ -118,7 +118,7 @@ void main() {
   });
 
   test('exports one profile as config and many profiles as an array', () {
-    const first = TunnelProfile(
+    final first = TunnelProfile(
       id: 'one',
       name: 'One',
       address: 'one.example.com',
@@ -127,7 +127,7 @@ void main() {
       security: 'tls',
       serverName: 'one.example.com',
     );
-    const second = TunnelProfile(
+    final second = TunnelProfile(
       id: 'two',
       name: 'Two',
       address: 'two.example.com',

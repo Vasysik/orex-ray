@@ -49,8 +49,9 @@ for path in sorted(ROOT.rglob("*.dart")):
             out.append(line)
             continue
 
+        count_box = [0]
+
         def repl(m: re.Match) -> str:
-            nonlocal count
             literal = m.group(1)
             inner = literal[1:-1]
             if not CYR.search(inner):
@@ -61,10 +62,11 @@ for path in sorted(ROOT.rglob("*.dart")):
             if "$" in inner:
                 manual.append((str(rel), lineno, literal))
                 return literal
-            count += 1
+            count_box[0] += 1
             return literal + ".tr"
 
         new_line = LIT.sub(repl, line)
+        count += count_box[0]
         out.append(new_line)
 
     if count:

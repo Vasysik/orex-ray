@@ -923,7 +923,7 @@ vless://cccccccc-cccc-4ccc-8ccc-cccccccccccc@real.example:443?encryption=none&se
     );
     await profiles.refreshLatency(active.id);
     final inactive = await profiles.createProfile(
-      const TunnelProfile(
+      TunnelProfile(
         id: 'inactive-profile',
         name: 'Inactive',
         address: 'inactive.example',

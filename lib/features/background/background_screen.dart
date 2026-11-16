@@ -7,6 +7,7 @@ import '../../platform/android/android_startup_controller.dart';
 import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class BackgroundScreen extends StatelessWidget {
   const BackgroundScreen({super.key, required this.settings, this.isAndroid});
@@ -22,35 +23,35 @@ class BackgroundScreen extends StatelessWidget {
       builder: (context, _) => ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const SettingsPageHeader(
-            title: 'Фоновая работа',
+          SettingsPageHeader(
+            title: 'Фоновая работа'.tr,
             subtitle:
-                'Частота статистики, уведомление и восстановление сервиса',
+                'Частота статистики, уведомление и восстановление сервиса'.tr,
             icon: Icons.battery_saver_rounded,
           ),
           const SizedBox(height: 22),
           SettingsSection(
-            title: 'Статистика',
-            subtitle: 'Редкое обновление меньше будит процессор.',
+            title: 'Статистика'.tr,
+            subtitle: 'Редкое обновление меньше будит процессор.'.tr,
             children: [
               ListTile(
                 leading:
                     Icon(Icons.speed_rounded, color: OrexPalette.of(context).accent),
-                title: const Text('Интервал интерфейса'),
-                subtitle: const Text(
-                  'Как часто обновлять скорость и счётчики, пока OrexRay открыт.',
+                title: Text('Интервал интерфейса'.tr),
+                subtitle: Text(
+                  'Как часто обновлять скорость и счётчики, пока OrexRay открыт.'.tr,
                 ),
                 trailing: DropdownButton<int>(
                   value: settings.statsIntervalSeconds,
                   underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(value: 1, child: Text('1 с')),
-                    DropdownMenuItem(value: 2, child: Text('2 с')),
-                    DropdownMenuItem(value: 3, child: Text('3 с')),
-                    DropdownMenuItem(value: 5, child: Text('5 с')),
-                    DropdownMenuItem(value: 10, child: Text('10 с')),
-                    DropdownMenuItem(value: 15, child: Text('15 с')),
-                    DropdownMenuItem(value: 30, child: Text('30 с')),
+                  items: [
+                    DropdownMenuItem(value: 1, child: Text('1 с'.tr)),
+                    DropdownMenuItem(value: 2, child: Text('2 с'.tr)),
+                    DropdownMenuItem(value: 3, child: Text('3 с'.tr)),
+                    DropdownMenuItem(value: 5, child: Text('5 с'.tr)),
+                    DropdownMenuItem(value: 10, child: Text('10 с'.tr)),
+                    DropdownMenuItem(value: 15, child: Text('15 с'.tr)),
+                    DropdownMenuItem(value: 30, child: Text('30 с'.tr)),
                   ],
                   onChanged: (value) {
                     if (value != null) settings.setStatsIntervalSeconds(value);
@@ -63,19 +64,19 @@ class BackgroundScreen extends StatelessWidget {
                   leading: Icon(Icons.notifications_active_outlined,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Интервал уведомления'),
-                  subtitle: const Text(
-                    'Как часто обновлять скорость в фоновом уведомлении.',
+                  title: Text('Интервал уведомления'.tr),
+                  subtitle: Text(
+                    'Как часто обновлять скорость в фоновом уведомлении.'.tr,
                   ),
                   trailing: DropdownButton<int>(
                     value: settings.notificationStatsIntervalSeconds,
                     underline: const SizedBox.shrink(),
-                    items: const [
-                      DropdownMenuItem(value: 5, child: Text('5 с')),
-                      DropdownMenuItem(value: 10, child: Text('10 с')),
-                      DropdownMenuItem(value: 15, child: Text('15 с')),
-                      DropdownMenuItem(value: 30, child: Text('30 с')),
-                      DropdownMenuItem(value: 60, child: Text('1 мин')),
+                    items: [
+                      DropdownMenuItem(value: 5, child: Text('5 с'.tr)),
+                      DropdownMenuItem(value: 10, child: Text('10 с'.tr)),
+                      DropdownMenuItem(value: 15, child: Text('15 с'.tr)),
+                      DropdownMenuItem(value: 30, child: Text('30 с'.tr)),
+                      DropdownMenuItem(value: 60, child: Text('1 мин'.tr)),
                     ],
                     onChanged: (value) {
                       if (value != null) {
@@ -90,22 +91,21 @@ class BackgroundScreen extends StatelessWidget {
                 leading: Icon(Icons.timer_outlined,
                   color: OrexPalette.of(context).accent,
                 ),
-                title: const Text('Интервал пинга'),
+                title: Text('Интервал пинга'.tr),
                 subtitle: Text(
                   showAndroidNotificationSettings
-                      ? 'Как часто проверять активный маршрут. В фоне работает '
-                          'только при включённом пинге в уведомлении.'
-                      : 'Как часто проверять активный маршрут во время подключения.',
+                      ? 'Как часто проверять активный маршрут. В фоне работает только при включённом пинге в уведомлении.'.tr
+                      : 'Как часто проверять активный маршрут во время подключения.'.tr,
                 ),
                 trailing: DropdownButton<int>(
                   value: settings.pingIntervalSeconds,
                   underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(value: 15, child: Text('15 с')),
-                    DropdownMenuItem(value: 30, child: Text('30 с')),
-                    DropdownMenuItem(value: 60, child: Text('1 мин')),
-                    DropdownMenuItem(value: 120, child: Text('2 мин')),
-                    DropdownMenuItem(value: 300, child: Text('5 мин')),
+                  items: [
+                    DropdownMenuItem(value: 15, child: Text('15 с'.tr)),
+                    DropdownMenuItem(value: 30, child: Text('30 с'.tr)),
+                    DropdownMenuItem(value: 60, child: Text('1 мин'.tr)),
+                    DropdownMenuItem(value: 120, child: Text('2 мин'.tr)),
+                    DropdownMenuItem(value: 300, child: Text('5 мин'.tr)),
                   ],
                   onChanged: (value) {
                     if (value != null) settings.setPingIntervalSeconds(value);
@@ -118,9 +118,9 @@ class BackgroundScreen extends StatelessWidget {
                   leading: Icon(Icons.notifications_rounded,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Показывать уведомления'),
-                  subtitle: const Text(
-                    'Видимость меняется в системных настройках Android.',
+                  title: Text('Показывать уведомления'.tr),
+                  subtitle: Text(
+                    'Видимость меняется в системных настройках Android.'.tr,
                   ),
                   trailing: const Icon(Icons.open_in_new_rounded),
                   mouseCursor: SystemMouseCursors.click,
@@ -131,10 +131,9 @@ class BackgroundScreen extends StatelessWidget {
                   secondary: Icon(Icons.notifications_active_outlined,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Скорость в уведомлении'),
-                  subtitle: const Text(
-                    'Показывать текущие ↓/↑. Если выключено и интерфейс закрыт, '
-                    'stats-loop полностью останавливается.',
+                  title: Text('Скорость в уведомлении'.tr),
+                  subtitle: Text(
+                    'Показывать текущие ↓/↑. Если выключено и интерфейс закрыт, stats-loop полностью останавливается.'.tr,
                   ),
                   value: settings.showNotificationSpeed,
                   onChanged: settings.setShowNotificationSpeed,
@@ -144,10 +143,9 @@ class BackgroundScreen extends StatelessWidget {
                   secondary: Icon(Icons.network_ping_rounded,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Пинг в уведомлении'),
-                  subtitle: const Text(
-                    'Если выключено и интерфейс закрыт, фоновые проверки пинга '
-                    'полностью останавливаются.',
+                  title: Text('Пинг в уведомлении'.tr),
+                  subtitle: Text(
+                    'Если выключено и интерфейс закрыт, фоновые проверки пинга полностью останавливаются.'.tr,
                   ),
                   value: settings.showNotificationPing,
                   onChanged: settings.setShowNotificationPing,
@@ -157,29 +155,27 @@ class BackgroundScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SettingsSection(
-            title: 'Подписки',
-            subtitle: 'Без фонового таймера: проверка выполняется при запуске '
-                'и возврате в приложение.',
+            title: 'Подписки'.tr,
+            subtitle: 'Без фонового таймера: проверка выполняется при запуске и возврате в приложение.'.tr,
             children: [
               ListTile(
                 leading: Icon(Icons.cloud_sync_outlined,
                   color: OrexPalette.of(context).accent,
                 ),
-                title: const Text('Автообновление подписок'),
-                subtitle: const Text(
-                  'Обновлять только просроченные подписки. Интервал провайдера, '
-                  'если он указан, тоже учитывается.',
+                title: Text('Автообновление подписок'.tr),
+                subtitle: Text(
+                  'Обновлять только просроченные подписки. Интервал провайдера, если он указан, тоже учитывается.'.tr,
                 ),
                 trailing: DropdownButton<int>(
                   value: settings.subscriptionAutoUpdateHours,
                   underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(value: 0, child: Text('Выкл.')),
-                    DropdownMenuItem(value: 1, child: Text('1 ч')),
-                    DropdownMenuItem(value: 6, child: Text('6 ч')),
-                    DropdownMenuItem(value: 12, child: Text('12 ч')),
-                    DropdownMenuItem(value: 24, child: Text('1 день')),
-                    DropdownMenuItem(value: 72, child: Text('3 дня')),
+                  items: [
+                    DropdownMenuItem(value: 0, child: Text('Выкл.'.tr)),
+                    DropdownMenuItem(value: 1, child: Text('1 ч'.tr)),
+                    DropdownMenuItem(value: 6, child: Text('6 ч'.tr)),
+                    DropdownMenuItem(value: 12, child: Text('12 ч'.tr)),
+                    DropdownMenuItem(value: 24, child: Text('1 день'.tr)),
+                    DropdownMenuItem(value: 72, child: Text('3 дня'.tr)),
                   ],
                   onChanged: (value) {
                     if (value != null) {
@@ -193,21 +189,20 @@ class BackgroundScreen extends StatelessWidget {
                 leading: Icon(Icons.monitor_heart_outlined,
                   color: OrexPalette.of(context).accent,
                 ),
-                title: const Text('Метаданные подписок'),
-                subtitle: const Text(
-                  'Проверять квоту, срок и ссылки через лёгкий HEAD-запрос '
-                  'при открытии и возврате в приложение. Серверы не скачиваются.',
+                title: Text('Метаданные подписок'.tr),
+                subtitle: Text(
+                  'Проверять квоту, срок и ссылки через лёгкий HEAD-запрос при открытии и возврате в приложение. Серверы не скачиваются.'.tr,
                 ),
                 trailing: DropdownButton<int>(
                   value: settings.subscriptionMetadataRefreshMinutes,
                   underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(value: 0, child: Text('Выкл.')),
-                    DropdownMenuItem(value: 10, child: Text('10 мин')),
-                    DropdownMenuItem(value: 30, child: Text('30 мин')),
-                    DropdownMenuItem(value: 60, child: Text('1 ч')),
-                    DropdownMenuItem(value: 360, child: Text('6 ч')),
-                    DropdownMenuItem(value: 720, child: Text('12 ч')),
+                  items: [
+                    DropdownMenuItem(value: 0, child: Text('Выкл.'.tr)),
+                    DropdownMenuItem(value: 10, child: Text('10 мин'.tr)),
+                    DropdownMenuItem(value: 30, child: Text('30 мин'.tr)),
+                    DropdownMenuItem(value: 60, child: Text('1 ч'.tr)),
+                    DropdownMenuItem(value: 360, child: Text('6 ч'.tr)),
+                    DropdownMenuItem(value: 720, child: Text('12 ч'.tr)),
                   ],
                   onChanged: (value) {
                     if (value != null) {
@@ -222,15 +217,15 @@ class BackgroundScreen extends StatelessWidget {
             const SizedBox(height: 16),
             SettingsSection(
               title: 'Windows',
-              subtitle: 'Поведение окна и фоновой работы OrexRay.',
+              subtitle: 'Поведение окна и фоновой работы OrexRay.'.tr,
               children: [
                 SwitchListTile(
                   secondary: Icon(Icons.login_rounded,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Запускать вместе с Windows'),
-                  subtitle: const Text(
-                    'Стартовать скрыто в трее после входа в систему.',
+                  title: Text('Запускать вместе с Windows'.tr),
+                  subtitle: Text(
+                    'Стартовать скрыто в трее после входа в систему.'.tr,
                   ),
                   value: settings.autoStart,
                   onChanged: settings.setAutoStart,
@@ -240,9 +235,9 @@ class BackgroundScreen extends StatelessWidget {
                   secondary: Icon(Icons.flash_on_rounded,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Подключаться при запуске'),
-                  subtitle: const Text(
-                    'Автоматически включать выбранный профиль после старта OrexRay.',
+                  title: Text('Подключаться при запуске'.tr),
+                  subtitle: Text(
+                    'Автоматически включать выбранный профиль после старта OrexRay.'.tr,
                   ),
                   value: settings.autoConnectOnStartup,
                   onChanged: settings.setAutoConnectOnStartup,
@@ -252,10 +247,9 @@ class BackgroundScreen extends StatelessWidget {
                   secondary: Icon(Icons.system_update_alt_rounded,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Сворачивать в трей при закрытии'),
-                  subtitle: const Text(
-                    'Если выключено, крестик остановит подключение и '
-                    'завершит OrexRay.',
+                  title: Text('Сворачивать в трей при закрытии'.tr),
+                  subtitle: Text(
+                    'Если выключено, крестик остановит подключение и завершит OrexRay.'.tr,
                   ),
                   value: settings.closeToTray,
                   onChanged: settings.setCloseToTray,
@@ -265,10 +259,9 @@ class BackgroundScreen extends StatelessWidget {
                   secondary: Icon(Icons.admin_panel_settings_outlined,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Запускать с правами администратора'),
-                  subtitle: const Text(
-                    'На следующем запуске запросит UAC. Автоповышение работает '
-                    'только для защищённой установки OrexRay в Program Files.',
+                  title: Text('Запускать с правами администратора'.tr),
+                  subtitle: Text(
+                    'На следующем запуске запросит UAC. Автоповышение работает только для защищённой установки OrexRay в Program Files.'.tr,
                   ),
                   value: settings.windowsRunAsAdministrator,
                   onChanged: settings.setWindowsRunAsAdministrator,
@@ -281,16 +274,16 @@ class BackgroundScreen extends StatelessWidget {
             SettingsSection(
               title: 'Android service',
               subtitle:
-                  'OrexRay работает как foreground VPN-service, даже когда интерфейс закрыт.',
+                  'OrexRay работает как foreground VPN-service, даже когда интерфейс закрыт.'.tr,
               children: [
                 SwitchListTile(
                   secondary: Icon(Icons.flash_on_rounded,
                     color: OrexPalette.of(context).accent,
                   ),
                   title:
-                      const Text('Подключаться после запуска и перезагрузки'),
-                  subtitle: const Text(
-                    'В приложении — сразу после старта. После reboot Android — восстановить последний VPN, если разрешение VPN уже выдано.',
+                      Text('Подключаться после запуска и перезагрузки'.tr),
+                  subtitle: Text(
+                    'В приложении — сразу после старта. После reboot Android — восстановить последний VPN, если разрешение VPN уже выдано.'.tr,
                   ),
                   value: settings.autoConnectOnStartup,
                   onChanged: settings.setAutoConnectOnStartup,
@@ -300,18 +293,18 @@ class BackgroundScreen extends StatelessWidget {
                   secondary: Icon(Icons.restart_alt_rounded,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Восстанавливать после убийства процесса'),
-                  subtitle: const Text(
-                      'Android повторно поднимет последнее активное подключение, когда это разрешено системой'),
+                  title: Text('Восстанавливать после убийства процесса'.tr),
+                  subtitle: Text(
+                      'Android повторно поднимет последнее активное подключение, когда это разрешено системой'.tr),
                   value: settings.restartServiceOnKill,
                   onChanged: settings.setRestartServiceOnKill,
                 ),
                 const Divider(height: 1),
                  ListTile(
                   leading: Icon(Icons.eco_outlined, color: OrexPalette.of(context).accent),
-                  title: Text('Энергосбережение'),
+                  title: Text('Энергосбережение'.tr),
                   subtitle: Text(
-                      'В фоне stats-loop полностью останавливается, если скорость в уведомлении выключена; VPN и watchdog продолжают работать.'),
+                      'В фоне stats-loop полностью останавливается, если скорость в уведомлении выключена; VPN и watchdog продолжают работать.'.tr),
                 ),
               ],
             ),
@@ -330,7 +323,7 @@ Future<void> _openAndroidNotificationSettings(BuildContext context) async {
     if (!context.mounted) return;
     OrexNotice.show(
       context,
-      const SnackBar(content: Text('Не удалось открыть настройки уведомлений')),
+      SnackBar(content: Text('Не удалось открыть настройки уведомлений'.tr)),
     );
   }
 }

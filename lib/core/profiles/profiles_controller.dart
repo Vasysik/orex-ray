@@ -15,6 +15,7 @@ import 'proxy_subscription.dart';
 import 'subscription_parser.dart';
 import 'subscription_source.dart';
 import 'xray_json_codec.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class XrayJsonImportResult {
   const XrayJsonImportResult({
@@ -191,7 +192,7 @@ class ProfilesController extends ChangeNotifier {
         final groupName = profile.groupName.trim();
         if (groupName.isEmpty) {
           key = 'manual:ungrouped';
-          title = 'Серверы';
+          title = 'Серверы'.tr;
         } else {
           key = 'manual:group:$groupName';
           title = groupName;
@@ -261,7 +262,7 @@ class ProfilesController extends ChangeNotifier {
   ) async {
     final normalized = groupName?.trim() ?? '';
     if (normalized.length > 80) {
-      throw const FormatException('Название группы слишком длинное');
+      throw FormatException('Название группы слишком длинное'.tr);
     }
     final ids = profileIds.toSet();
     if (ids.isEmpty) return 0;
@@ -290,10 +291,10 @@ class ProfilesController extends ChangeNotifier {
     final oldValue = oldName.trim();
     final newValue = newName.trim();
     if (oldValue.isEmpty || newValue.isEmpty) {
-      throw const FormatException('Укажи название группы');
+      throw FormatException('Укажи название группы'.tr);
     }
     if (newValue.length > 80) {
-      throw const FormatException('Название группы слишком длинное');
+      throw FormatException('Название группы слишком длинное'.tr);
     }
     if (oldValue == newValue) return;
     for (var index = 0; index < _profiles.length; index++) {
@@ -527,7 +528,7 @@ class ProfilesController extends ChangeNotifier {
 
   Future<SubscriptionSyncResult> refreshSubscription(String id) async {
     if (_refreshingSubscriptionIds.contains(id)) {
-      throw const FormatException('Подписка уже обновляется');
+      throw FormatException('Подписка уже обновляется'.tr);
     }
     ProxySubscription? existing;
     for (final item in _subscriptions) {
@@ -537,7 +538,7 @@ class ProfilesController extends ChangeNotifier {
       }
     }
     if (existing == null) {
-      throw const FormatException('Подписка не найдена');
+      throw FormatException('Подписка не найдена'.tr);
     }
     final revision = _subscriptionRevisions[id] ?? 0;
     _refreshingSubscriptionIds.add(id);
@@ -579,7 +580,7 @@ class ProfilesController extends ChangeNotifier {
         firstError ??= error;
       }
     }
-    throw firstError ?? const FormatException('Не удалось прочитать подписку');
+    throw firstError ?? FormatException('Не удалось прочитать подписку'.tr);
   }
 
   Future<SubscriptionMetadataResult?> _loadSubscriptionMetadata(
@@ -837,10 +838,10 @@ class ProfilesController extends ChangeNotifier {
         (_subscriptionRevisions[id] ?? 0) != expectedRevision ||
         (existing != null &&
             !_subscriptions.any((subscription) => subscription.id == id))) {
-      throw StateError('Подписка удалена или изменена во время обновления');
+      throw StateError('Подписка удалена или изменена во время обновления'.tr);
     }
     if (parsed.profiles.isEmpty) {
-      throw const FormatException('В подписке нет поддерживаемых серверов');
+      throw FormatException('В подписке нет поддерживаемых серверов'.tr);
     }
 
     final oldIds = existing?.profileIds.toSet() ?? <String>{};
@@ -873,7 +874,7 @@ class ProfilesController extends ChangeNotifier {
       );
     }
     if (workingProfiles.length + imported.length > _maxProfiles) {
-      throw const FormatException('Можно сохранить не больше 500 профилей');
+      throw FormatException('Можно сохранить не больше 500 профилей'.tr);
     }
     workingProfiles.insertAll(insertionIndex, imported);
 
@@ -887,7 +888,7 @@ class ProfilesController extends ChangeNotifier {
       fetched.profileTitle,
       existing?.name,
       Uri.tryParse(url)?.host,
-      'Подписка',
+      'Подписка'.tr,
     ]);
     // Support is provider metadata, not something OrexRay infers from node
     // remarks. A full subscription refresh is the source of truth: when the
@@ -1015,7 +1016,7 @@ class ProfilesController extends ChangeNotifier {
       final trimmed = value?.trim() ?? '';
       if (trimmed.isNotEmpty) return trimmed;
     }
-    return 'Подписка';
+    return 'Подписка'.tr;
   }
 
   /// Imports every URI format represented by [OutboundProtocol].
@@ -1030,7 +1031,7 @@ class ProfilesController extends ChangeNotifier {
     }
     if (_profiles.length >= _maxProfiles &&
         !_profiles.any((item) => item.id == profile.id)) {
-      throw const FormatException('Можно сохранить не больше 500 профилей');
+      throw FormatException('Можно сохранить не больше 500 профилей'.tr);
     }
     final existingIndex = _profiles.indexWhere((item) => item.id == profile.id);
     if (existingIndex >= 0) {
@@ -1097,7 +1098,7 @@ class ProfilesController extends ChangeNotifier {
     }
 
     if (working.length + added.length > _maxProfiles) {
-      throw const FormatException('Можно сохранить не больше 500 профилей');
+      throw FormatException('Можно сохранить не больше 500 профилей'.tr);
     }
     working.insertAll(0, added);
 
@@ -1128,7 +1129,7 @@ class ProfilesController extends ChangeNotifier {
   String exportProfileLink(String profileId) {
     final profile = _profileById(profileId);
     if (profile == null) {
-      throw const FormatException('Профиль не найден');
+      throw FormatException('Профиль не найден'.tr);
     }
     return const ProxyLinkExporter().export(profile);
   }
@@ -1139,7 +1140,7 @@ class ProfilesController extends ChangeNotifier {
     }
     final profile = _profileById(profileId);
     if (profile == null) {
-      throw const FormatException('Профиль для экспорта не найден');
+      throw FormatException('Профиль для экспорта не найден'.tr);
     }
     return _xrayJsonCodec.encodeProfiles([profile]);
   }
@@ -1150,7 +1151,7 @@ class ProfilesController extends ChangeNotifier {
         .where((profile) => ids.contains(profile.id))
         .toList(growable: false);
     if (selected.isEmpty) {
-      throw const FormatException('Нет выбранных профилей для экспорта');
+      throw FormatException('Нет выбранных профилей для экспорта'.tr);
     }
     return _xrayJsonCodec.encodeProfiles(selected, forceArray: true);
   }
@@ -1162,10 +1163,10 @@ class ProfilesController extends ChangeNotifier {
   Future<TunnelProfile> createProfile(TunnelProfile profile) async {
     _validateProfileInput(profile);
     if (_profiles.length >= _maxProfiles) {
-      throw const FormatException('Можно сохранить не больше 500 профилей');
+      throw FormatException('Можно сохранить не больше 500 профилей'.tr);
     }
     if (_profiles.any((item) => item.id == profile.id)) {
-      throw const FormatException('Профиль с таким ID уже существует');
+      throw FormatException('Профиль с таким ID уже существует'.tr);
     }
     _profiles.insert(0, profile);
     if (_selectedId == null || targetById(_selectedId!) == null) {
@@ -1212,26 +1213,26 @@ class ProfilesController extends ChangeNotifier {
       effectiveMembers.addAll(availableGroups[key]!.profileIds);
     }
     if (name.trim().isEmpty) {
-      throw const FormatException('Укажи имя балансировщика');
+      throw FormatException('Укажи имя балансировщика'.tr);
     }
     if (name.trim().length > 256) {
-      throw const FormatException('Имя балансировщика слишком длинное');
+      throw FormatException('Имя балансировщика слишком длинное'.tr);
     }
     if (probeUrl.length > 8192) {
-      throw const FormatException('URL проверки слишком длинный');
+      throw FormatException('URL проверки слишком длинный'.tr);
     }
     if (memberIds.length > _maxProfiles) {
-      throw const FormatException('Слишком много участников балансировщика');
+      throw FormatException('Слишком много участников балансировщика'.tr);
     }
     if (effectiveMembers.isEmpty) {
-      throw const FormatException('Выбери хотя бы один профиль или папку');
+      throw FormatException('Выбери хотя бы один профиль или папку'.tr);
     }
     final uri = Uri.tryParse(probeUrl.trim());
     final needsObservation = strategy == BalancerStrategy.leastPing ||
         (fallbackTarget?.trim().isNotEmpty ?? false);
     if (needsObservation && !_isSafeProbeUri(uri)) {
-      throw const FormatException(
-        'URL проверки должен быть публичным HTTP/HTTPS адресом',
+      throw FormatException(
+        'URL проверки должен быть публичным HTTP/HTTPS адресом'.tr,
       );
     }
 
@@ -1249,7 +1250,7 @@ class ProfilesController extends ChangeNotifier {
       if (!builtIn &&
           (fallbackProfileId == null ||
               _profileById(fallbackProfileId) == null)) {
-        throw const FormatException('Некорректный fallback балансировщика');
+        throw FormatException('Некорректный fallback балансировщика'.tr);
       }
     }
 
@@ -1624,12 +1625,12 @@ class ProfilesController extends ChangeNotifier {
       }
     }
 
-    check(profile.name, 256, 'Имя профиля');
-    check(profile.address, 1024, 'Адрес сервера');
-    check(profile.sourceLink, 64 * 1024, 'Исходная ссылка');
+    check(profile.name, 256, 'Имя профиля'.tr);
+    check(profile.address, 1024, 'Адрес сервера'.tr);
+    check(profile.sourceLink, 64 * 1024, 'Исходная ссылка'.tr);
     for (final field in <(String, String)>[
-      ('Идентификатор', profile.userId),
-      ('Пароль', profile.password),
+      ('Идентификатор'.tr, profile.userId),
+      ('Пароль'.tr, profile.password),
       ('VMess security', profile.vmessSecurity),
       ('Encryption', profile.encryption),
       ('Flow', profile.flow),
@@ -1648,33 +1649,33 @@ class ProfilesController extends ChangeNotifier {
       check(field.$2, 4096, field.$1);
     }
     if (profile.name.trim().isEmpty || profile.address.trim().isEmpty) {
-      throw const FormatException('Укажите имя и адрес профиля');
+      throw FormatException('Укажите имя и адрес профиля'.tr);
     }
     if (profile.port < 1 || profile.port > 65535) {
-      throw const FormatException('Некорректный порт профиля');
+      throw FormatException('Некорректный порт профиля'.tr);
     }
     switch (profile.outboundProtocol) {
       case OutboundProtocol.vless || OutboundProtocol.vmess:
         if (profile.userId.trim().isEmpty) {
-          throw const FormatException('Для профиля нужен UUID');
+          throw FormatException('Для профиля нужен UUID'.tr);
         }
       case OutboundProtocol.trojan:
         if (profile.password.isEmpty) {
-          throw const FormatException('Для Trojan нужен пароль');
+          throw FormatException('Для Trojan нужен пароль'.tr);
         }
       case OutboundProtocol.shadowsocks:
         if (profile.password.isEmpty || profile.encryption.trim().isEmpty) {
-          throw const FormatException('Для Shadowsocks нужны метод и пароль');
+          throw FormatException('Для Shadowsocks нужны метод и пароль'.tr);
         }
       case OutboundProtocol.socks || OutboundProtocol.http:
         if (profile.userId.isEmpty != profile.password.isEmpty) {
-          throw const FormatException(
-            'Для авторизации нужны имя пользователя и пароль',
+          throw FormatException(
+            'Для авторизации нужны имя пользователя и пароль'.tr,
           );
         }
     }
     if (!{'none', 'tls', 'reality'}.contains(profile.security)) {
-      throw const FormatException('Неподдерживаемый transport security');
+      throw FormatException('Неподдерживаемый transport security'.tr);
     }
     if (!{
       'raw',
@@ -1683,11 +1684,11 @@ class ProfilesController extends ChangeNotifier {
       'xhttp',
       'httpupgrade',
     }.contains(profile.transport)) {
-      throw const FormatException('Неподдерживаемый транспорт профиля');
+      throw FormatException('Неподдерживаемый транспорт профиля'.tr);
     }
     if (profile.security == 'reality' &&
         profile.realityPassword.trim().isEmpty) {
-      throw const FormatException('Для REALITY нужен public key');
+      throw FormatException('Для REALITY нужен public key'.tr);
     }
     if (profile.outboundProtocol == OutboundProtocol.vmess &&
         !{
@@ -1695,12 +1696,12 @@ class ProfilesController extends ChangeNotifier {
           'aes-128-gcm',
           'chacha20-poly1305',
         }.contains(profile.vmessSecurity)) {
-      throw const FormatException('Неподдерживаемый VMess security');
+      throw FormatException('Неподдерживаемый VMess security'.tr);
     }
     if (profile.alpn.length > 16 ||
         profile.alpn.any((value) => value.length > 4096)) {
-      throw const FormatException(
-          'Слишком много или слишком длинные ALPN-значения');
+      throw FormatException(
+          'Слишком много или слишком длинные ALPN-значения'.tr);
     }
   }
 

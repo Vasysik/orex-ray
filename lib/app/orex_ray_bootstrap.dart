@@ -244,7 +244,7 @@ class OrexRaySplashScreen extends StatelessWidget {
                 const SquirrelMascot(size: 136, caption: 'OrexRay'),
                 const SizedBox(height: 14),
                 Text(
-                  'Защищаем маршрут белочки',
+                  'Защищаем маршрут белочки'.tr,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 10),
@@ -295,7 +295,7 @@ class _StartupError extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'OrexRay не удалось запустить',
+                  'OrexRay не удалось запустить'.tr,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),

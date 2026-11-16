@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'orex_theme.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// Only seven independent colors. No theme packs or configurable gradients.
 class OrexPalette extends ThemeExtension<OrexPalette> {
@@ -16,16 +17,17 @@ class OrexPalette extends ThemeExtension<OrexPalette> {
     required this.danger,
   });
 
-  static const roles = <String, String>{
-    'accent': 'Акцент',
-    'secondary': 'Дополнительный цвет',
-    'background': 'Фон',
-    'surface': 'Панели',
-    'text': 'Основной текст',
-    'mutedText': 'Второстепенный текст',
-    'border': 'Границы',
-    'success': 'Успешное соединение',
-    'danger': 'Ошибка / предупреждение',
+  /// Labels are resolved per access so a language switch applies immediately.
+  static Map<String, String> get roles => <String, String>{
+    'accent': 'Акцент'.tr,
+    'secondary': 'Дополнительный цвет'.tr,
+    'background': 'Фон'.tr,
+    'surface': 'Панели'.tr,
+    'text': 'Основной текст'.tr,
+    'mutedText': 'Второстепенный текст'.tr,
+    'border': 'Границы'.tr,
+    'success': 'Успешное соединение'.tr,
+    'danger': 'Ошибка / предупреждение'.tr,
   };
 
   final Color accent;

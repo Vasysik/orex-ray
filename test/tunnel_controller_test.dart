@@ -669,7 +669,7 @@ void main() {
       '?encryption=none&security=none&type=tcp#Active',
     );
     final inactive = await profiles.createProfile(
-      const TunnelProfile(
+      TunnelProfile(
         id: 'inactive-profile',
         name: 'Inactive',
         address: 'inactive.example',
@@ -733,7 +733,7 @@ void main() {
       '?encryption=none&security=none&type=tcp#Active',
     );
     final inactive = await profiles.createProfile(
-      const TunnelProfile(
+      TunnelProfile(
         id: 'safe-inactive-profile',
         name: 'Safe inactive',
         address: 'inactive.example',
@@ -959,7 +959,7 @@ void main() {
       '?encryption=none&security=none&type=tcp#Selected',
     );
     final active = await profiles.createProfile(
-      const TunnelProfile(
+      TunnelProfile(
         id: 'restored-active',
         name: 'Restored active',
         address: 'active.example',
@@ -1017,7 +1017,7 @@ void main() {
       '?encryption=none&security=none&type=tcp#Selected',
     );
     final active = await profiles.createProfile(
-      const TunnelProfile(
+      TunnelProfile(
         id: 'restored-active-manual',
         name: 'Restored active manual',
         address: 'active.example',

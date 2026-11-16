@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'xray_json_codec.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class XrayJsonSource {
   XrayJsonSource({HttpClient Function()? clientFactory})
@@ -13,16 +14,16 @@ class XrayJsonSource {
   Future<String> loadUrl(String value) async {
     final raw = value.trim();
     if (raw.isEmpty) {
-      throw const FormatException('Укажи URL JSON');
+      throw FormatException('Укажи URL JSON'.tr);
     }
     if (raw.length > 8192) {
-      throw const FormatException('URL JSON слишком длинный');
+      throw FormatException('URL JSON слишком длинный'.tr);
     }
     final uri = Uri.tryParse(raw);
     if (uri == null ||
         !uri.hasAuthority ||
         (uri.scheme != 'http' && uri.scheme != 'https')) {
-      throw const FormatException('Нужен HTTP/HTTPS URL с JSON');
+      throw FormatException('Нужен HTTP/HTTPS URL с JSON'.tr);
     }
 
     final client = _clientFactory();
@@ -33,7 +34,7 @@ class XrayJsonSource {
       // than allowing each stage timeout to accumulate into a much longer wait.
       return await _loadUrl(client, uri).timeout(const Duration(seconds: 30));
     } on TimeoutException {
-      throw const FormatException('Таймаут загрузки JSON');
+      throw FormatException('Таймаут загрузки JSON'.tr);
     } on SocketException catch (error) {
       throw FormatException('Не удалось загрузить JSON: ${error.message}');
     } finally {
@@ -60,20 +61,20 @@ class XrayJsonSource {
     }
     final declaredLength = response.contentLength;
     if (declaredLength > XrayJsonCodec.maxPayloadBytes) {
-      throw const FormatException('JSON Xray больше 5 МБ');
+      throw FormatException('JSON Xray больше 5 МБ'.tr);
     }
 
     final bytes = <int>[];
     await for (final chunk in response.timeout(const Duration(seconds: 20))) {
       if (bytes.length + chunk.length > XrayJsonCodec.maxPayloadBytes) {
-        throw const FormatException('JSON Xray больше 5 МБ');
+        throw FormatException('JSON Xray больше 5 МБ'.tr);
       }
       bytes.addAll(chunk);
     }
     try {
       return utf8.decode(bytes);
     } on FormatException {
-      throw const FormatException('JSON по URL не является UTF-8 текстом');
+      throw FormatException('JSON по URL не является UTF-8 текстом'.tr);
     }
   }
 }

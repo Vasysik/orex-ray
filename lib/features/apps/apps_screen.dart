@@ -7,6 +7,7 @@ import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_theme.dart';
 import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/settings_section.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class AppsScreen extends StatefulWidget {
   const AppsScreen({super.key, required this.controller});
@@ -46,16 +47,16 @@ class _AppsScreenState extends State<AppsScreen> {
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  const SettingsPageHeader(
-                    title: 'Приложения',
+                  SettingsPageHeader(
+                    title: 'Приложения'.tr,
                     subtitle:
-                        'Split tunneling: исключения или только выбранные приложения',
+                        'Split tunneling: исключения или только выбранные приложения'.tr,
                     icon: Icons.apps_rounded,
                   ),
                   const SizedBox(height: 22),
                   SettingsSection(
-                    title: 'Режим',
-                    subtitle: 'Применяется при следующем запуске Android VPN.',
+                    title: 'Режим'.tr,
+                    subtitle: 'Применяется при следующем запуске Android VPN.'.tr,
                     children: [
                       RadioGroup<AppRoutingMode>(
                         groupValue: widget.controller.mode,
@@ -90,9 +91,9 @@ class _AppsScreenState extends State<AppsScreen> {
                         TextField(
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search_rounded),
-                            hintText: 'Поиск приложения или пакета',
+                            hintText: 'Поиск приложения или пакета'.tr,
                             suffixIcon: IconButton(
-                              tooltip: 'Обновить список',
+                              tooltip: 'Обновить список'.tr,
                               onPressed: widget.controller.loading
                                   ? null
                                   : () => unawaited(
@@ -121,7 +122,7 @@ class _AppsScreenState extends State<AppsScreen> {
                                 Icons.settings_suggest_rounded,
                                 size: 18,
                               ),
-                              label: const Text('Системные'),
+                              label: Text('Системные'.tr),
                               onSelected: (value) => unawaited(
                                 widget.controller.setShowSystemApps(value),
                               ),
@@ -132,7 +133,7 @@ class _AppsScreenState extends State<AppsScreen> {
                                 Icons.check_circle_outline_rounded,
                                 size: 18,
                               ),
-                              label: const Text('Только выбранные'),
+                              label: Text('Только выбранные'.tr),
                               onSelected: (value) =>
                                   setState(() => _selectedOnly = value),
                             ),
@@ -167,13 +168,13 @@ class _AppsScreenState extends State<AppsScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (apps.isEmpty)
-              const SliverPadding(
+              SliverPadding(
                 padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
                 sliver: SliverToBoxAdapter(
                   child: GlassPanel(
                     borderRadius: 20,
                     padding: EdgeInsets.all(24),
-                    child: Center(child: Text('Приложения не найдены')),
+                    child: Center(child: Text('Приложения не найдены'.tr)),
                   ),
                 ),
               )
@@ -212,7 +213,7 @@ class _AppsScreenState extends State<AppsScreen> {
                                   Padding(
                                     padding: const EdgeInsets.only(left: 8),
                                     child: Tooltip(
-                                      message: 'Системное приложение',
+                                      message: 'Системное приложение'.tr,
                                       child: Icon(
                                         Icons.settings_rounded,
                                         size: 16,
@@ -321,10 +322,10 @@ class _UnsupportedAppsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(20),
-      children: const [
+      children: [
         SettingsPageHeader(
-          title: 'Приложения',
-          subtitle: 'Split tunneling по приложениям доступен на Android',
+          title: 'Приложения'.tr,
+          subtitle: 'Split tunneling по приложениям доступен на Android'.tr,
           icon: Icons.apps_rounded,
         ),
         SizedBox(height: 22),
@@ -332,8 +333,7 @@ class _UnsupportedAppsScreen extends StatelessWidget {
           borderRadius: 22,
           padding: EdgeInsets.all(24),
           child: Text(
-            'На Windows маршрутизация по процессам потребует отдельного '
-            'Windows-native backend. Сейчас эта страница управляет Android VPN.',
+            'На Windows маршрутизация по процессам потребует отдельного Windows-native backend. Сейчас эта страница управляет Android VPN.'.tr,
           ),
         ),
       ],

@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_version.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// Only enable this in local test builds. It does not fabricate a GitHub release.
 /// flutter run --profile --dart-define=OREXRAY_UPDATE_TEST_SAME_VERSION=true
@@ -100,7 +101,7 @@ class OrexRayRelease {
       assetBytes: size,
       checksumUri: shaUri,
       notes: (json['body'] is String && (json['body'] as String).trim().isNotEmpty)
-          ? (json['body'] as String).trim() : 'Описание изменений не добавлено.',
+          ? (json['body'] as String).trim() : 'Описание изменений не добавлено.'.tr,
       htmlUri: html != null && html.scheme == 'https' &&
           html.host == 'github.com' &&
           html.pathSegments.length >= 3 &&
@@ -177,7 +178,7 @@ class OrexRayUpdates extends ChangeNotifier {
       final suffix = await _artifactSuffix();
       final bytes = await _readSmall(Uri.parse(_releasesApi), 512 * 1024);
       final decoded = jsonDecode(utf8.decode(bytes));
-      if (decoded is! List) throw const FormatException('Некорректный ответ GitHub');
+      if (decoded is! List) throw FormatException('Некорректный ответ GitHub'.tr);
       OrexRayRelease? newest;
       for (final raw in decoded) {
         if (raw is! Map) continue;
@@ -196,9 +197,9 @@ class OrexRayUpdates extends ChangeNotifier {
       available = newest;
       state = newest == null ? OrexRayUpdateState.upToDate : OrexRayUpdateState.available;
     } catch (e) {
-      error = e is SocketException ? 'Нет доступа к GitHub' :
-          e is TimeoutException ? 'GitHub не ответил вовремя' :
-          e is FormatException ? e.message : 'Не удалось проверить GitHub Releases';
+      error = e is SocketException ? 'Нет доступа к GitHub'.tr :
+          e is TimeoutException ? 'GitHub не ответил вовремя'.tr :
+          e is FormatException ? e.message : 'Не удалось проверить GitHub Releases'.tr;
       state = OrexRayUpdateState.error;
     }
     _notify();
@@ -212,7 +213,7 @@ class OrexRayUpdates extends ChangeNotifier {
         return '$abi.apk';
       }
     }
-    throw const FormatException('Архитектура устройства не поддерживается');
+    throw FormatException('Архитектура устройства не поддерживается'.tr);
   }
 
   Future<List<int>> _readSmall(Uri uri, int limit) async {
@@ -226,7 +227,7 @@ class OrexRayUpdates extends ChangeNotifier {
       var bytes = 0;
       await for (final chunk in response.timeout(const Duration(seconds: 18))) {
         bytes += chunk.length;
-        if (bytes > limit) throw const FormatException('Ответ GitHub слишком большой');
+        if (bytes > limit) throw FormatException('Ответ GitHub слишком большой'.tr);
         builder.add(chunk);
       }
       return builder.takeBytes();
@@ -244,7 +245,7 @@ class OrexRayUpdates extends ChangeNotifier {
   Future<HttpClientResponse> _request(HttpClient client, Uri uri) async {
     var next = uri;
     for (var i = 0; i < 6; i++) {
-      if (!_allowedRequestHost(next)) throw const FormatException('Недоверенный адрес загрузки');
+      if (!_allowedRequestHost(next)) throw FormatException('Недоверенный адрес загрузки'.tr);
       final request = await client.getUrl(next);
       request.followRedirects = false;
       request.headers.set(HttpHeaders.userAgentHeader, 'OrexRay-Updater/0.7');
@@ -252,10 +253,10 @@ class OrexRayUpdates extends ChangeNotifier {
       final response = await request.close();
       if (response.isRedirect) {
         final target = response.headers.value(HttpHeaders.locationHeader);
-        if (target == null) throw const FormatException('Редирект GitHub без адреса');
+        if (target == null) throw FormatException('Редирект GitHub без адреса'.tr);
         final resolved = next.resolve(target);
         if (!_allowedRequestHost(resolved)) {
-          throw const FormatException('Недоверенный редирект обновления');
+          throw FormatException('Недоверенный редирект обновления'.tr);
         }
         await response.drain<void>();
         next = resolved;
@@ -263,7 +264,7 @@ class OrexRayUpdates extends ChangeNotifier {
       }
       return response;
     }
-    throw const FormatException('Слишком много редиректов GitHub');
+    throw FormatException('Слишком много редиректов GitHub'.tr);
   }
 
   Future<String> download(
@@ -271,12 +272,12 @@ class OrexRayUpdates extends ChangeNotifier {
     void Function(int received, int total) onProgress,
   ) async {
     final release = available;
-    if (release == null) throw StateError('Нет доступного обновления');
+    if (release == null) throw StateError('Нет доступного обновления'.tr);
     token.check();
     final sums = utf8.decode(await _readSmall(release.checksumUri, 64 * 1024));
     final expected = _checksumFor(sums, release.assetName);
     if (expected == null) {
-      throw const FormatException('В GitHub Release нет SHA-256 для установщика');
+      throw FormatException('В GitHub Release нет SHA-256 для установщика'.tr);
     }
     final dir = Directory('${(await getTemporaryDirectory()).path}${Platform.pathSeparator}orexray-updates');
     await dir.create(recursive: true);
@@ -290,7 +291,7 @@ class OrexRayUpdates extends ChangeNotifier {
       final response = await _request(client, release.assetUri).timeout(const Duration(seconds: 30));
       if (response.statusCode != 200) throw HttpException('HTTP ${response.statusCode}');
       if (response.contentLength >= 0 && response.contentLength != release.assetBytes) {
-        throw const FormatException('Размер установщика не совпадает с GitHub');
+        throw FormatException('Размер установщика не совпадает с GitHub'.tr);
       }
       sink = part.openWrite();
       var received = 0;
@@ -298,7 +299,7 @@ class OrexRayUpdates extends ChangeNotifier {
       await for (final chunk in response.timeout(const Duration(seconds: 30))) {
         token.check();
         received += chunk.length;
-        if (received > release.assetBytes) throw const FormatException('Слишком большой установщик');
+        if (received > release.assetBytes) throw FormatException('Слишком большой установщик'.tr);
         sink.add(chunk);
         onProgress(received, release.assetBytes);
       }
@@ -306,9 +307,9 @@ class OrexRayUpdates extends ChangeNotifier {
       await sink.close();
       sink = null;
       token.check();
-      if (received != release.assetBytes) throw const FormatException('Установщик загружен не полностью');
+      if (received != release.assetBytes) throw FormatException('Установщик загружен не полностью'.tr);
       final actual = (await sha256.bind(part.openRead()).first).toString();
-      if (actual.toLowerCase() != expected) throw const FormatException('SHA-256 установщика не совпал');
+      if (actual.toLowerCase() != expected) throw FormatException('SHA-256 установщика не совпал'.tr);
       token.check();
       if (await result.exists()) await result.delete();
       await part.rename(result.path);
@@ -346,7 +347,7 @@ class OrexRayUpdates extends ChangeNotifier {
       if (result.exitCode != 0) throw StateError('Не удалось запустить установщик: ${result.stderr}');
       return false;
     }
-    throw UnsupportedError('Обновления доступны только на Android и Windows');
+    throw UnsupportedError('Обновления доступны только на Android и Windows'.tr);
   }
 
   Future<void> deleteFile(String path) async {

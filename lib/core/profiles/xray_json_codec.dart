@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../tunnel/tunnel_models.dart';
 import '../xray/xray_config_builder.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class XrayJsonDecodeResult {
   const XrayJsonDecodeResult({
@@ -38,21 +39,21 @@ class XrayJsonCodec {
     String sourceLabel = '',
   }) {
     if (utf8.encode(payload).length > maxPayloadBytes) {
-      throw const FormatException('JSON Xray больше 5 МБ');
+      throw FormatException('JSON Xray больше 5 МБ'.tr);
     }
     var text = payload.trim();
     if (text.startsWith('\uFEFF')) {
       text = text.substring(1).trimLeft();
     }
     if (text.isEmpty) {
-      throw const FormatException('JSON Xray пуст');
+      throw FormatException('JSON Xray пуст'.tr);
     }
 
     Object? decoded;
     try {
       decoded = jsonDecode(text);
     } on FormatException {
-      throw const FormatException('Некорректный JSON Xray');
+      throw FormatException('Некорректный JSON Xray'.tr);
     }
 
     final profiles = <TunnelProfile>[];
@@ -64,10 +65,10 @@ class XrayJsonCodec {
       int depth = 0,
     }) {
       if (depth > _maxNestingDepth) {
-        throw const FormatException('Слишком глубокая вложенность JSON Xray');
+        throw FormatException('Слишком глубокая вложенность JSON Xray'.tr);
       }
       if (profiles.length > maxProfiles) {
-        throw const FormatException('В JSON больше 500 профилей');
+        throw FormatException('В JSON больше 500 профилей'.tr);
       }
       if (value is List) {
         for (final item in value) {
@@ -76,8 +77,8 @@ class XrayJsonCodec {
         return;
       }
       if (value is! Map) {
-        throw const FormatException(
-          'JSON Xray должен быть объектом или массивом объектов',
+        throw FormatException(
+          'JSON Xray должен быть объектом или массивом объектов'.tr,
         );
       }
 
@@ -108,7 +109,7 @@ class XrayJsonCodec {
             if (!_isIgnorableProtocol(protocol)) skippedUnsupported += 1;
           } else {
             if (profiles.length + parsed.length > maxProfiles) {
-              throw const FormatException('В JSON больше 500 профилей');
+              throw FormatException('В JSON больше 500 профилей'.tr);
             }
             profiles.addAll(parsed);
           }
@@ -127,25 +128,25 @@ class XrayJsonCodec {
           if (!_isIgnorableProtocol(protocol)) skippedUnsupported += 1;
         } else {
           if (profiles.length + parsed.length > maxProfiles) {
-            throw const FormatException('В JSON больше 500 профилей');
+            throw FormatException('В JSON больше 500 профилей'.tr);
           }
           profiles.addAll(parsed);
         }
         return;
       }
 
-      throw const FormatException(
-        'Не найден объект outbound или массив outbounds',
+      throw FormatException(
+        'Не найден объект outbound или массив outbounds'.tr,
       );
     }
 
     addRoot(decoded);
     if (profiles.length > maxProfiles) {
-      throw const FormatException('В JSON больше 500 профилей');
+      throw FormatException('В JSON больше 500 профилей'.tr);
     }
     if (profiles.isEmpty) {
-      throw const FormatException(
-        'В JSON нет поддерживаемых Xray outbound-профилей',
+      throw FormatException(
+        'В JSON нет поддерживаемых Xray outbound-профилей'.tr,
       );
     }
     return XrayJsonDecodeResult(
@@ -163,17 +164,17 @@ class XrayJsonCodec {
   }) {
     final profiles = values.toList(growable: false);
     if (profiles.isEmpty) {
-      throw const FormatException('Нет профилей для экспорта');
+      throw FormatException('Нет профилей для экспорта'.tr);
     }
     if (profiles.length > maxProfiles) {
-      throw const FormatException('Можно экспортировать не больше 500 профилей');
+      throw FormatException('Можно экспортировать не больше 500 профилей'.tr);
     }
 
     final configs = profiles.map(_exportConfig).toList(growable: false);
     final value = !forceArray && configs.length == 1 ? configs.single : configs;
     final encoded = const JsonEncoder.withIndent('  ').convert(value);
     if (utf8.encode(encoded).length > maxPayloadBytes) {
-      throw const FormatException('Экспорт JSON Xray больше 5 МБ');
+      throw FormatException('Экспорт JSON Xray больше 5 МБ'.tr);
     }
     return encoded;
   }
@@ -325,7 +326,7 @@ class XrayJsonCodec {
       throw FormatException('Outbound ${protocol.title} не содержит серверов');
     }
     if (endpoints.length > maxProfiles) {
-      throw const FormatException('В одном outbound больше 500 профилей');
+      throw FormatException('В одном outbound больше 500 профилей'.tr);
     }
 
     final profiles = <TunnelProfile>[];
@@ -488,7 +489,7 @@ class XrayJsonCodec {
       shortId = _string(reality['shortId']);
       spiderX = _string(reality['spiderX']);
       if (realityPassword.trim().isEmpty) {
-        throw const FormatException('Для REALITY в JSON нужен public key');
+        throw FormatException('Для REALITY в JSON нужен public key'.tr);
       }
     } else if (security == 'tls') {
       final tls = _map(settings['tlsSettings']);
@@ -520,10 +521,10 @@ class XrayJsonCodec {
       throw FormatException('В outbound ${protocol.title} нет адреса');
     }
     if (endpoint.address.length > 1024) {
-      throw const FormatException('Адрес Xray слишком длинный');
+      throw FormatException('Адрес Xray слишком длинный'.tr);
     }
     if (endpoint.port < 1 || endpoint.port > 65535) {
-      throw const FormatException('Некорректный порт Xray outbound');
+      throw FormatException('Некорректный порт Xray outbound'.tr);
     }
     if ((protocol == OutboundProtocol.vless ||
             protocol == OutboundProtocol.vmess) &&
@@ -537,13 +538,13 @@ class XrayJsonCodec {
     }
     if (protocol == OutboundProtocol.shadowsocks &&
         endpoint.encryption.trim().isEmpty) {
-      throw const FormatException('В Shadowsocks outbound нет метода');
+      throw FormatException('В Shadowsocks outbound нет метода'.tr);
     }
     if ((protocol == OutboundProtocol.socks ||
             protocol == OutboundProtocol.http) &&
         (endpoint.userId.isEmpty != endpoint.password.isEmpty)) {
-      throw const FormatException(
-        'Для SOCKS/HTTP нужны и имя пользователя, и пароль',
+      throw FormatException(
+        'Для SOCKS/HTTP нужны и имя пользователя, и пароль'.tr,
       );
     }
   }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../tunnel/tunnel_models.dart';
 import 'proxy_link_parser.dart';
 import 'xray_json_codec.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class SubscriptionParseResult {
   const SubscriptionParseResult({
@@ -53,13 +54,13 @@ class SubscriptionParser {
     var text = input.trim();
     if (text.startsWith('\uFEFF')) text = text.substring(1).trimLeft();
     if (text.isEmpty) {
-      throw const FormatException('Подписка пустая');
+      throw FormatException('Подписка пустая'.tr);
     }
 
     final metadata = _extractMetadata(text);
     text = metadata.body.trim();
     if (text.isEmpty) {
-      throw const FormatException('В подписке нет серверов');
+      throw FormatException('В подписке нет серверов'.tr);
     }
 
     final jsonResult = _tryJson(text);
@@ -111,8 +112,8 @@ class SubscriptionParser {
       }
     }
 
-    throw const FormatException(
-      'В подписке не найдено поддерживаемых серверов',
+    throw FormatException(
+      'В подписке не найдено поддерживаемых серверов'.tr,
     );
   }
 

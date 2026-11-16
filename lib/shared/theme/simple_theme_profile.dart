@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'orex_palette.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// One portable design: named colors, mascot, and three simple glass settings.
 /// The gradient direction and other decorative parameters are not editable.
@@ -29,7 +30,7 @@ class SimpleThemeProfile {
     if (!opacity.isFinite || opacity < 0.15 || opacity > 0.95 ||
         !blur.isFinite || blur < 0 || blur > 36 ||
         !glow.isFinite || glow < -0.85 || glow > 0.85) {
-      throw const FormatException('Некорректные параметры стекла');
+      throw FormatException('Некорректные параметры стекла'.tr);
     }
   }
 
@@ -79,7 +80,7 @@ class SimpleThemeProfile {
       return (defaultGlassOpacity, defaultGlassBlur, defaultGlassGlow);
     }
     if (source is! Map) {
-      throw const FormatException('Некорректный блок glass');
+      throw FormatException('Некорректный блок glass'.tr);
     }
     double value(String name, double fallback) {
       final raw = source[name];
@@ -87,7 +88,7 @@ class SimpleThemeProfile {
         return fallback;
       }
       if (raw is! num) {
-        throw const FormatException('Параметр стекла должен быть числом');
+        throw FormatException('Параметр стекла должен быть числом'.tr);
       }
       return raw.toDouble();
     }
@@ -115,7 +116,7 @@ class SimpleThemeProfile {
     final id = json['id'];
     final name = json['name'];
     if (id is! String || id.isEmpty || name is! String || name.trim().isEmpty) {
-      throw const FormatException('Неверный идентификатор или имя темы');
+      throw FormatException('Неверный идентификатор или имя темы'.tr);
     }
     final (opacity, blur, glow) = parseGlass(json['glass']);
     return SimpleThemeProfile(
@@ -135,20 +136,20 @@ class SimpleThemeProfile {
 
   static Map<String, Color> parseColors(Object? raw) {
     if (raw is! Map) {
-      throw const FormatException('Некорректные цвета темы');
+      throw FormatException('Некорректные цвета темы'.tr);
     }
     final parsed = <String, Color>{};
     for (final entry in raw.entries) {
       if (entry.key is! String || !OrexPalette.roles.containsKey(entry.key)) {
-        throw const FormatException('Неизвестная цветовая роль');
+        throw FormatException('Неизвестная цветовая роль'.tr);
       }
       final hex = entry.value;
       if (hex is! String) {
-        throw const FormatException('Цвет должен быть HEX');
+        throw FormatException('Цвет должен быть HEX'.tr);
       }
       var digits = hex.replaceFirst('#', '');
       if (!RegExp(r'^(?:[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$').hasMatch(digits)) {
-        throw const FormatException('Недопустимый HEX-цвет');
+        throw FormatException('Недопустимый HEX-цвет'.tr);
       }
       if (digits.length == 6) {
         digits = 'FF$digits';

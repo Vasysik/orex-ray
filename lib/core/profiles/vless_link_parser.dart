@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../tunnel/tunnel_models.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class VlessLinkFormatException implements Exception {
   const VlessLinkFormatException(this.message);
@@ -24,28 +25,28 @@ class VlessLinkParser {
 
   TunnelProfile parse(String input) {
     if (input.length > _maxLinkLength) {
-      throw const VlessLinkFormatException('VLESS-ссылка больше 64 КБ');
+      throw VlessLinkFormatException('VLESS-ссылка больше 64 КБ'.tr);
     }
 
     final raw = input.trim();
     if (raw.isEmpty) {
-      throw const VlessLinkFormatException('Вставьте ссылку vless://');
+      throw VlessLinkFormatException('Вставьте ссылку vless://'.tr);
     }
 
     final uri = Uri.tryParse(raw);
     if (uri == null || uri.scheme.toLowerCase() != 'vless') {
-      throw const VlessLinkFormatException('Ссылка должна начинаться с vless://');
+      throw VlessLinkFormatException('Ссылка должна начинаться с vless://'.tr);
     }
     if (uri.userInfo.trim().isEmpty) {
-      throw const VlessLinkFormatException('В ссылке нет VLESS ID');
+      throw VlessLinkFormatException('В ссылке нет VLESS ID'.tr);
     }
     if (uri.host.trim().isEmpty) {
-      throw const VlessLinkFormatException('В ссылке нет адреса сервера');
+      throw VlessLinkFormatException('В ссылке нет адреса сервера'.tr);
     }
 
-    _requireMaxLength(uri.host, _maxAddressLength, 'Адрес сервера');
+    _requireMaxLength(uri.host, _maxAddressLength, 'Адрес сервера'.tr);
     for (final entry in uri.queryParameters.entries) {
-      _requireMaxLength(entry.key, 256, 'Имя параметра');
+      _requireMaxLength(entry.key, 256, 'Имя параметра'.tr);
       _requireMaxLength(entry.value, _maxFieldLength, 'Параметр ${entry.key}');
     }
 
@@ -54,15 +55,15 @@ class VlessLinkParser {
     final transport = _normalizeTransport(query['type'] ?? 'tcp');
     final port = uri.hasPort ? uri.port : 443;
     if (port < 1 || port > 65535) {
-      throw const VlessLinkFormatException('Порт должен быть от 1 до 65535');
+      throw VlessLinkFormatException('Порт должен быть от 1 до 65535'.tr);
     }
 
     final realityPassword = query['pbk'] ?? query['password'] ?? '';
     final serverName = query['sni'] ?? query['serverName'] ?? '';
 
     if (security == 'reality' && realityPassword.isEmpty) {
-      throw const VlessLinkFormatException(
-        'Для REALITY в ссылке нужен параметр pbk',
+      throw VlessLinkFormatException(
+        'Для REALITY в ссылке нужен параметр pbk'.tr,
       );
     }
     if (!{'none', 'tls', 'reality'}.contains(security)) {
@@ -71,12 +72,12 @@ class VlessLinkParser {
 
     final decodedUserId = _decode(uri.userInfo).trim();
     if (decodedUserId.isEmpty) {
-      throw const VlessLinkFormatException('В ссылке пустой VLESS ID');
+      throw VlessLinkFormatException('В ссылке пустой VLESS ID'.tr);
     }
     _requireMaxLength(decodedUserId, _maxFieldLength, 'VLESS ID');
 
     final decodedName = _decode(uri.fragment).trim();
-    _requireMaxLength(decodedName, _maxNameLength, 'Имя профиля');
+    _requireMaxLength(decodedName, _maxNameLength, 'Имя профиля'.tr);
     final name = decodedName.isEmpty ? uri.host : decodedName;
 
     final encryption = query['encryption']?.trim().isNotEmpty == true
@@ -157,19 +158,19 @@ class VlessLinkParser {
     try {
       return Uri.decodeComponent(value);
     } on FormatException {
-      throw const VlessLinkFormatException('Ссылка содержит неверное кодирование');
+      throw VlessLinkFormatException('Ссылка содержит неверное кодирование'.tr);
     }
   }
 
   List<String> _splitCsv(String? value) {
-    if (value == null || value.trim().isEmpty) return const [];
+    if (value == null || value.trim().isEmpty) return [];
     final items = value
         .split(',')
         .map((item) => item.trim())
         .where((item) => item.isNotEmpty)
         .toList(growable: false);
     if (items.length > _maxAlpnItems) {
-      throw const VlessLinkFormatException('Слишком много ALPN-значений');
+      throw VlessLinkFormatException('Слишком много ALPN-значений'.tr);
     }
     return items;
   }

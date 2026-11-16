@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/orex_palette.dart';
 import '../theme/orex_theme.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// Provides an optional mascot image to existing SquirrelMascot widgets.
 class OrexMascotAppearance extends ThemeExtension<OrexMascotAppearance> {
@@ -58,7 +59,7 @@ class SquirrelMascot extends StatelessWidget {
         .toInt();
     final mascot = Semantics(
       image: true,
-      label: 'Белочка OrexRay в защищённой ореховой скорлупе',
+      label: 'Белочка OrexRay в защищённой ореховой скорлупе'.tr,
       child: Container(
         width: size,
         height: size,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 typedef OrexEditValidator = String? Function(String value);
 typedef OrexEditSave = Future<void> Function(String value);
@@ -147,11 +148,11 @@ class _OrexEditDialogState extends State<_OrexEditDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Отмена'),
+          child: Text('Отмена'.tr),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Сохранение…' : 'Сохранить'),
+          child: Text(_saving ? 'Сохранение…'.tr : 'Сохранить'.tr),
         ),
       ],
     );

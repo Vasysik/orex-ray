@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'orex_modal_sheet_surface.dart';
 import '../theme/orex_palette.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class OrexChoiceSheetOption<T> {
   const OrexChoiceSheetOption({
@@ -25,7 +26,7 @@ Future<T?> showOrexChoiceSheet<T>(
   BuildContext context, {
   String? title,
   required List<OrexChoiceSheetOption<T>> options,
-  String emptyText = 'Ничего не найдено',
+  String? emptyText,
 }) {
   return showModalBottomSheet<T>(
     context: context,
@@ -52,7 +53,7 @@ Future<T?> showOrexChoiceSheet<T>(
                     Padding(
                       padding: const EdgeInsets.all(14),
                       child: Text(
-                        emptyText,
+                        emptyText ?? 'Ничего не найдено'.tr,
                         style: Theme.of(ctx).textTheme.bodySmall,
                       ),
                     )

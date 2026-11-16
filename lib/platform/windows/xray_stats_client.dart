@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:grpc/grpc.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class XrayTrafficTotals {
   const XrayTrafficTotals({
@@ -200,20 +201,20 @@ class _ProtoReader {
     var shift = 0;
     while (shift < 70) {
       if (_offset >= _bytes.length) {
-        throw const FormatException('Обрезанный protobuf varint.');
+        throw FormatException('Обрезанный protobuf varint.'.tr);
       }
       final byte = _bytes[_offset++];
       result |= (byte & 0x7f) << shift;
       if ((byte & 0x80) == 0) return result;
       shift += 7;
     }
-    throw const FormatException('Слишком длинный protobuf varint.');
+    throw FormatException('Слишком длинный protobuf varint.'.tr);
   }
 
   List<int> readLengthDelimited() {
     final length = readVarint();
     if (length < 0 || _offset + length > _bytes.length) {
-      throw const FormatException('Обрезанное protobuf поле.');
+      throw FormatException('Обрезанное protobuf поле.'.tr);
     }
     final result = _bytes.sublist(_offset, _offset + length);
     _offset += length;
@@ -241,7 +242,7 @@ class _ProtoReader {
 
   void _skipBytes(int count) {
     if (count < 0 || _offset + count > _bytes.length) {
-      throw const FormatException('Обрезанное protobuf поле.');
+      throw FormatException('Обрезанное protobuf поле.'.tr);
     }
     _offset += count;
   }

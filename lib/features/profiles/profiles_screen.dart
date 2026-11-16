@@ -26,6 +26,7 @@ import '../../shared/widgets/responsive_motion.dart';
 import '../../shared/widgets/squirrel_mascot.dart';
 import '../home/tunnel_controller.dart';
 import 'qr_import.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 enum _ProfileCreateAction {
   importLink,
@@ -70,43 +71,43 @@ class ProfilesScreen extends StatelessWidget {
   Future<void> _showProfileMenu(BuildContext context) async {
     final action = await showOrexChoiceSheet<_ProfileCreateAction>(
       context,
-      options: const [
+      options: [
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.importLink,
           icon: Icons.add_link_rounded,
-          title: 'Импорт ссылки',
-          subtitle: 'VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP',
+          title: 'Импорт ссылки'.tr,
+          subtitle: 'VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP'.tr,
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.qrCode,
           icon: Icons.qr_code_scanner_rounded,
-          title: 'Импорт через QR',
-          subtitle: 'Камера на Android или изображение QR на Windows',
+          title: 'Импорт через QR'.tr,
+          subtitle: 'Камера на Android или изображение QR на Windows'.tr,
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.subscription,
           icon: Icons.sync_rounded,
-          title: 'Импорт подписки',
-          subtitle: 'HTTP/HTTPS URL со списком серверов',
+          title: 'Импорт подписки'.tr,
+          subtitle: 'HTTP/HTTPS URL со списком серверов'.tr,
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.importXrayJson,
           icon: Icons.data_object_rounded,
-          title: 'Импорт JSON Xray',
-          subtitle: 'Файл, сырой JSON, массив [] или HTTP/HTTPS URL',
+          title: 'Импорт JSON Xray'.tr,
+          subtitle: 'Файл, сырой JSON, массив [] или HTTP/HTTPS URL'.tr,
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.newProfile,
           icon: Icons.add_circle_outline_rounded,
-          title: 'Новый профиль',
+          title: 'Новый профиль'.tr,
           subtitle:
-              'Настроить VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP',
+              'Настроить VLESS, VMess, Trojan, Shadowsocks, SOCKS или HTTP'.tr,
         ),
         OrexChoiceSheetOption<_ProfileCreateAction>(
           value: _ProfileCreateAction.balancer,
           icon: Icons.hub_rounded,
-          title: 'Балансировщик',
-          subtitle: 'Объединить несколько маршрутов Xray',
+          title: 'Балансировщик'.tr,
+          subtitle: 'Объединить несколько маршрутов Xray'.tr,
         ),
       ],
     );
@@ -213,12 +214,12 @@ class ProfilesScreen extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => OrexConfirmDialog(
-        title: 'Удалить подписку?',
+        title: 'Удалить подписку?'.tr,
         content: Text(
           '«${subscription.name}» и ${subscription.profileIds.length} '
-          'серверов этой подписки будут удалены.',
+          'серверов этой подписки будут удалены.'.tr,
         ),
-        confirmLabel: 'Удалить',
+        confirmLabel: 'Удалить'.tr,
         icon: Icons.delete_outline_rounded,
       ),
     );
@@ -241,7 +242,7 @@ class ProfilesScreen extends StatelessWidget {
       context,
       SnackBar(
         content: Text(
-          parts.isEmpty ? 'JSON импортирован' : 'JSON Xray: ${parts.join(', ')}',
+          parts.isEmpty ? 'JSON импортирован'.tr : 'JSON Xray: ${parts.join(', ')}',
         ),
       ),
     );
@@ -259,7 +260,7 @@ class ProfilesScreen extends StatelessWidget {
         profiles.profiles.isEmpty) {
       OrexNotice.show(
         context,
-        const SnackBar(content: Text('Нет профилей для экспорта')),
+        SnackBar(content: Text('Нет профилей для экспорта'.tr)),
       );
       return;
     }
@@ -272,32 +273,32 @@ class ProfilesScreen extends StatelessWidget {
     final exportCount = selectedIds?.length ?? profiles.profiles.length;
     final action = await showOrexChoiceSheet<_XrayJsonExportAction>(
       context,
-      title: exportingMultiple ? 'Экспорт $exportCount профилей' : 'Экспорт профиля',
+      title: exportingMultiple ? 'Экспорт $exportCount профилей' : 'Экспорт профиля'.tr,
       options: [
         if (singleId != null)
-          const OrexChoiceSheetOption<_XrayJsonExportAction>(
+          OrexChoiceSheetOption<_XrayJsonExportAction>(
             value: _XrayJsonExportAction.copyLink,
             icon: Icons.link_rounded,
-            title: 'Скопировать ссылку',
-            subtitle: 'Поделиться одним сервером через proxy-ссылку',
+            title: 'Скопировать ссылку'.tr,
+            subtitle: 'Поделиться одним сервером через proxy-ссылку'.tr,
           ),
         OrexChoiceSheetOption<_XrayJsonExportAction>(
           value: _XrayJsonExportAction.copy,
           icon: Icons.content_copy_rounded,
           title: selectedIds != null
-              ? 'Копировать массив JSON'
+              ? 'Копировать массив JSON'.tr
               : exportingMultiple
-                  ? 'Копировать массив JSON'
-                  : 'Копировать JSON',
+                  ? 'Копировать массив JSON'.tr
+                  : 'Копировать JSON'.tr,
           subtitle: selectedIds != null || exportingMultiple
-              ? 'Выбранные профили как массив полных Xray-конфигов'
-              : 'Полный Xray-конфиг профиля в буфер обмена',
+              ? 'Выбранные профили как массив полных Xray-конфигов'.tr
+              : 'Полный Xray-конфиг профиля в буфер обмена'.tr,
         ),
-        const OrexChoiceSheetOption<_XrayJsonExportAction>(
+        OrexChoiceSheetOption<_XrayJsonExportAction>(
           value: _XrayJsonExportAction.saveFile,
           icon: Icons.save_alt_rounded,
-          title: 'Сохранить .json',
-          subtitle: 'Выбрать файл через системный диалог',
+          title: 'Сохранить .json'.tr,
+          subtitle: 'Выбрать файл через системный диалог'.tr,
         ),
       ],
     );
@@ -316,7 +317,7 @@ class ProfilesScreen extends StatelessWidget {
           if (!context.mounted) return;
           OrexNotice.show(
             context,
-            const SnackBar(content: Text('Ссылка профиля скопирована')),
+            SnackBar(content: Text('Ссылка профиля скопирована'.tr)),
           );
           break;
         case _XrayJsonExportAction.copy:
@@ -327,8 +328,8 @@ class ProfilesScreen extends StatelessWidget {
             SnackBar(
               content: Text(
                 exportingMultiple
-                    ? 'Массив JSON Xray скопирован'
-                    : 'JSON Xray скопирован',
+                    ? 'Массив JSON Xray скопирован'.tr
+                    : 'JSON Xray скопирован'.tr,
               ),
             ),
           );
@@ -344,7 +345,7 @@ class ProfilesScreen extends StatelessWidget {
           if (!context.mounted || !saved) return;
           OrexNotice.show(
             context,
-            const SnackBar(content: Text('JSON Xray экспортирован')),
+            SnackBar(content: Text('JSON Xray экспортирован'.tr)),
           );
           break;
       }
@@ -377,7 +378,7 @@ class ProfilesScreen extends StatelessWidget {
       context: context,
       builder: (context) => _EditProfileDialog(
         profile: seed,
-        title: 'Новый профиль',
+        title: 'Новый профиль'.tr,
         allowProtocolSelection: true,
       ),
     );
@@ -404,8 +405,8 @@ class ProfilesScreen extends StatelessWidget {
     if (existing == null && profiles.profiles.isEmpty) {
       OrexNotice.show(
         context,
-        const SnackBar(
-          content: Text('Для балансировщика нужен хотя бы один профиль'),
+        SnackBar(
+          content: Text('Для балансировщика нужен хотя бы один профиль'.tr),
         ),
       );
       return;
@@ -448,9 +449,9 @@ class ProfilesScreen extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => OrexConfirmDialog(
-        title: 'Удалить?',
+        title: 'Удалить?'.tr,
         content: Text('«$name» будет удалён с этого устройства.'),
-        confirmLabel: 'Удалить',
+        confirmLabel: 'Удалить'.tr,
         icon: Icons.delete_outline_rounded,
       ),
     );
@@ -556,12 +557,12 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
         context: context,
         builder: (_) => OrexConfirmDialog(
           title: selectedSubscriptions.length == 1
-              ? 'Удалить подписку?'
+              ? 'Удалить подписку?'.tr
               : 'Удалить ${selectedSubscriptions.length} подписки?',
-          content: const Text(
-            'Подписки и все принадлежащие им серверы будут удалены с устройства.',
+          content: Text(
+            'Подписки и все принадлежащие им серверы будут удалены с устройства.'.tr,
           ),
-          confirmLabel: 'Удалить',
+          confirmLabel: 'Удалить'.tr,
           icon: Icons.delete_outline_rounded,
         ),
       );
@@ -580,10 +581,10 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
       context: context,
       builder: (_) => OrexConfirmDialog(
         title: 'Удалить ${manualIds.length} профилей?',
-        content: const Text(
-          'Выбранные серверы будут удалены с этого устройства.',
+        content: Text(
+          'Выбранные серверы будут удалены с этого устройства.'.tr,
         ),
-        confirmLabel: 'Удалить',
+        confirmLabel: 'Удалить'.tr,
         icon: Icons.delete_outline_rounded,
       ),
     );
@@ -605,19 +606,19 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
       final action = await showOrexChoiceSheet<String>(
         context,
         title: selectedSubscriptions.length == 1
-            ? 'Экспорт подписки'
-            : 'Экспорт подписок',
-        options: const [
+            ? 'Экспорт подписки'.tr
+            : 'Экспорт подписок'.tr,
+        options: [
           OrexChoiceSheetOption<String>(
             value: copyUrls,
             icon: Icons.link_rounded,
-            title: 'Скопировать исходную ссылку',
-            subtitle: 'Для нескольких подписок — по одной ссылке на строку',
+            title: 'Скопировать исходную ссылку'.tr,
+            subtitle: 'Для нескольких подписок — по одной ссылке на строку'.tr,
           ),
           OrexChoiceSheetOption<String>(
             value: exportServers,
             icon: Icons.data_object_rounded,
-            title: 'Экспортировать серверы JSON Xray',
+            title: 'Экспортировать серверы JSON Xray'.tr,
           ),
         ],
       );
@@ -634,8 +635,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
           SnackBar(
             content: Text(
               selectedSubscriptions.length == 1
-                  ? 'Ссылка подписки скопирована'
-                  : 'Ссылки подписок скопированы',
+                  ? 'Ссылка подписки скопирована'.tr
+                  : 'Ссылки подписок скопированы'.tr,
             ),
           ),
         );
@@ -761,19 +762,19 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
   Future<String?> _requestGroupName(
     BuildContext context, {
     String initialValue = '',
-    String title = 'Новая группа',
+    String? title,
   }) async {
     final controller = TextEditingController(text: initialValue);
     try {
       return await showDialog<String>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text(title),
+          title: Text(title ?? 'Новая группа'.tr),
           content: TextField(
             controller: controller,
             autofocus: true,
             maxLength: 80,
-            decoration: const InputDecoration(hintText: 'Например, Работа'),
+            decoration: InputDecoration(hintText: 'Например, Работа'.tr),
             onSubmitted: (value) {
               final normalized = value.trim();
               if (normalized.isNotEmpty) {
@@ -784,7 +785,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Отмена'),
+              child: Text('Отмена'.tr),
             ),
             FilledButton(
               onPressed: () {
@@ -793,7 +794,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                   Navigator.of(dialogContext).pop(normalized);
                 }
               },
-              child: const Text('Сохранить'),
+              child: Text('Сохранить'.tr),
             ),
           ],
         ),
@@ -814,8 +815,8 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     if (manualIds.isEmpty) {
       OrexNotice.show(
         context,
-        const SnackBar(
-          content: Text('Серверы подписки автоматически сгруппированы'),
+        SnackBar(
+          content: Text('Серверы подписки автоматически сгруппированы'.tr),
         ),
       );
       return;
@@ -825,12 +826,12 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     const clearGroup = '__clear_group__';
     final action = await showOrexChoiceSheet<String>(
       context,
-      title: 'Переместить в группу',
+      title: 'Переместить в группу'.tr,
       options: [
-        const OrexChoiceSheetOption<String>(
+        OrexChoiceSheetOption<String>(
           value: clearGroup,
           icon: Icons.folder_off_outlined,
-          title: 'Серверы',
+          title: 'Серверы'.tr,
         ),
         for (final name in profiles.manualGroupNames)
           OrexChoiceSheetOption<String>(
@@ -838,10 +839,10 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
             icon: Icons.folder_outlined,
             title: name,
           ),
-        const OrexChoiceSheetOption<String>(
+        OrexChoiceSheetOption<String>(
           value: createGroup,
           icon: Icons.create_new_folder_outlined,
-          title: 'Новая группа',
+          title: 'Новая группа'.tr,
         ),
       ],
     );
@@ -873,7 +874,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     final next = await _requestGroupName(
       context,
       initialValue: name,
-      title: 'Переименовать группу',
+      title: 'Переименовать группу'.tr,
     );
     if (next == null || next == name || !mounted) return;
     await profiles.renameProfileGroup(name, next);
@@ -883,9 +884,9 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => OrexConfirmDialog(
-        title: 'Расформировать группу?',
+        title: 'Расформировать группу?'.tr,
         content: Text('Профили из группы «$name» останутся в разделе «Серверы».'),
-        confirmLabel: 'Расформировать',
+        confirmLabel: 'Расформировать'.tr,
         icon: Icons.folder_off_outlined,
       ),
     );
@@ -916,7 +917,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     if (!context.mounted) return;
     OrexNotice.show(
       context,
-      const SnackBar(content: Text('Ссылка подписки скопирована')),
+      SnackBar(content: Text('Ссылка подписки скопирована'.tr)),
     );
   }
 
@@ -1110,7 +1111,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
               sliver: SliverToBoxAdapter(
                 child: _SectionTitle(
-                  title: 'Подписки',
+                  title: 'Подписки'.tr,
                   count: profiles.subscriptions.length,
                   selectedCount:
                       _selectingSubscriptions ? selectedSubscriptionCount : null,
@@ -1240,7 +1241,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
               sliver: SliverToBoxAdapter(
                 child: _SectionTitle(
-                  title: 'Серверы',
+                  title: 'Серверы'.tr,
                   count: manualProfileCount,
                   selectedCount:
                       _selectingServers ? manualSelectedCount : null,
@@ -1427,7 +1428,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _SectionTitle(
-                      title: 'Балансировщики',
+                      title: 'Балансировщики'.tr,
                       count: profiles.balancers.length,
                     ),
                     const SizedBox(height: 10),
@@ -1526,15 +1527,15 @@ class _ProfilesHeader extends StatelessWidget {
     if (!selectionMode) {
       actions.addAll([
         OrexHeaderAction(
-          tooltip: 'Добавить профиль',
-          label: 'Профиль',
+          tooltip: 'Добавить профиль'.tr,
+          label: 'Профиль'.tr,
           icon: Icons.add_rounded,
           trailingIcon: Icons.keyboard_arrow_down_rounded,
           onPressed: onOpenProfileMenu,
         ),
         OrexHeaderAction(
-          tooltip: 'Проверить пинг',
-          label: 'Проверить пинг',
+          tooltip: 'Проверить пинг'.tr,
+          label: 'Проверить пинг'.tr,
           icon: Icons.network_ping_rounded,
           onPressed: refreshingLatency || !canRefreshLatency
               ? null : () => onRefreshLatency(),
@@ -1542,21 +1543,21 @@ class _ProfilesHeader extends StatelessWidget {
       ]);
     } else {
       actions.add(OrexHeaderAction(
-        tooltip: 'Пинг',
-        label: 'Пинг',
+        tooltip: 'Пинг'.tr,
+        label: 'Пинг'.tr,
         icon: Icons.network_ping_rounded,
         onPressed: refreshingLatency ? null : () => onPingSelected(),
       ));
       actions.add(OrexHeaderAction(
-        tooltip: 'Экспорт',
-        label: 'Экспорт',
+        tooltip: 'Экспорт'.tr,
+        label: 'Экспорт'.tr,
         icon: Icons.ios_share_rounded,
         onPressed: onExportSelected,
       ));
       if (serverSelection) {
         actions.add(OrexHeaderAction(
-          tooltip: 'Группа',
-          label: 'Группа',
+          tooltip: 'Группа'.tr,
+          label: 'Группа'.tr,
           icon: Icons.folder_outlined,
           onPressed: canGroupSelected ? onGroupSelected : null,
         ));
@@ -1564,30 +1565,30 @@ class _ProfilesHeader extends StatelessWidget {
       actions.addAll([
         OrexHeaderAction(
           tooltip: selectionScope == _ProfileSelectionScope.subscriptions
-              ? 'Удалить подписки' : 'Удалить',
+              ? 'Удалить подписки'.tr : 'Удалить'.tr,
           label: selectionScope == _ProfileSelectionScope.subscriptions
-              ? 'Удалить' : 'Удалить',
+              ? 'Удалить'.tr : 'Удалить'.tr,
           icon: Icons.delete_outline_rounded,
           color: OrexColors.danger,
           onPressed: onDeleteSelected,
         ),
         OrexHeaderAction(
-          tooltip: 'Выбрать все',
-          label: 'Выбрать все',
+          tooltip: 'Выбрать все'.tr,
+          label: 'Выбрать все'.tr,
           icon: Icons.select_all_rounded,
           onPressed: allSelected ? null : onSelectAll,
         ),
         OrexHeaderAction(
-          tooltip: 'Готово',
-          label: 'Готово',
+          tooltip: 'Готово'.tr,
+          label: 'Готово'.tr,
           icon: Icons.check_rounded,
           onPressed: onCloseSelection,
         ),
       ]);
     }
     return OrexAdaptiveHeader(
-      title: 'Профили',
-      subtitle: 'Серверы, пинг и балансировщики Xray',
+      title: 'Профили'.tr,
+      subtitle: 'Серверы, пинг и балансировщики Xray'.tr,
       icon: Icons.dns_rounded,
       actions: actions,
     );
@@ -1642,7 +1643,7 @@ class _SectionTitle extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'ВЫДЕЛЕНО',
+                    'ВЫДЕЛЕНО'.tr,
                     style: textTheme.bodySmall?.copyWith(
                       color: OrexPalette.of(context).accent,
                       fontWeight: FontWeight.w700,
@@ -1762,19 +1763,19 @@ class _ProfileGroupHeader extends StatelessWidget {
                   },
                   itemBuilder: (context) => [
                     if (onRename != null)
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'rename',
-                        child: Text('Переименовать'),
+                        child: Text('Переименовать'.tr),
                       ),
                     if (onDelete != null)
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'delete',
-                        child: Text('Расформировать группу'),
+                        child: Text('Расформировать группу'.tr),
                       ),
                   ],
                 ),
               IconButton(
-                tooltip: expanded ? 'Свернуть' : 'Развернуть',
+                tooltip: expanded ? 'Свернуть'.tr : 'Развернуть'.tr,
                 onPressed: onExpandToggle,
                 icon: Icon(
                   expanded
@@ -1804,11 +1805,11 @@ class _EmptyProfiles extends StatelessWidget {
         children: [
           const SquirrelMascot(size: 104),
           const SizedBox(height: 22),
-          Text('Белочка ждёт сервер',
+          Text('Белочка ждёт сервер'.tr,
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
-            'Импортируйте ссылку, подписку или JSON Xray с одним или несколькими профилями.',
+            'Импортируйте ссылку, подписку или JSON Xray с одним или несколькими профилями.'.tr,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -1816,7 +1817,7 @@ class _EmptyProfiles extends StatelessWidget {
           FilledButton.icon(
             onPressed: onImport,
             icon: const Icon(Icons.add_link_rounded),
-            label: const Text('Импортировать профиль'),
+            label: Text('Импортировать профиль'.tr),
           ),
         ],
       ),
@@ -1849,7 +1850,7 @@ class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
     if (_loading) return;
     final value = _controller.text.trim();
     if (value.isEmpty) {
-      setState(() => _error = 'Вставь URL подписки');
+      setState(() => _error = 'Вставь URL подписки'.tr);
       return;
     }
     setState(() {
@@ -1874,16 +1875,15 @@ class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Импорт подписки'),
+      title: Text('Импорт подписки'.tr),
       content: SizedBox(
         width: 520,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Поддерживаются обычные HTTP/HTTPS подписки: '
-              'список ссылок, Base64-список и JSON Xray.',
+            Text(
+              'Поддерживаются обычные HTTP/HTTPS подписки: список ссылок, Base64-список и JSON Xray.'.tr,
             ),
             const SizedBox(height: 14),
             TextField(
@@ -1892,7 +1892,7 @@ class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
               autofocus: true,
               keyboardType: TextInputType.url,
               decoration: InputDecoration(
-                labelText: 'URL подписки',
+                labelText: 'URL подписки'.tr,
                 errorText: _error,
               ),
               onSubmitted: (_) => _submit(),
@@ -1903,7 +1903,7 @@ class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
       actions: [
         TextButton(
           onPressed: _loading ? null : () => Navigator.of(context).pop(),
-          child: const Text('Отмена'),
+          child: Text('Отмена'.tr),
         ),
         FilledButton(
           onPressed: _loading ? null : _submit,
@@ -1913,7 +1913,7 @@ class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Импортировать'),
+              : Text('Импортировать'.tr),
         ),
       ],
     );
@@ -2017,7 +2017,7 @@ class _SubscriptionCard extends StatelessWidget {
                     )
                   else ...[
                     IconButton(
-                      tooltip: 'Обновить подписку',
+                      tooltip: 'Обновить подписку'.tr,
                       onPressed:
                           refreshing ? null : onRefresh,
                       icon: refreshing
@@ -2029,7 +2029,7 @@ class _SubscriptionCard extends StatelessWidget {
                           : const Icon(Icons.refresh_rounded),
                     ),
                     PopupMenuButton<String>(
-                      tooltip: 'Действия подписки',
+                      tooltip: 'Действия подписки'.tr,
                       enabled: !refreshing,
                       onSelected: (value) {
                         if (value == 'copy-url') onCopyUrl();
@@ -2039,34 +2039,34 @@ class _SubscriptionCard extends StatelessWidget {
                         if (value == 'delete') onDelete();
                       },
                       itemBuilder: (context) => [
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'copy-url',
-                          child: Text('Скопировать исходную ссылку'),
+                          child: Text('Скопировать исходную ссылку'.tr),
                         ),
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'export-json',
-                          child: Text('Экспорт серверов JSON Xray'),
+                          child: Text('Экспорт серверов JSON Xray'.tr),
                         ),
                         if (onOpenWebPage != null)
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'web-page',
-                            child: Text('Кабинет'),
+                            child: Text('Кабинет'.tr),
                           ),
                         if (onOpenSupport != null)
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'support',
-                            child: Text('Поддержка'),
+                            child: Text('Поддержка'.tr),
                           ),
                         const PopupMenuDivider(),
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'delete',
-                          child: Text('Удалить подписку'),
+                          child: Text('Удалить подписку'.tr),
                         ),
                       ],
                     ),
                   ],
                   IconButton(
-                    tooltip: expanded ? 'Свернуть' : 'Развернуть',
+                    tooltip: expanded ? 'Свернуть'.tr : 'Развернуть'.tr,
                     onPressed: onExpandToggle,
                     icon: Icon(
                       expanded
@@ -2272,13 +2272,13 @@ class _SubscriptionMetadataPanel extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: onOpenWebPage,
                   icon: const Icon(Icons.account_circle_outlined, size: 18),
-                  label: const Text('Кабинет'),
+                  label: Text('Кабинет'.tr),
                 ),
               if (onOpenSupport != null)
                 OutlinedButton.icon(
                   onPressed: onOpenSupport,
                   icon: const Icon(Icons.support_agent_rounded, size: 18),
-                  label: const Text('Поддержка'),
+                  label: Text('Поддержка'.tr),
                 ),
             ],
           ),
@@ -2289,7 +2289,7 @@ class _SubscriptionMetadataPanel extends StatelessWidget {
 }
 
 String _formatSubscriptionBytes(int bytes) {
-  const units = <String>['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+  final units = <String>['Б'.tr, 'КБ'.tr, 'МБ'.tr, 'ГБ'.tr, 'ТБ'.tr];
   var value = bytes.toDouble();
   var unit = 0;
   while (value >= 1024 && unit < units.length - 1) {
@@ -2303,30 +2303,30 @@ String _formatSubscriptionBytes(int bytes) {
 String _formatSubscriptionExpiry(DateTime expiry) {
   final now = DateTime.now();
   final difference = expiry.difference(now);
-  if (difference <= Duration.zero) return 'Срок действия истёк';
+  if (difference <= Duration.zero) return 'Срок действия истёк'.tr;
   final days = (difference.inSeconds / Duration.secondsPerDay).ceil();
   return 'До ${_formatSubscriptionDate(expiry)} · ${_russianCountLabel(
     days,
-    one: 'день',
-    few: 'дня',
-    many: 'дней',
+    one: 'день'.tr,
+    few: 'дня'.tr,
+    many: 'дней'.tr,
   )}';
 }
 
 String _formatSubscriptionDate(DateTime date) {
-  const months = <String>[
-    'января',
-    'февраля',
-    'марта',
-    'апреля',
-    'мая',
-    'июня',
-    'июля',
-    'августа',
-    'сентября',
-    'октября',
-    'ноября',
-    'декабря',
+  final months = <String>[
+    'января'.tr,
+    'февраля'.tr,
+    'марта'.tr,
+    'апреля'.tr,
+    'мая'.tr,
+    'июня'.tr,
+    'июля'.tr,
+    'августа'.tr,
+    'сентября'.tr,
+    'октября'.tr,
+    'ноября'.tr,
+    'декабря'.tr,
   ];
   return '${date.day} ${months[date.month - 1]}';
 }
@@ -2353,28 +2353,28 @@ String _relativeSubscriptionUpdate(int epochMs) {
   final elapsed = DateTime.now().difference(
     DateTime.fromMillisecondsSinceEpoch(epochMs),
   );
-  if (elapsed.isNegative || elapsed.inMinutes < 1) return 'обновлено сейчас';
+  if (elapsed.isNegative || elapsed.inMinutes < 1) return 'обновлено сейчас'.tr;
   if (elapsed.inHours < 1) {
     return 'обновлено ${_russianCountLabel(
       elapsed.inMinutes,
-      one: 'минута',
-      few: 'минуты',
-      many: 'минут',
+      one: 'минута'.tr,
+      few: 'минуты'.tr,
+      many: 'минут'.tr,
     )} назад';
   }
   if (elapsed.inDays < 1) {
     return 'обновлено ${_russianCountLabel(
       elapsed.inHours,
-      one: 'час',
-      few: 'часа',
-      many: 'часов',
+      one: 'час'.tr,
+      few: 'часа'.tr,
+      many: 'часов'.tr,
     )} назад';
   }
   return 'обновлено ${_russianCountLabel(
     elapsed.inDays,
-    one: 'день',
-    few: 'дня',
-    many: 'дней',
+    one: 'день'.tr,
+    few: 'дня'.tr,
+    many: 'дней'.tr,
   )} назад';
 }
 
@@ -2512,28 +2512,28 @@ class _ProfileCard extends StatelessWidget {
                         if (value == 'delete') onDelete();
                       },
                       itemBuilder: (context) => [
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'edit',
-                          child: Text('Редактировать'),
+                          child: Text('Редактировать'.tr),
                         ),
                         PopupMenuItem(
                           value: 'ping',
                           enabled: onRefreshPing != null,
-                          child: const Text('Проверить пинг'),
+                          child: Text('Проверить пинг'.tr),
                         ),
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'export',
-                          child: Text('Экспорт JSON Xray'),
+                          child: Text('Экспорт JSON Xray'.tr),
                         ),
                         if (onGroup != null)
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'group',
-                            child: Text('Группа…'),
+                            child: Text('Группа…'.tr),
                           ),
                         const PopupMenuDivider(),
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'delete',
-                          child: Text('Удалить'),
+                          child: Text('Удалить'.tr),
                         ),
                       ],
                     ),
@@ -2575,7 +2575,7 @@ class _PingBadge extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
-          latency == null ? '- мс' : '$latency мс',
+          latency == null ? '- мс'.tr : '$latency мс',
           style: TextStyle(
               color: color, fontSize: 12, fontWeight: FontWeight.w600),
         ),
@@ -2647,10 +2647,10 @@ class _BalancerCard extends StatelessWidget {
             if (value == 'edit') onEdit();
             if (value == 'delete') onDelete();
           },
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 'edit', child: Text('Редактировать')),
+          itemBuilder: (context) => [
+            PopupMenuItem(value: 'edit', child: Text('Редактировать'.tr)),
             PopupMenuDivider(),
-            PopupMenuItem(value: 'delete', child: Text('Удалить')),
+            PopupMenuItem(value: 'delete', child: Text('Удалить'.tr)),
           ],
         ),
       ),
@@ -2700,7 +2700,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
     if (!mounted) return;
     final text = data?.text?.trim() ?? '';
     if (text.isEmpty) {
-      setState(() => _error = 'В буфере обмена нет текста');
+      setState(() => _error = 'В буфере обмена нет текста'.tr);
       return;
     }
     setState(() {
@@ -2732,7 +2732,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
         return;
       }
       if (!QrLinkImport.isSupportedLink(link)) {
-        throw const FormatException('QR не содержит поддерживаемую ссылку профиля');
+        throw FormatException('QR не содержит поддерживаемую ссылку профиля'.tr);
       }
       setState(() {
         _controller.text = link!.trim();
@@ -2747,7 +2747,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
       }
     } on Object {
       if (mounted) {
-        setState(() => _error = 'Не удалось распознать QR-код');
+        setState(() => _error = 'Не удалось распознать QR-код'.tr);
       }
     } finally {
       if (mounted) {
@@ -2785,7 +2785,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Импорт профиля'),
+      title: Text('Импорт профиля'.tr),
       content: SizedBox(
         width: 560,
         child: Column(
@@ -2812,7 +2812,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
               child: TextButton.icon(
                 onPressed: _importing || _readingQr ? null : _pasteFromClipboard,
                 icon: const Icon(Icons.content_paste_rounded),
-                label: const Text('Вставить из буфера'),
+                label: Text('Вставить из буфера'.tr),
               ),
             ),
           ],
@@ -2821,7 +2821,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
       actions: [
         TextButton(
           onPressed: _importing ? null : () => Navigator.of(context).pop(),
-          child: const Text('Отмена'),
+          child: Text('Отмена'.tr),
         ),
         FilledButton(
           onPressed: _importing ? null : _submit,
@@ -2830,7 +2830,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
                   dimension: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Сохранить'),
+              : Text('Сохранить'.tr),
         ),
       ],
     );
@@ -2863,7 +2863,7 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
     if (!mounted) return;
     final text = data?.text?.trim() ?? '';
     if (text.isEmpty) {
-      setState(() => _error = 'В буфере обмена нет JSON или URL');
+      setState(() => _error = 'В буфере обмена нет JSON или URL'.tr);
       return;
     }
     setState(() {
@@ -2890,7 +2890,7 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
         _error = null;
       });
       if (await file.length() > XrayJsonCodec.maxPayloadBytes) {
-        throw const FormatException('JSON Xray больше 5 МБ');
+        throw FormatException('JSON Xray больше 5 МБ'.tr);
       }
       final payload = await file.readAsString();
       await _importPayload(payload, sourceLabel: file.name);
@@ -2903,7 +2903,7 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
     if (_importing) return;
     final raw = _controller.text.trim();
     if (raw.isEmpty) {
-      setState(() => _error = 'Вставь JSON, массив [] или URL');
+      setState(() => _error = 'Вставь JSON, массив [] или URL'.tr);
       return;
     }
     setState(() {
@@ -2949,7 +2949,7 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Импорт JSON Xray'),
+      title: Text('Импорт JSON Xray'.tr),
       content: SizedBox(
         width: 620,
         child: Column(
@@ -2957,9 +2957,7 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Поддерживается полный Xray config, один outbound, массив [] '
-              'из нескольких конфигов и HTTP/HTTPS ссылка с JSON. '
-              'Для обновляемого списка серверов используйте «Подписка».',
+              'Поддерживается полный Xray config, один outbound, массив [] из нескольких конфигов и HTTP/HTTPS ссылка с JSON. Для обновляемого списка серверов используйте «Подписка».'.tr,
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
@@ -2972,7 +2970,7 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
               autocorrect: false,
               enableSuggestions: false,
               decoration: InputDecoration(
-                hintText: '{ "outbounds": [...] }\nили https://example.com/config.json',
+                hintText: '{ "outbounds": [...] }\nили https://example.com/config.json'.tr,
                 errorText: _error,
               ),
             ),
@@ -2984,12 +2982,12 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
                 TextButton.icon(
                   onPressed: _importing ? null : _pickFile,
                   icon: const Icon(Icons.file_open_outlined),
-                  label: const Text('Выбрать .json'),
+                  label: Text('Выбрать .json'.tr),
                 ),
                 TextButton.icon(
                   onPressed: _importing ? null : _pasteFromClipboard,
                   icon: const Icon(Icons.content_paste_rounded),
-                  label: const Text('Из буфера'),
+                  label: Text('Из буфера'.tr),
                 ),
               ],
             ),
@@ -2999,7 +2997,7 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
       actions: [
         TextButton(
           onPressed: _importing ? null : () => Navigator.of(context).pop(),
-          child: const Text('Отмена'),
+          child: Text('Отмена'.tr),
         ),
         FilledButton(
           onPressed: _importing ? null : _submit,
@@ -3008,7 +3006,7 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
                   dimension: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Импортировать'),
+              : Text('Импортировать'.tr),
         ),
       ],
     );
@@ -3018,12 +3016,12 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
 class _EditProfileDialog extends StatefulWidget {
   const _EditProfileDialog({
     required this.profile,
-    this.title = 'Редактировать профиль',
+    this.title,
     this.allowProtocolSelection = false,
   });
 
   final TunnelProfile profile;
-  final String title;
+  final String? title;
   final bool allowProtocolSelection;
 
   @override
@@ -3159,7 +3157,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   void _submit() {
     final port = int.tryParse(_port.text.trim());
     if (_name.text.trim().isEmpty || _address.text.trim().isEmpty) {
-      setState(() => _error = 'Имя и адрес обязательны');
+      setState(() => _error = 'Имя и адрес обязательны'.tr);
       return;
     }
     if (_needsUserId && _uuid.text.trim().isEmpty) {
@@ -3174,12 +3172,12 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     }
     if (_canUseOptionalCredentials &&
         (_uuid.text.trim().isEmpty != _protocolPassword.text.isEmpty)) {
-      setState(() => _error = 'Укажите и имя пользователя, и пароль');
+      setState(() => _error = 'Укажите и имя пользователя, и пароль'.tr);
       return;
     }
     if (_protocol == OutboundProtocol.shadowsocks &&
         _encryption.text.trim().isEmpty) {
-      setState(() => _error = 'Для Shadowsocks нужен метод шифрования');
+      setState(() => _error = 'Для Shadowsocks нужен метод шифрования'.tr);
       return;
     }
     if (_protocol == OutboundProtocol.vmess &&
@@ -3190,18 +3188,18 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
         }.contains(_vmessSecurity.text.trim().toLowerCase())) {
       setState(
         () =>
-            _error = 'VMess security: auto, aes-128-gcm или chacha20-poly1305',
+            _error = 'VMess security: auto, aes-128-gcm или chacha20-poly1305'.tr,
       );
       return;
     }
     if (_usesStreamSettings &&
         _security == 'reality' &&
         _password.text.trim().isEmpty) {
-      setState(() => _error = 'Для REALITY нужен public key');
+      setState(() => _error = 'Для REALITY нужен public key'.tr);
       return;
     }
     if (port == null || port < 1 || port > 65535) {
-      setState(() => _error = 'Некорректный порт');
+      setState(() => _error = 'Некорректный порт'.tr);
       return;
     }
     Navigator.pop(
@@ -3238,7 +3236,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.title),
+      title: Text(widget.title ?? 'Редактировать профиль'.tr),
       content: SizedBox(
         width: 640,
         child: SingleChildScrollView(
@@ -3249,14 +3247,14 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                 Text(_error!, style: const TextStyle(color: OrexColors.danger)),
                 const SizedBox(height: 10),
               ],
-              _field(_name, 'Имя'),
+              _field(_name, 'Имя'.tr),
               if (widget.allowProtocolSelection)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: DropdownButtonFormField<OutboundProtocol>(
                     key: ValueKey(_protocol),
                     initialValue: _protocol,
-                    decoration: const InputDecoration(labelText: 'Протокол'),
+                    decoration: InputDecoration(labelText: 'Протокол'.tr),
                     items: [
                       for (final protocol in OutboundProtocol.values)
                         DropdownMenuItem(
@@ -3270,26 +3268,26 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                   ),
                 ),
               Row(children: [
-                Expanded(flex: 3, child: _field(_address, 'Адрес')),
+                Expanded(flex: 3, child: _field(_address, 'Адрес'.tr)),
                 const SizedBox(width: 10),
-                Expanded(child: _field(_port, 'Порт', number: true)),
+                Expanded(child: _field(_port, 'Порт'.tr, number: true)),
               ]),
               if (_needsUserId || _canUseOptionalCredentials)
                 _field(
                   _uuid,
-                  _needsUserId ? 'UUID' : 'Имя пользователя (необязательно)',
+                  _needsUserId ? 'UUID' : 'Имя пользователя (необязательно)'.tr,
                 ),
               if (_needsPassword)
                 _field(
                   _protocolPassword,
                   _canUseOptionalCredentials
-                      ? 'Пароль (необязательно)'
-                      : 'Пароль',
+                      ? 'Пароль (необязательно)'.tr
+                      : 'Пароль'.tr,
                 ),
               if (_protocol == OutboundProtocol.shadowsocks)
                 _field(
                   _encryption,
-                  'Метод шифрования (например aes-256-gcm)',
+                  'Метод шифрования (например aes-256-gcm)'.tr,
                 ),
               if (_protocol == OutboundProtocol.vmess)
                 _field(
@@ -3298,7 +3296,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                 ),
               if (_usesStreamSettings) ...[
                 if (_protocol == OutboundProtocol.vless)
-                  _field(_flow, 'Flow (например xtls-rprx-vision)'),
+                  _field(_flow, 'Flow (например xtls-rprx-vision)'.tr),
                 Row(children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
@@ -3358,8 +3356,8 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена')),
-        FilledButton(onPressed: _submit, child: const Text('Сохранить')),
+            child: Text('Отмена'.tr)),
+        FilledButton(onPressed: _submit, child: Text('Сохранить'.tr)),
       ],
     );
   }
@@ -3478,11 +3476,11 @@ class _BalancerDialogState extends State<_BalancerDialog> {
   void _submit() {
     final interval = int.tryParse(_interval.text.trim()) ?? 30;
     if (_name.text.trim().isEmpty) {
-      setState(() => _error = 'Укажи имя балансировщика');
+      setState(() => _error = 'Укажи имя балансировщика'.tr);
       return;
     }
     if (_effectiveMemberIds.isEmpty) {
-      setState(() => _error = 'Выбери хотя бы один сервер или папку');
+      setState(() => _error = 'Выбери хотя бы один сервер или папку'.tr);
       return;
     }
     Navigator.pop(
@@ -3502,8 +3500,8 @@ class _BalancerDialogState extends State<_BalancerDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.existing == null
-          ? 'Новый балансировщик'
-          : 'Редактировать балансировщик'),
+          ? 'Новый балансировщик'.tr
+          : 'Редактировать балансировщик'.tr),
       content: SizedBox(
         width: 620,
         child: SingleChildScrollView(
@@ -3517,11 +3515,11 @@ class _BalancerDialogState extends State<_BalancerDialog> {
               ],
               TextField(
                   controller: _name,
-                  decoration: const InputDecoration(labelText: 'Имя')),
+                  decoration: InputDecoration(labelText: 'Имя'.tr)),
               const SizedBox(height: 12),
               DropdownButtonFormField<BalancerStrategy>(
                 initialValue: _strategy,
-                decoration: const InputDecoration(labelText: 'Стратегия'),
+                decoration: InputDecoration(labelText: 'Стратегия'.tr),
                 items: [
                   for (final strategy in BalancerStrategy.values)
                     DropdownMenuItem(
@@ -3538,17 +3536,17 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                 initialValue: _fallbackValue,
                 decoration: const InputDecoration(labelText: 'Fallback'),
                 items: [
-                  const DropdownMenuItem(
+                  DropdownMenuItem(
                     value: 'none',
-                    child: Text('Нет fallback'),
+                    child: Text('Нет fallback'.tr),
                   ),
-                  const DropdownMenuItem(
+                  DropdownMenuItem(
                     value: BalancerProfile.fallbackDirect,
-                    child: Text('Напрямую · direct'),
+                    child: Text('Напрямую · direct'.tr),
                   ),
-                  const DropdownMenuItem(
+                  DropdownMenuItem(
                     value: BalancerProfile.fallbackBlock,
-                    child: Text('Блокировать · block'),
+                    child: Text('Блокировать · block'.tr),
                   ),
                   for (final profile in widget.profiles)
                     DropdownMenuItem(
@@ -3562,16 +3560,15 @@ class _BalancerDialogState extends State<_BalancerDialog> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Xray использует fallbackTag, когда по результатам наблюдения '
-                'все маршруты балансировщика недоступны.',
+                'Xray использует fallbackTag, когда по результатам наблюдения все маршруты балансировщика недоступны.'.tr,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               if (_strategy == BalancerStrategy.leastPing ||
                   _fallbackValue != 'none') ...[
                 const SizedBox(height: 12),
                 InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Адрес проверки задержки',
+                  decoration: InputDecoration(
+                    labelText: 'Адрес проверки задержки'.tr,
                   ),
                   child: Text(
                     widget.probeUrl,
@@ -3581,24 +3578,22 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Используется общий адрес из «Сеть → Проверка задержки».',
+                  'Используется общий адрес из «Сеть → Проверка задержки».'.tr,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _interval,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      labelText: 'Интервал проверки, секунд'),
+                  decoration: InputDecoration(
+                      labelText: 'Интервал проверки, секунд'.tr),
                 ),
               ],
               const SizedBox(height: 16),
-              Text('Маршруты', style: Theme.of(context).textTheme.titleSmall),
+              Text('Маршруты'.tr, style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 4),
               Text(
-                'Можно выбрать папку целиком или раскрыть её и отметить '
-                'отдельные серверы. Выбранная папка остаётся динамической: '
-                'новые серверы в ней попадут в балансировщик автоматически.',
+                'Можно выбрать папку целиком или раскрыть её и отметить отдельные серверы. Выбранная папка остаётся динамической: новые серверы в ней попадут в балансировщик автоматически.'.tr,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 8),
@@ -3701,8 +3696,8 @@ class _BalancerDialogState extends State<_BalancerDialog> {
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена')),
-        FilledButton(onPressed: _submit, child: const Text('Сохранить')),
+            child: Text('Отмена'.tr)),
+        FilledButton(onPressed: _submit, child: Text('Сохранить'.tr)),
       ],
     );
   }

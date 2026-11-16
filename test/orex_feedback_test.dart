@@ -17,7 +17,7 @@ void main() {
           builder: (context) => FilledButton(
             onPressed: () => showDialog<bool>(
               context: context,
-              builder: (_) => const OrexConfirmDialog(
+              builder: (_) => OrexConfirmDialog(
                 title: 'Открыть прокси в локальную сеть?',
                 content: Text('SOCKS5 и HTTP-прокси не требуют пароль.'),
                 confirmLabel: 'Открыть доступ',
@@ -56,7 +56,7 @@ void main() {
           builder: (context) => TextButton(
             onPressed: () => showDialog<bool>(
               context: context,
-              builder: (_) => const OrexConfirmDialog(
+              builder: (_) => OrexConfirmDialog(
                 title: 'Подтвердить',
                 content: Text('Проверка'),
                 confirmLabel: 'Да',

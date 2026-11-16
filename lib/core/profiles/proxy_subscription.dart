@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class SubscriptionUserInfo {
   const SubscriptionUserInfo({
@@ -205,12 +206,12 @@ class ProxySubscription {
             .toList(growable: false)
         : const <String>[];
     if (id.isEmpty || url.isEmpty) {
-      throw const FormatException('Некорректная сохранённая подписка');
+      throw FormatException('Некорректная сохранённая подписка'.tr);
     }
     return ProxySubscription(
       id: id,
       url: url,
-      name: name.isEmpty ? (Uri.tryParse(url)?.host ?? 'Подписка') : name,
+      name: name.isEmpty ? (Uri.tryParse(url)?.host ?? 'Подписка'.tr) : name,
       profileIds: List.unmodifiable(profileIds),
       lastUpdatedEpochMs: lastUpdated is num ? lastUpdated.toInt() : null,
       lastMetadataCheckEpochMs:

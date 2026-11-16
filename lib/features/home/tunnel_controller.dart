@@ -13,6 +13,7 @@ import '../../core/profiles/profiles_controller.dart';
 import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class TunnelController extends ChangeNotifier {
   TunnelController({
@@ -574,7 +575,7 @@ class TunnelController extends ChangeNotifier {
     if (profile == null) {
       _engineSnapshot = current.copyWith(
         status: TunnelStatus.error,
-        errorMessage: 'Сначала выбери профиль или балансировщик.',
+        errorMessage: 'Сначала выбери профиль или балансировщик.'.tr,
       );
       _profileUiRevision.value++;
       notifyListeners();
@@ -624,7 +625,7 @@ class TunnelController extends ChangeNotifier {
     void Function(double progress)? onProgress,
   }) async {
     if (!canReinstallXrayCore) {
-      throw StateError('Сначала отключи активное соединение.');
+      throw StateError('Сначала отключи активное соединение.'.tr);
     }
     await (_engine as TunnelCoreMaintenance).reinstallCore(
       onProgress: onProgress,

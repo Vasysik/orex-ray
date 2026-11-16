@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/app_version.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class XrayCoreInstall {
   const XrayCoreInstall({
@@ -66,8 +67,7 @@ class XrayCoreManager {
       } catch (error) {
         if (!kDebugMode) {
           throw StateError(
-            'Встроенный Xray Core повреждён или был изменён. '
-            'Открой «О приложении» и выбери «Переустановить Xray Core».\n$error',
+            'Встроенный Xray Core повреждён или был изменён. Открой «О приложении» и выбери «Переустановить Xray Core».\n{}'.trf([error]),
           );
         }
       }
@@ -75,9 +75,7 @@ class XrayCoreManager {
 
     if (!kDebugMode) {
       throw StateError(
-        'В release-сборке отсутствует встроенный Xray Core. '
-        'Пересобери Windows-релиз через windows/installer/prepare_xray_core.ps1 '
-        'и повтори сборку release.',
+        'В release-сборке отсутствует встроенный Xray Core. Пересобери Windows-релиз через windows/installer/prepare_xray_core.ps1 и повтори сборку release.'.tr,
       );
     }
 
@@ -98,14 +96,14 @@ class XrayCoreManager {
     final executable = File(p.join(runtimeDirectory.path, 'xray.exe'));
     final wintun = File(p.join(runtimeDirectory.path, 'wintun.dll'));
     if (!await executable.exists() || !await wintun.exists()) {
-      throw StateError('Встроенный Xray Core неполный.');
+      throw StateError('Встроенный Xray Core неполный.'.tr);
     }
     if (!await _matchesTrustedArchive(
       archive,
       runtimeDirectory,
       fileNames: {..._requiredRuntimeFiles, ..._optionalDataFiles},
     )) {
-      throw StateError('Файлы Xray Core не совпали с доверенным архивом.');
+      throw StateError('Файлы Xray Core не совпали с доверенным архивом.'.tr);
     }
 
     await _initializeAssets(archive, assetDirectory);
@@ -169,7 +167,7 @@ class XrayCoreManager {
       runtimeDirectory,
       fileNames: {..._requiredRuntimeFiles, ..._optionalDataFiles},
     )) {
-      throw StateError('Переустановленный Xray Core не прошёл проверку.');
+      throw StateError('Переустановленный Xray Core не прошёл проверку.'.tr);
     }
     await _initializeAssets(archive, assetDirectory);
   }
@@ -247,11 +245,11 @@ class XrayCoreManager {
 
     if (!await executable.exists() || !await wintun.exists()) {
       throw StateError(
-        'Xray скачался, но в архиве не найдены xray.exe и wintun.dll.',
+        'Xray скачался, но в архиве не найдены xray.exe и wintun.dll.'.tr,
       );
     }
     if (!await _matchesTrustedArchive(archive, root)) {
-      throw StateError('Установленные файлы Xray не прошли повторную проверку.');
+      throw StateError('Установленные файлы Xray не прошли повторную проверку.'.tr);
     }
 
     return XrayCoreInstall(
@@ -285,7 +283,7 @@ class XrayCoreManager {
       }
       final total = response.contentLength;
       if (total > _maxDownloadBytes) {
-        throw const FormatException('Архив Xray Core больше 64 МБ.');
+        throw FormatException('Архив Xray Core больше 64 МБ.'.tr);
       }
 
       var received = 0;
@@ -294,7 +292,7 @@ class XrayCoreManager {
         await for (final chunk in response.timeout(_requestTimeout)) {
           received += chunk.length;
           if (received > _maxDownloadBytes) {
-            throw const FormatException('Архив Xray Core больше 64 МБ.');
+            throw FormatException('Архив Xray Core больше 64 МБ.'.tr);
           }
           sink.add(chunk);
           if (total > 0) onProgress?.call(received / total);
@@ -314,11 +312,11 @@ class XrayCoreManager {
 
   Future<void> _verifyExpectedHash(File file, String expectedHash) async {
     if (!await file.exists() || await file.length() > _maxDownloadBytes) {
-      throw StateError('SHA-256 скачанного Xray Core не совпал.');
+      throw StateError('SHA-256 скачанного Xray Core не совпал.'.tr);
     }
     final actual = (await sha256.bind(file.openRead()).first).toString();
     if (actual != expectedHash) {
-      throw StateError('SHA-256 скачанного Xray Core не совпал.');
+      throw StateError('SHA-256 скачанного Xray Core не совпал.'.tr);
     }
   }
 
@@ -328,11 +326,11 @@ class XrayCoreManager {
   ) async {
     final length = await archiveFile.length();
     if (length <= 0 || length > _maxDownloadBytes) {
-      throw const FormatException('Недопустимый размер архива Xray Core.');
+      throw FormatException('Недопустимый размер архива Xray Core.'.tr);
     }
     final bytes = await archiveFile.readAsBytes();
     if (sha256.convert(bytes).toString() != expectedHash) {
-      throw StateError('SHA-256 сохранённого Xray Core не совпал.');
+      throw StateError('SHA-256 сохранённого Xray Core не совпал.'.tr);
     }
     return _decodeBoundedArchive(bytes);
   }
@@ -424,7 +422,7 @@ class XrayCoreManager {
   Archive _decodeBoundedArchive(List<int> bytes) {
     final archive = ZipDecoder().decodeBytes(bytes, verify: true);
     if (archive.length > _maxArchiveEntries) {
-      throw const FormatException('В архиве Xray Core слишком много файлов.');
+      throw FormatException('В архиве Xray Core слишком много файлов.'.tr);
     }
     var totalSize = 0;
     for (final entry in archive) {
@@ -432,8 +430,8 @@ class XrayCoreManager {
       totalSize += entry.size;
       if (entry.size > _maxUncompressedBytes ||
           totalSize > _maxUncompressedBytes) {
-        throw const FormatException(
-          'Архив Xray Core слишком велик после распаковки.',
+        throw FormatException(
+          'Архив Xray Core слишком велик после распаковки.'.tr,
         );
       }
     }

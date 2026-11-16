@@ -1,4 +1,5 @@
 import 'dart:collection';
+import '../../shared/l10n/orex_l10n.dart';
 
 enum XrayExitKind {
   configuration,
@@ -36,10 +37,10 @@ class XrayExitClassifier {
       'failed to parse',
       'syntax error',
     ])) {
-      return const XrayExitDecision(
+      return XrayExitDecision(
         kind: XrayExitKind.configuration,
         canRestart: false,
-        message: 'Xray отклонил конфигурацию. Автоперезапуск остановлен.',
+        message: 'Xray отклонил конфигурацию. Автоперезапуск остановлен.'.tr,
       );
     }
     if (_containsAny(text, const [
@@ -55,7 +56,7 @@ class XrayExitClassifier {
         kind: XrayExitKind.portConflict,
         canRestart: false,
         message: port == null
-            ? 'Xray не смог занять локальный порт. Проверь настройки портов.'
+            ? 'Xray не смог занять локальный порт. Проверь настройки портов.'.tr
             : 'Локальный порт $port уже занят. Измени порт или закрой другой процесс.',
       );
     }
@@ -65,10 +66,10 @@ class XrayExitClassifier {
       'permission denied',
       'operation requires elevation',
     ])) {
-      return const XrayExitDecision(
+      return XrayExitDecision(
         kind: XrayExitKind.permission,
         canRestart: false,
-        message: 'Xray остановлен из-за недостаточных прав доступа.',
+        message: 'Xray остановлен из-за недостаточных прав доступа.'.tr,
       );
     }
     if (_containsAny(text, const [
@@ -79,17 +80,17 @@ class XrayExitClassifier {
       'temporary failure',
       'timeout',
     ])) {
-      return const XrayExitDecision(
+      return XrayExitDecision(
         kind: XrayExitKind.transient,
         canRestart: true,
-        message: 'Сеть временно недоступна. OrexRay восстановит подключение.',
+        message: 'Сеть временно недоступна. OrexRay восстановит подключение.'.tr,
       );
     }
     return XrayExitDecision(
       kind: XrayExitKind.crash,
       canRestart: exitCode != 0,
       message: exitCode == 0
-          ? 'Xray завершился без ошибки.'
+          ? 'Xray завершился без ошибки.'.tr
           : 'Xray неожиданно завершился с кодом $exitCode.',
     );
   }

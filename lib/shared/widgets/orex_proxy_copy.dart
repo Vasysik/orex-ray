@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'orex_notice.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// Common clipboard and interface-selection policy for proxy links.
 ///
@@ -75,22 +76,22 @@ class OrexProxyCopy {
       items: [
         PopupMenuItem(
           value: localhost,
-          child: const ListTile(
+          child: ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.computer_rounded),
-            title: Text('127.0.0.1 · это устройство'),
+            title: Text('127.0.0.1 · это устройство'.tr),
           ),
         ),
         if (!allowLan)
-          const PopupMenuItem<String>(
+          PopupMenuItem<String>(
             enabled: false,
-            child: Text('Доступ из локальной сети запрещён'),
+            child: Text('Доступ из локальной сети запрещён'.tr),
           )
         else if (networkAddresses.isEmpty)
-          const PopupMenuItem<String>(
+          PopupMenuItem<String>(
             enabled: false,
-            child: Text('IPv4-адрес локальной сети не найден'),
+            child: Text('IPv4-адрес локальной сети не найден'.tr),
           )
         else
           for (final item in networkAddresses)

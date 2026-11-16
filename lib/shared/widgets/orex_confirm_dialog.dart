@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/orex_palette.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// Compact confirmation dialog styled by the same DialogTheme as editors.
 /// Glass effects are reserved for panels and selection sheets.
@@ -10,14 +11,14 @@ class OrexConfirmDialog extends StatelessWidget {
     required this.title,
     required this.content,
     required this.confirmLabel,
-    this.cancelLabel = 'Отмена',
+    this.cancelLabel,
     this.icon,
   });
 
   final String title;
   final Widget content;
   final String confirmLabel;
-  final String cancelLabel;
+  final String? cancelLabel;
   final IconData? icon;
 
   @override
@@ -63,7 +64,7 @@ class OrexConfirmDialog extends StatelessWidget {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: Text(cancelLabel),
+                    child: Text(cancelLabel ?? 'Отмена'.tr),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(true),

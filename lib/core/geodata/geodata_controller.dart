@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_version.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class GeoAssetStatus {
   const GeoAssetStatus({
@@ -112,7 +113,7 @@ class GeoDataController extends ChangeNotifier {
   Future<void> setUpdateIntervalHours(int value) async {
     final normalized = _validInterval(value);
     if (normalized == null) {
-      throw const FormatException('Интервал должен быть 12, 24, 72 или 168 часов');
+      throw FormatException('Интервал должен быть 12, 24, 72 или 168 часов'.tr);
     }
     if (_updateIntervalHours == normalized) return;
     _updateIntervalHours = normalized;
@@ -159,7 +160,7 @@ class GeoDataController extends ChangeNotifier {
   Future<void> importCustomAsset(String targetFileName, XFile source) async {
     if (_updating) return;
     if (targetFileName != 'geoip.dat' && targetFileName != 'geosite.dat') {
-      throw const FormatException('Поддерживаются только geoip.dat и geosite.dat');
+      throw FormatException('Поддерживаются только geoip.dat и geosite.dat'.tr);
     }
     _updating = true;
     _progress = 0;
@@ -183,10 +184,10 @@ class GeoDataController extends ChangeNotifier {
       }
       final length = await temp.length();
       if (length <= 0) {
-        throw const FormatException('Выбран пустой GeoData-файл');
+        throw FormatException('Выбран пустой GeoData-файл'.tr);
       }
       if (length > 256 * 1024 * 1024) {
-        throw const FormatException('GeoData-файл больше 256 МБ');
+        throw FormatException('GeoData-файл больше 256 МБ'.tr);
       }
 
       if (await backup.exists()) await backup.delete();
@@ -224,7 +225,7 @@ class GeoDataController extends ChangeNotifier {
     _updating = true;
     _progress = 0;
     _error = null;
-    _message = silent ? null : 'Проверяем GeoData…';
+    _message = silent ? null : 'Проверяем GeoData…'.tr;
     notifyListeners();
 
     final client = HttpClient()
@@ -245,7 +246,7 @@ class GeoDataController extends ChangeNotifier {
         _lastCheckedKey,
         _lastCheckedAt!.toIso8601String(),
       );
-      _message = 'GeoData обновлена. Новые данные применятся при следующем подключении.';
+      _message = 'GeoData обновлена. Новые данные применятся при следующем подключении.'.tr;
       _progress = 1;
       await refreshStatus();
     } on Object catch (error) {
@@ -374,14 +375,14 @@ class GeoDataController extends ChangeNotifier {
       throw HttpException('HTTP ${response.statusCode}', uri: uri);
     }
     if (response.contentLength > maxBytes) {
-      throw const FormatException('Ответ сервера GeoData слишком большой');
+      throw FormatException('Ответ сервера GeoData слишком большой'.tr);
     }
 
     final bytes = <int>[];
     await for (final chunk in response.timeout(_networkTimeout)) {
       bytes.addAll(chunk);
       if (bytes.length > maxBytes) {
-        throw const FormatException('Ответ сервера GeoData слишком большой');
+        throw FormatException('Ответ сервера GeoData слишком большой'.tr);
       }
     }
     return utf8.decode(bytes);
@@ -390,7 +391,7 @@ class GeoDataController extends ChangeNotifier {
   String _parseSha256(String value) {
     final token = value.trim().split(RegExp(r'\s+')).first.toLowerCase();
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(token)) {
-      throw const FormatException('Некорректная контрольная сумма GeoData');
+      throw FormatException('Некорректная контрольная сумма GeoData'.tr);
     }
     return token;
   }
@@ -398,7 +399,7 @@ class GeoDataController extends ChangeNotifier {
   String _friendlyError(Object error) {
     final text = error.toString();
     if (text.contains('SocketException') || text.contains('HttpException')) {
-      return 'Не удалось скачать GeoData. Проверь интернет и попробуй снова.';
+      return 'Не удалось скачать GeoData. Проверь интернет и попробуй снова.'.tr;
     }
     return text.replaceFirst('Bad state: ', '').replaceFirst('FormatException: ', '');
   }

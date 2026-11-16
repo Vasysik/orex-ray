@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'xray_json_codec.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class SubscriptionMetadataResult {
   const SubscriptionMetadataResult({
@@ -63,7 +64,7 @@ class SubscriptionSource {
         userAgent: userAgent,
       ).timeout(const Duration(seconds: 30));
     } on TimeoutException {
-      throw const FormatException('Таймаут загрузки подписки');
+      throw FormatException('Таймаут загрузки подписки'.tr);
     } on SocketException catch (error) {
       throw FormatException('Не удалось загрузить подписку: ${error.message}');
     } finally {
@@ -87,7 +88,7 @@ class SubscriptionSource {
         userAgent: userAgent,
       ).timeout(const Duration(seconds: 12));
     } on TimeoutException {
-      throw const FormatException('Таймаут проверки подписки');
+      throw FormatException('Таймаут проверки подписки'.tr);
     } on SocketException catch (error) {
       throw FormatException('Не удалось проверить подписку: ${error.message}');
     } finally {
@@ -105,16 +106,16 @@ class SubscriptionSource {
   Uri _parseUrl(String value) {
     final raw = value.trim();
     if (raw.isEmpty) {
-      throw const FormatException('Укажи URL подписки');
+      throw FormatException('Укажи URL подписки'.tr);
     }
     if (raw.length > 8192) {
-      throw const FormatException('URL подписки слишком длинный');
+      throw FormatException('URL подписки слишком длинный'.tr);
     }
     final uri = Uri.tryParse(raw);
     if (uri == null ||
         !uri.hasAuthority ||
         (uri.scheme != 'http' && uri.scheme != 'https')) {
-      throw const FormatException('Нужен HTTP/HTTPS URL подписки');
+      throw FormatException('Нужен HTTP/HTTPS URL подписки'.tr);
     }
     return uri;
   }
@@ -130,14 +131,14 @@ class SubscriptionSource {
     _validateResponse(response);
     final declaredLength = response.contentLength;
     if (declaredLength > XrayJsonCodec.maxPayloadBytes) {
-      throw const FormatException('Подписка больше 5 МБ');
+      throw FormatException('Подписка больше 5 МБ'.tr);
     }
 
     final metadata = _metadataFromHeaders(response);
     final bytes = <int>[];
     await for (final chunk in response.timeout(const Duration(seconds: 20))) {
       if (bytes.length + chunk.length > XrayJsonCodec.maxPayloadBytes) {
-        throw const FormatException('Подписка больше 5 МБ');
+        throw FormatException('Подписка больше 5 МБ'.tr);
       }
       bytes.addAll(chunk);
     }
@@ -146,7 +147,7 @@ class SubscriptionSource {
     try {
       body = utf8.decode(bytes);
     } on FormatException {
-      throw const FormatException('Подписка не является UTF-8 текстом');
+      throw FormatException('Подписка не является UTF-8 текстом'.tr);
     }
 
     return SubscriptionFetchResult(
@@ -192,11 +193,11 @@ class SubscriptionSource {
 
   void _validateResponse(HttpClientResponse response) {
     if (_headerIsTrue(response, 'x-hwid-max-devices-reached')) {
-      throw const FormatException('Лимит устройств этой подписки исчерпан');
+      throw FormatException('Лимит устройств этой подписки исчерпан'.tr);
     }
     if (_headerIsTrue(response, 'x-hwid-not-supported')) {
-      throw const FormatException(
-        'Подписка требует HWID устройства; такой режим пока не поддерживается',
+      throw FormatException(
+        'Подписка требует HWID устройства; такой режим пока не поддерживается'.tr,
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {

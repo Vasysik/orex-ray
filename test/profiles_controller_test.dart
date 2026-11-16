@@ -36,14 +36,14 @@ void main() {
 
     const uuid = '11111111-1111-4111-8111-111111111111';
     final manualProfiles = [
-      const TunnelProfile(
+      TunnelProfile(
         id: 'manual-vless',
         name: 'VLESS',
         address: 'vless.example',
         port: 443,
         userId: uuid,
       ),
-      const TunnelProfile(
+      TunnelProfile(
         id: 'manual-vmess',
         name: 'VMess',
         address: 'vmess.example',
@@ -51,7 +51,7 @@ void main() {
         userId: uuid,
         outboundProtocol: OutboundProtocol.vmess,
       ),
-      const TunnelProfile(
+      TunnelProfile(
         id: 'manual-trojan',
         name: 'Trojan',
         address: 'trojan.example',
@@ -61,7 +61,7 @@ void main() {
         password: 'secret',
         security: 'tls',
       ),
-      const TunnelProfile(
+      TunnelProfile(
         id: 'manual-ss',
         name: 'Shadowsocks',
         address: 'ss.example',
@@ -71,7 +71,7 @@ void main() {
         encryption: 'aes-256-gcm',
         password: 'secret',
       ),
-      const TunnelProfile(
+      TunnelProfile(
         id: 'manual-socks',
         name: 'SOCKS5',
         address: 'socks.example',
@@ -80,7 +80,7 @@ void main() {
         outboundProtocol: OutboundProtocol.socks,
         password: 'secret',
       ),
-      const TunnelProfile(
+      TunnelProfile(
         id: 'manual-http',
         name: 'HTTP',
         address: 'http.example',

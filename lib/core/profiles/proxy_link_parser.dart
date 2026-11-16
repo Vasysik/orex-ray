@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../tunnel/tunnel_models.dart';
 import 'vless_link_parser.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// Imports the URI formats that can be represented by the Xray configuration
 /// builder. VLESS remains parsed by [VlessLinkParser] so its canonical ID and
@@ -19,11 +20,11 @@ class ProxyLinkParser {
 
   TunnelProfile parse(String input) {
     if (input.length > _maxLinkLength) {
-      throw const VlessLinkFormatException('Ссылка больше 64 КБ');
+      throw VlessLinkFormatException('Ссылка больше 64 КБ'.tr);
     }
     final raw = input.trim();
     if (raw.isEmpty) {
-      throw const VlessLinkFormatException('Вставьте ссылку профиля');
+      throw VlessLinkFormatException('Вставьте ссылку профиля'.tr);
     }
 
     final separator = raw.indexOf('://');
@@ -37,9 +38,8 @@ class ProxyLinkParser {
       'socks' || 'socks5' => _parseSocks(raw),
       'http' => _parseHttp(raw, tls: false),
       'https' => _parseHttp(raw, tls: true),
-      _ => throw const VlessLinkFormatException(
-          'Поддерживаются vless://, vmess://, trojan://, ss://, '
-          'socks5:// и http(s)://',
+      _ => throw VlessLinkFormatException(
+          'Поддерживаются vless://, vmess://, trojan://, ss://, socks5:// и http(s)://'.tr,
         ),
     };
   }
@@ -48,7 +48,7 @@ class ProxyLinkParser {
     final uri = _uri(raw, 'trojan');
     final password = _decode(uri.userInfo).trim();
     if (password.isEmpty) {
-      throw const VlessLinkFormatException('В ссылке Trojan нет пароля');
+      throw VlessLinkFormatException('В ссылке Trojan нет пароля'.tr);
     }
     final stream = _stream(uri, defaultSecurity: 'tls');
     return _profile(
@@ -121,33 +121,33 @@ class ProxyLinkParser {
   TunnelProfile _parseVmess(String raw) {
     final payload = _withoutQueryAndFragment(raw.substring('vmess://'.length));
     if (payload.isEmpty) {
-      throw const VlessLinkFormatException('В ссылке VMess нет данных');
+      throw VlessLinkFormatException('В ссылке VMess нет данных'.tr);
     }
     final decoded = _base64Text(payload, 'VMess');
     Object? decodedJson;
     try {
       decodedJson = jsonDecode(decoded);
     } on FormatException {
-      throw const VlessLinkFormatException(
-          'VMess-ссылка содержит неверный JSON');
+      throw VlessLinkFormatException(
+          'VMess-ссылка содержит неверный JSON'.tr);
     }
     if (decodedJson is! Map) {
-      throw const VlessLinkFormatException(
-          'VMess-ссылка содержит неверный JSON');
+      throw VlessLinkFormatException(
+          'VMess-ссылка содержит неверный JSON'.tr);
     }
     final value = Map<String, Object?>.from(decodedJson);
     final address = _value(value, 'add').trim();
     final userId = _value(value, 'id').trim();
     if (address.isEmpty || userId.isEmpty) {
-      throw const VlessLinkFormatException(
-          'В ссылке VMess нет адреса или UUID');
+      throw VlessLinkFormatException(
+          'В ссылке VMess нет адреса или UUID'.tr);
     }
     final port = _intValue(value, 'port', fallback: 443);
     _validatePort(port);
     final alterId = _value(value, 'aid', alternate: 'alterId').trim();
     if (alterId.isNotEmpty && alterId != '0') {
-      throw const VlessLinkFormatException(
-        'VMess с alterId больше 0 не поддерживается текущим Xray',
+      throw VlessLinkFormatException(
+        'VMess с alterId больше 0 не поддерживается текущим Xray'.tr,
       );
     }
 
@@ -158,8 +158,8 @@ class ProxyLinkParser {
         headerType.isNotEmpty &&
         headerType != 'none' &&
         headerType != 'tcp') {
-      throw const VlessLinkFormatException(
-        'VMess с TCP-заголовком поддержать нельзя без изменения профиля',
+      throw VlessLinkFormatException(
+        'VMess с TCP-заголовком поддержать нельзя без изменения профиля'.tr,
       );
     }
     final security = _normalizeSecurity(
@@ -167,8 +167,8 @@ class ProxyLinkParser {
     );
     final realityPassword = _value(value, 'pbk', alternate: 'publicKey');
     if (security == 'reality' && realityPassword.trim().isEmpty) {
-      throw const VlessLinkFormatException(
-          'Для VMess REALITY нужен параметр pbk');
+      throw VlessLinkFormatException(
+          'Для VMess REALITY нужен параметр pbk'.tr);
     }
 
     final vmessSecurity =
@@ -204,7 +204,7 @@ class ProxyLinkParser {
     final body = raw.substring('ss://'.length);
     final payload = _withoutQueryAndFragment(body);
     if (payload.isEmpty) {
-      throw const VlessLinkFormatException('В ссылке Shadowsocks нет данных');
+      throw VlessLinkFormatException('В ссылке Shadowsocks нет данных'.tr);
     }
 
     Uri uri;
@@ -218,8 +218,8 @@ class ProxyLinkParser {
     }
     final plugin = uri.queryParameters['plugin']?.trim();
     if (plugin != null && plugin.isNotEmpty) {
-      throw const VlessLinkFormatException(
-        'Shadowsocks plugin не поддерживается в текущей сборке Xray',
+      throw VlessLinkFormatException(
+        'Shadowsocks plugin не поддерживается в текущей сборке Xray'.tr,
       );
     }
 
@@ -229,8 +229,8 @@ class ProxyLinkParser {
     }
     final separator = credentials.indexOf(':');
     if (separator < 1 || separator == credentials.length - 1) {
-      throw const VlessLinkFormatException(
-        'В ссылке Shadowsocks нет метода или пароля',
+      throw VlessLinkFormatException(
+        'В ссылке Shadowsocks нет метода или пароля'.tr,
       );
     }
     return _profile(
@@ -268,11 +268,11 @@ class ProxyLinkParser {
     List<String> alpn = const [],
     bool allowInsecure = false,
   }) {
-    _require(address, _maxAddressLength, 'Адрес сервера');
-    _require(name, _maxNameLength, 'Имя профиля');
-    _require(userId, _maxFieldLength, 'Идентификатор');
-    _require(password, _maxFieldLength, 'Пароль');
-    _require(encryption, _maxFieldLength, 'Шифрование');
+    _require(address, _maxAddressLength, 'Адрес сервера'.tr);
+    _require(name, _maxNameLength, 'Имя профиля'.tr);
+    _require(userId, _maxFieldLength, 'Идентификатор'.tr);
+    _require(password, _maxFieldLength, 'Пароль'.tr);
+    _require(encryption, _maxFieldLength, 'Шифрование'.tr);
     _require(vmessSecurity, _maxFieldLength, 'VMess security');
     _require(security, _maxFieldLength, 'Security');
     _require(transport, _maxFieldLength, 'Transport');
@@ -287,7 +287,7 @@ class ProxyLinkParser {
     _require(grpcMode, _maxFieldLength, 'gRPC mode');
     if (alpn.length > _maxAlpnItems ||
         alpn.any((item) => item.length > _maxFieldLength)) {
-      throw const VlessLinkFormatException('Некорректный список ALPN');
+      throw VlessLinkFormatException('Некорректный список ALPN'.tr);
     }
     _validatePort(port);
 
@@ -346,10 +346,10 @@ class ProxyLinkParser {
         (expectedScheme != null &&
             uri.scheme.toLowerCase() != expectedScheme) ||
         uri.host.trim().isEmpty) {
-      throw const VlessLinkFormatException(
-          'В ссылке нет корректного адреса сервера');
+      throw VlessLinkFormatException(
+          'В ссылке нет корректного адреса сервера'.tr);
     }
-    _require(uri.host, _maxAddressLength, 'Адрес сервера');
+    _require(uri.host, _maxAddressLength, 'Адрес сервера'.tr);
     return uri;
   }
 
@@ -396,7 +396,7 @@ class ProxyLinkParser {
     final transport = _normalizeTransport(query['type'] ?? 'tcp');
     final realityPassword = query['pbk'] ?? query['password'] ?? '';
     if (security == 'reality' && realityPassword.trim().isEmpty) {
-      throw const VlessLinkFormatException('Для REALITY нужен параметр pbk');
+      throw VlessLinkFormatException('Для REALITY нужен параметр pbk'.tr);
     }
     return (
       security: security,
@@ -422,13 +422,13 @@ class ProxyLinkParser {
       _validatePort(port);
       return port;
     } on FormatException {
-      throw const VlessLinkFormatException('Некорректный порт профиля');
+      throw VlessLinkFormatException('Некорректный порт профиля'.tr);
     }
   }
 
   String _name(Uri uri) {
     final name = _decode(uri.fragment).trim();
-    _require(name, _maxNameLength, 'Имя профиля');
+    _require(name, _maxNameLength, 'Имя профиля'.tr);
     return name.isEmpty ? uri.host : name;
   }
 
@@ -460,14 +460,14 @@ class ProxyLinkParser {
   }
 
   List<String> _splitCsv(String? value) {
-    if (value == null || value.trim().isEmpty) return const [];
+    if (value == null || value.trim().isEmpty) return [];
     final items = value
         .split(',')
         .map((item) => item.trim())
         .where((item) => item.isNotEmpty)
         .toList(growable: false);
     if (items.length > _maxAlpnItems) {
-      throw const VlessLinkFormatException('Слишком много значений ALPN');
+      throw VlessLinkFormatException('Слишком много значений ALPN'.tr);
     }
     return items;
   }
@@ -512,8 +512,8 @@ class ProxyLinkParser {
     try {
       return Uri.decodeComponent(value);
     } on FormatException {
-      throw const VlessLinkFormatException(
-          'Ссылка содержит неверное кодирование');
+      throw VlessLinkFormatException(
+          'Ссылка содержит неверное кодирование'.tr);
     }
   }
 
@@ -549,7 +549,7 @@ class ProxyLinkParser {
 
   void _validatePort(int port) {
     if (port < 1 || port > 65535) {
-      throw const VlessLinkFormatException('Порт должен быть от 1 до 65535');
+      throw VlessLinkFormatException('Порт должен быть от 1 до 65535'.tr);
     }
   }
 }

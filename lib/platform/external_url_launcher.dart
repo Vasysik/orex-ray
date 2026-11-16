@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import '../shared/l10n/orex_l10n.dart';
 
 class ExternalUrlLauncher {
   const ExternalUrlLauncher._();
@@ -13,7 +14,7 @@ class ExternalUrlLauncher {
     if (uri == null ||
         !uri.hasAuthority ||
         (uri.scheme != 'http' && uri.scheme != 'https')) {
-      throw const FormatException('Некорректная внешняя ссылка');
+      throw FormatException('Некорректная внешняя ссылка'.tr);
     }
 
     if (Platform.isAndroid) {
@@ -31,6 +32,6 @@ class ExternalUrlLauncher {
       );
       return;
     }
-    throw const FormatException('Открытие ссылок на этой платформе не поддерживается');
+    throw FormatException('Открытие ссылок на этой платформе не поддерживается'.tr);
   }
 }

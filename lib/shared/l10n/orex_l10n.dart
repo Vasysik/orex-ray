@@ -29,9 +29,10 @@ class OrexL10n extends ChangeNotifier {
   /// Null before [load] completes; the launch splash must tolerate that.
   static OrexL10n? get instanceOrNull => _instance;
 
-  /// Loaded once by the bootstrap before the first frame.
-  static OrexL10n get instance =>
-      _instance ?? (throw StateError('OrexL10n.load() has not completed'));
+  /// Loaded once by the bootstrap before the first frame. Tests never call
+  /// [load]; they transparently get a Russian default so localized widgets
+  /// keep their source-language assertions.
+  static OrexL10n get instance => _instance ??= OrexL10n._('ru');
 
   String _language;
   String get language => _language;

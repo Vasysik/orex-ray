@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 enum AppRoutingMode {
   all,
@@ -17,15 +18,15 @@ enum AppRoutingMode {
       };
 
   String get title => switch (this) {
-        AppRoutingMode.all => 'Все приложения',
-        AppRoutingMode.excludeSelected => 'Кроме выбранных',
-        AppRoutingMode.onlySelected => 'Только выбранные',
+        AppRoutingMode.all => 'Все приложения'.tr,
+        AppRoutingMode.excludeSelected => 'Кроме выбранных'.tr,
+        AppRoutingMode.onlySelected => 'Только выбранные'.tr,
       };
 
   String get description => switch (this) {
-        AppRoutingMode.all => 'Весь трафик приложений проходит через VPN',
-        AppRoutingMode.excludeSelected => 'Выбранные приложения обходят VPN',
-        AppRoutingMode.onlySelected => 'Только выбранные приложения используют VPN',
+        AppRoutingMode.all => 'Весь трафик приложений проходит через VPN'.tr,
+        AppRoutingMode.excludeSelected => 'Выбранные приложения обходят VPN'.tr,
+        AppRoutingMode.onlySelected => 'Только выбранные приложения используют VPN'.tr,
       };
 
   static AppRoutingMode fromStorageValue(String? value) => switch (value) {

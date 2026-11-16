@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'orex_palette.dart';
 import 'orex_builtin_presets.dart';
 import 'simple_theme_profile.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// Saved theme definitions are lightweight (name, colors, private mascot
 /// path). Exported JSON embeds the actual mascot bytes and is self-contained.
@@ -65,7 +66,7 @@ class ThemeController extends ChangeNotifier {
   void startEditing(String id) {
     final target = _themes.where((t) => t.id == id && !t.builtin).firstOrNull;
     if (target == null || id != _selectedId) {
-      throw const FormatException('Выберите свою тему для редактирования');
+      throw FormatException('Выберите свою тему для редактирования'.tr);
     }
     if (_draft?.id == id) return;
     _draft = target;
@@ -189,7 +190,7 @@ class ThemeController extends ChangeNotifier {
         // Cached old Noir palettes were almost black. The built-in preset
         // is immutable, so upgrading it never alters custom user copies.
         profiles[i] = profile.copyWith(
-          name: 'Серая тема Орешка',
+          name: 'Серая тема Орешка'.tr,
           colors: {
             'accent': const Color(0xFFCB8552),
             'secondary': const Color(0xFFA46742),
@@ -235,7 +236,7 @@ class ThemeController extends ChangeNotifier {
 
   Future<SimpleThemeProfile> createTheme(String name) async {
     if (name.trim().isEmpty) {
-      throw const FormatException('Введите имя темы');
+      throw FormatException('Введите имя темы'.tr);
     }
     final source = selectedTheme;
     final theme = SimpleThemeProfile(
@@ -258,7 +259,7 @@ class ThemeController extends ChangeNotifier {
 
   Future<void> selectTheme(String? id) async {
     if (id != null && !_themes.any((item) => item.id == id)) {
-      throw const FormatException('Тема не найдена');
+      throw FormatException('Тема не найдена'.tr);
     }
     if (_selectedId == id) {
       return;
@@ -272,7 +273,7 @@ class ThemeController extends ChangeNotifier {
   /// is decoded only when this preset is first selected, never on startup.
   Future<void> selectBuiltin(String id) async {
     final preset = OrexBuiltinPreset.values.where((p) => p.id == id).firstOrNull;
-    if (preset == null) throw const FormatException('Встроенная тема не найдена');
+    if (preset == null) throw FormatException('Встроенная тема не найдена'.tr);
     // Always read the JSON on selection: users may have an older cached
     // built-in theme saved before this release updated its palette.
     final existingIndex = _themes.indexWhere(
@@ -280,13 +281,13 @@ class ThemeController extends ChangeNotifier {
     );
     final contents = await rootBundle.loadString(preset.assetPath);
     if (utf8.encode(contents).length > maxThemeJsonBytes) {
-      throw const FormatException('Встроенная тема слишком большая');
+      throw FormatException('Встроенная тема слишком большая'.tr);
     }
     final data = jsonDecode(contents);
     if (data is! Map || data['format'] != 'orexray-theme' ||
         data['version'] != 1 || data['name'] is! String ||
         (data['name'] as String).trim().isEmpty) {
-      throw const FormatException('Неверный формат встроенной темы');
+      throw FormatException('Неверный формат встроенной темы'.tr);
     }
     final colors = SimpleThemeProfile.parseColors(data['colors']);
     final (opacity, blur, glow) = SimpleThemeProfile.parseGlass(data['glass']);
@@ -297,16 +298,16 @@ class ThemeController extends ChangeNotifier {
     if (encoded != null) {
       if (encoded is! String || !encoded.startsWith('data:image/') ||
           !encoded.contains(';base64,')) {
-        throw const FormatException('Неверные данные маскота встроенной темы');
+        throw FormatException('Неверные данные маскота встроенной темы'.tr);
       }
       final parts = encoded.split(';base64,');
       if (parts.length != 2 || parts.last.length > maxMascotBytes * 4 ~/ 3 + 8) {
-        throw const FormatException('Неверные данные маскота');
+        throw FormatException('Неверные данные маскота'.tr);
       }
       mascotBytes = base64Decode(parts.last);
       final mime = _mimeType(mascotBytes);
       if (parts.first != 'data:$mime') {
-        throw const FormatException('Неверный тип маскота');
+        throw FormatException('Неверный тип маскота'.tr);
       }
     }
     final previousPath = existingIndex >= 0
@@ -341,10 +342,10 @@ class ThemeController extends ChangeNotifier {
 
   Future<void> renameTheme(String id, String name) async {
     if (_themes.any((t) => t.id == id && t.builtin)) {
-      throw const FormatException('Встроенную тему можно только копировать');
+      throw FormatException('Встроенную тему можно только копировать'.tr);
     }
     if (name.trim().isEmpty) {
-      throw const FormatException('Введите имя темы');
+      throw FormatException('Введите имя темы'.tr);
     }
     _updateTheme(id, (item) => item.copyWith(name: name.trim()));
     await _saveThemes();
@@ -352,7 +353,7 @@ class ThemeController extends ChangeNotifier {
 
   Future<void> deleteTheme(String id) async {
     if (_themes.any((t) => t.id == id && t.builtin)) {
-      throw const FormatException('Встроенную тему нельзя удалить');
+      throw FormatException('Встроенную тему нельзя удалить'.tr);
     }
     _themes.removeWhere((item) => item.id == id);
     if (_selectedId == id) {
@@ -367,10 +368,10 @@ class ThemeController extends ChangeNotifier {
   ) {
     final index = _themes.indexWhere((item) => item.id == id);
     if (index < 0) {
-      throw const FormatException('Сначала создайте тему');
+      throw FormatException('Сначала создайте тему'.tr);
     }
     if (_themes[index].builtin) {
-      throw const FormatException('Сначала создайте копию встроенной темы');
+      throw FormatException('Сначала создайте копию встроенной темы'.tr);
     }
     _themes[index] = update(_themes[index]);
   }
@@ -387,11 +388,11 @@ class ThemeController extends ChangeNotifier {
     required double glow,
   }) async {
     if (name.trim().isEmpty || name.trim().length > 80) {
-      throw const FormatException('Название темы должно содержать до 80 символов');
+      throw FormatException('Название темы должно содержать до 80 символов'.tr);
     }
     for (final role in colors.keys) {
       if (!OrexPalette.roles.containsKey(role)) {
-        throw const FormatException('Неизвестный цвет темы');
+        throw FormatException('Неизвестный цвет темы'.tr);
       }
     }
     SimpleThemeProfile.validateGlass(opacity, blur, glow);
@@ -409,7 +410,7 @@ class ThemeController extends ChangeNotifier {
 
   Future<String> exportBuiltinJson(String presetId) async {
     final preset = OrexBuiltinPreset.values.where((p) => p.id == presetId).firstOrNull;
-    if (preset == null) throw const FormatException('Встроенная тема не найдена');
+    if (preset == null) throw FormatException('Встроенная тема не найдена'.tr);
     return rootBundle.loadString(preset.assetPath);
   }
 
@@ -419,7 +420,7 @@ class ThemeController extends ChangeNotifier {
     }
     final current = selectedTheme;
     if (current == null) {
-      throw const FormatException('Сначала создайте тему');
+      throw FormatException('Сначала создайте тему'.tr);
     }
     _updateTheme(current.id, (item) => item.copyWith(
       colors: {...item.colors, role: color},
@@ -463,7 +464,7 @@ class ThemeController extends ChangeNotifier {
 
   static String _mimeType(Uint8List bytes) {
     if (bytes.length > maxMascotBytes || bytes.length < 4) {
-      throw const FormatException('Картинка должна быть до 6 МБ');
+      throw FormatException('Картинка должна быть до 6 МБ'.tr);
     }
     if (bytes.length >= 8 &&
         bytes[0] == 0x89 && bytes[1] == 0x50 &&
@@ -479,13 +480,13 @@ class ThemeController extends ChangeNotifier {
         ascii.decode(bytes.sublist(8, 12)) == 'WEBP') {
       return 'image/webp';
     }
-    throw const FormatException('Поддерживаются PNG, JPEG и WebP');
+    throw FormatException('Поддерживаются PNG, JPEG и WebP'.tr);
   }
 
   Future<void> setMascot(Uint8List bytes) async {
     final current = selectedTheme;
     if (current == null) {
-      throw const FormatException('Сначала создайте тему');
+      throw FormatException('Сначала создайте тему'.tr);
     }
     final path = await _storeMascot(bytes);
     _updateTheme(current.id, (item) => item.copyWith(mascotPath: path));
@@ -516,7 +517,7 @@ class ThemeController extends ChangeNotifier {
   Future<String> exportThemeJson(String id) async {
     final theme = _themes.where((item) => item.id == id).firstOrNull;
     if (theme == null) {
-      throw const FormatException('Тема не найдена');
+      throw FormatException('Тема не найдена'.tr);
     }
     String? mascot;
     if (theme.mascotPath.isNotEmpty) {
@@ -537,15 +538,15 @@ class ThemeController extends ChangeNotifier {
 
   Future<SimpleThemeProfile> importThemeJson(String text) async {
     if (utf8.encode(text).length > maxThemeJsonBytes) {
-      throw const FormatException('Файл темы слишком большой');
+      throw FormatException('Файл темы слишком большой'.tr);
     }
     final raw = jsonDecode(text);
     if (raw is! Map || raw['format'] != 'orexray-theme' || raw['version'] != 1) {
-      throw const FormatException('Это не JSON-тема OrexRay');
+      throw FormatException('Это не JSON-тема OrexRay'.tr);
     }
     final name = raw['name'];
     if (name is! String || name.trim().isEmpty || name.length > 80) {
-      throw const FormatException('Некорректное название темы');
+      throw FormatException('Некорректное название темы'.tr);
     }
     final colors = SimpleThemeProfile.parseColors(raw['colors']);
     final (opacity, blur, glow) = SimpleThemeProfile.parseGlass(raw['glass']);
@@ -555,16 +556,16 @@ class ThemeController extends ChangeNotifier {
       if (mascot is! String ||
           !mascot.startsWith('data:image/') ||
           !mascot.contains(';base64,')) {
-        throw const FormatException('Неверное изображение темы');
+        throw FormatException('Неверное изображение темы'.tr);
       }
       final parts = mascot.split(';base64,');
       if (parts.length != 2 || parts.last.length > (maxMascotBytes * 4 ~/ 3 + 8)) {
-        throw const FormatException('Слишком большое изображение');
+        throw FormatException('Слишком большое изображение'.tr);
       }
       final bytes = base64Decode(parts.last);
       final mime = _mimeType(bytes);
       if (parts.first != 'data:$mime') {
-        throw const FormatException('Тип изображения не совпадает с содержимым');
+        throw FormatException('Тип изображения не совпадает с содержимым'.tr);
       }
       path = await _storeMascot(bytes);
     }

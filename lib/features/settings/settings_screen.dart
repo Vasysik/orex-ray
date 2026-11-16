@@ -6,6 +6,7 @@ import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_palette.dart';
 import '../../shared/theme/theme_controller.dart';
 import '../home/tunnel_controller.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({
@@ -26,15 +27,15 @@ class SettingsScreen extends StatelessWidget {
       builder: (context, _) => ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Настройки', style: Theme.of(context).textTheme.headlineSmall),
+          Text('Настройки'.tr, style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 4),
           Text(
-            'Поведение, оформление и режим подключения',
+            'Поведение, оформление и режим подключения'.tr,
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 20),
           _Section(
-            title: 'Подключение',
+            title: 'Подключение'.tr,
             children: [
               RadioGroup<ConnectionMode>(
                 groupValue: tunnel.mode,
@@ -61,28 +62,28 @@ class SettingsScreen extends StatelessWidget {
               ),
               if (!tunnel.canChangeMode) ...[
                 const Divider(height: 1),
-                const ListTile(
+                ListTile(
                   leading: Icon(Icons.info_outline_rounded),
-                  title: Text('Режим заблокирован'),
-                  subtitle: Text('Сначала отключите OrexRay.'),
+                  title: Text('Режим заблокирован'.tr),
+                  subtitle: Text('Сначала отключите OrexRay.'.tr),
                 ),
               ],
             ],
           ),
           const SizedBox(height: 16),
            _Section(
-            title: 'Сеть',
+            title: 'Сеть'.tr,
             children: [
               ListTile(
                 leading: Icon(Icons.dns_outlined, color: OrexPalette.of(context).accent),
                 title: Text('DNS'),
-                subtitle: Text('Автоматически'),
+                subtitle: Text('Автоматически'.tr),
               ),
               Divider(height: 1),
               SwitchListTile(
                 secondary: Icon(Icons.power_rounded, color: OrexPalette.of(context).accent),
-                title: Text('Автоподключение'),
-                subtitle: Text('Будет добавлено после стабилизации движков'),
+                title: Text('Автоподключение'.tr),
+                subtitle: Text('Будет добавлено после стабилизации движков'.tr),
                 value: false,
                 onChanged: null,
               ),
@@ -90,7 +91,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Section(
-            title: 'О приложении',
+            title: 'О приложении'.tr,
             children: [
               ListTile(
                 leading: Icon(Icons.pets_rounded,

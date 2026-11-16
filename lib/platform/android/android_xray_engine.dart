@@ -8,6 +8,7 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import '../../core/xray/xray_config_builder.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class AndroidXrayEngine
     implements
@@ -76,7 +77,7 @@ class AndroidXrayEngine
     await waitForInitialState();
     if (_current.isBusy || _current.isConnected) return;
     if (!supportedModes.contains(mode)) {
-      _emitError('Этот режим не поддерживается на Android.', mode: mode);
+      _emitError('Этот режим не поддерживается на Android.'.tr, mode: mode);
       return;
     }
 
@@ -89,8 +90,8 @@ class AndroidXrayEngine
         profile: target,
         stats: const TrafficStats(),
         message: mode == ConnectionMode.vpnTun
-            ? 'Готовим Android VPN…'
-            : 'Запускаем локальный прокси…',
+            ? 'Готовим Android VPN…'.tr
+            : 'Запускаем локальный прокси…'.tr,
       ),
     );
     // Let Flutter present the connecting frame before synchronous config
@@ -306,7 +307,7 @@ class AndroidXrayEngine
     _emit(
       _current.copyWith(
         status: TunnelStatus.disconnecting,
-        message: 'Останавливаем OrexRay…',
+        message: 'Останавливаем OrexRay…'.tr,
         clearError: true,
       ),
     );

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class WindowsProxyState {
   const WindowsProxyState({
@@ -55,7 +56,7 @@ class WindowsSystemProxyController {
   Future<WindowsProxyState> read() async {
     final raw = await _channel.invokeMapMethod<String, dynamic>('getState');
     if (raw == null) {
-      throw StateError('Windows не вернул состояние системного прокси.');
+      throw StateError('Windows не вернул состояние системного прокси.'.tr);
     }
     return WindowsProxyState(
       enabled: raw['enabled'] as bool? ?? false,

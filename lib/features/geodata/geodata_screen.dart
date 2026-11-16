@@ -9,6 +9,7 @@ import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_edit_dialog.dart';
 import '../../shared/widgets/orex_notice.dart';
 import '../../shared/widgets/settings_section.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class GeoDataScreen extends StatelessWidget {
   const GeoDataScreen({
@@ -27,15 +28,15 @@ class GeoDataScreen extends StatelessWidget {
       builder: (context, _) => ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const SettingsPageHeader(
+          SettingsPageHeader(
             title: 'GeoData',
-            subtitle: 'GeoIP и GeoSite для настоящих правил маршрутизации Xray',
+            subtitle: 'GeoIP и GeoSite для настоящих правил маршрутизации Xray'.tr,
             icon: Icons.travel_explore_rounded,
           ),
           const SizedBox(height: 22),
           SettingsSection(
-            title: 'Состояние',
-            subtitle: 'Можно обновить официальную сборку или подставить свои .dat-файлы.',
+            title: 'Состояние'.tr,
+            subtitle: 'Можно обновить официальную сборку или подставить свои .dat-файлы.'.tr,
             children: [
               for (var index = 0; index < controller.assets.length; index++) ...[
                 _AssetTile(
@@ -52,7 +53,7 @@ class GeoDataScreen extends StatelessWidget {
               const Divider(height: 1),
               ListTile(
                 leading: Icon(Icons.folder_open_rounded, color: OrexPalette.of(context).accent),
-                title: const Text('Каталог данных'),
+                title: Text('Каталог данных'.tr),
                 subtitle: Text(
                   controller.directoryPath,
                   maxLines: 2,
@@ -63,14 +64,14 @@ class GeoDataScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SettingsSection(
-            title: 'Маршрутизация по GeoData',
-            subtitle: 'Правила применяются сверху вниз при следующем подключении.',
+            title: 'Маршрутизация по GeoData'.tr,
+            subtitle: 'Правила применяются сверху вниз при следующем подключении.'.tr,
             children: [
               SwitchListTile(
                 secondary: Icon(Icons.alt_route_rounded, color: OrexPalette.of(context).accent),
-                title: const Text('Использовать GeoData в маршрутах'),
-                subtitle: const Text(
-                  'Включает правила geoip:… и geosite:… в Xray-конфиг',
+                title: Text('Использовать GeoData в маршрутах'.tr),
+                subtitle: Text(
+                  'Включает правила geoip:… и geosite:… в Xray-конфиг'.tr,
                 ),
                 value: settings.geoRoutingEnabled,
                 onChanged: settings.setGeoRoutingEnabled,
@@ -78,13 +79,13 @@ class GeoDataScreen extends StatelessWidget {
               const Divider(height: 1),
               _RuleTile(
                 icon: Icons.block_rounded,
-                title: 'Блокировать',
+                title: 'Блокировать'.tr,
                 value: settings.geoBlockRulesText,
                 example: 'geosite:category-ads-all',
                 enabled: settings.geoRoutingEnabled,
                 onEdit: () => _editRules(
                   context,
-                  title: 'Блокировать',
+                  title: 'Блокировать'.tr,
                   current: settings.geoBlockRulesText,
                   hint: 'geosite:category-ads-all',
                   onSave: settings.setGeoBlockRules,
@@ -93,13 +94,13 @@ class GeoDataScreen extends StatelessWidget {
               const Divider(height: 1),
               _RuleTile(
                 icon: Icons.call_split_rounded,
-                title: 'Напрямую',
+                title: 'Напрямую'.tr,
                 value: settings.geoDirectRulesText,
                 example: 'geoip:private, geosite:ru',
                 enabled: settings.geoRoutingEnabled,
                 onEdit: () => _editRules(
                   context,
-                  title: 'Напрямую',
+                  title: 'Напрямую'.tr,
                   current: settings.geoDirectRulesText,
                   hint: 'geoip:private, geosite:ru',
                   onSave: settings.setGeoDirectRules,
@@ -108,13 +109,13 @@ class GeoDataScreen extends StatelessWidget {
               const Divider(height: 1),
               _RuleTile(
                 icon: Icons.shield_rounded,
-                title: 'Через прокси',
+                title: 'Через прокси'.tr,
                 value: settings.geoProxyRulesText,
                 example: 'geosite:google, geoip:telegram',
                 enabled: settings.geoRoutingEnabled,
                 onEdit: () => _editRules(
                   context,
-                  title: 'Через прокси',
+                  title: 'Через прокси'.tr,
                   current: settings.geoProxyRulesText,
                   hint: 'geosite:google, geoip:telegram',
                   onSave: settings.setGeoProxyRules,
@@ -124,15 +125,15 @@ class GeoDataScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SettingsSection(
-            title: 'Обновления',
-            subtitle: 'Скачанные файлы проверяются по SHA-256 перед заменой.',
+            title: 'Обновления'.tr,
+            subtitle: 'Скачанные файлы проверяются по SHA-256 перед заменой.'.tr,
             children: [
               SwitchListTile(
                 secondary: Icon(Icons.sync_rounded, color: OrexPalette.of(context).accent),
-                title: const Text('Автоматически проверять обновления'),
+                title: Text('Автоматически проверять обновления'.tr),
                 subtitle: Text(
                   controller.lastCheckedAt == null
-                      ? 'Ещё не проверялось'
+                      ? 'Ещё не проверялось'.tr
                       : 'Последняя проверка: ${_formatDate(controller.lastCheckedAt!)}',
                 ),
                 value: controller.autoUpdate,
@@ -141,15 +142,15 @@ class GeoDataScreen extends StatelessWidget {
               const Divider(height: 1),
               ListTile(
                 leading: Icon(Icons.schedule_rounded, color: OrexPalette.of(context).accent),
-                title: const Text('Интервал проверки'),
+                title: Text('Интервал проверки'.tr),
                 trailing: DropdownButton<int>(
                   value: controller.updateIntervalHours,
                   underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(value: 12, child: Text('12 часов')),
-                    DropdownMenuItem(value: 24, child: Text('1 день')),
-                    DropdownMenuItem(value: 72, child: Text('3 дня')),
-                    DropdownMenuItem(value: 168, child: Text('7 дней')),
+                  items: [
+                    DropdownMenuItem(value: 12, child: Text('12 часов'.tr)),
+                    DropdownMenuItem(value: 24, child: Text('1 день'.tr)),
+                    DropdownMenuItem(value: 72, child: Text('3 дня'.tr)),
+                    DropdownMenuItem(value: 168, child: Text('7 дней'.tr)),
                   ],
                   onChanged: controller.autoUpdate
                       ? (value) {
@@ -194,11 +195,11 @@ class GeoDataScreen extends StatelessWidget {
           FilledButton.icon(
             onPressed: controller.updating ? null : controller.updateNow,
             icon: const Icon(Icons.download_for_offline_rounded),
-            label: Text(controller.updating ? 'Работаем с GeoData…' : 'Обновить GeoData сейчас'),
+            label: Text(controller.updating ? 'Работаем с GeoData…'.tr : 'Обновить GeoData сейчас'.tr),
           ),
           const SizedBox(height: 8),
           Text(
-            'Xray перечитывает GeoData при следующем старте соединения.',
+            'Xray перечитывает GeoData при следующем старте соединения.'.tr,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -245,7 +246,7 @@ class _AssetTile extends StatelessWidget {
       subtitle: Text(
         asset.installed
             ? '${_formatBytes(asset.sizeBytes)} · ${_formatDate(asset.modifiedAt!)}'
-            : 'Не установлен',
+            : 'Не установлен'.tr,
       ),
       trailing: IconButton(
         tooltip: 'Импортировать свой ${asset.fileName}',
@@ -304,7 +305,7 @@ Future<void> _editRules(
     minLines: 3,
     maxLines: 8,
     hintText: hint,
-    helperText: 'Разделяй правила запятыми, пробелами или переносами строк',
+    helperText: 'Разделяй правила запятыми, пробелами или переносами строк'.tr,
     onSave: onSave,
   );
 }

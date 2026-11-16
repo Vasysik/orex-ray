@@ -111,7 +111,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
       builder: (dialog) => AlertDialog(
         title: Text('Удалить тему?'.tr),
         content: Text(
-          'Тема «{}» будет удалена. Встроенные темы останутся.'
+          'Тема «{}» будет удалена. Встроенные темы останутся.'.tr
               .trf([entry.name]),
         ),
         actions: [
@@ -266,14 +266,14 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
           AnimatedBuilder(
             animation: OrexL10n.instance,
             builder: (context, _) {
-              const languageNames = <String, String>{
-                'system': 'Как в системе',
-                'ru': 'Русский',
+              final languageNames = <String, String>{
+                'system': 'Как в системе'.tr,
+                'ru': 'Русский'.tr,
                 'en': 'English',
               };
               return ListTile(
                 key: const ValueKey('appearance-language'),
-                leading: const Icon(Icons.translate_rounded),
+                leading: Icon(Icons.translate_rounded),
                 title: Text('Язык'.tr),
                 subtitle: Text(
                   'Применяется ко всему приложению'.tr,

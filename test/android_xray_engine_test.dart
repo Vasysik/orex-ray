@@ -26,7 +26,7 @@ void main() {
 
   test('restores a connected Android route by exact target id', () async {
     final target = TunnelTarget.single(
-      const TunnelProfile(
+      TunnelProfile(
         id: 'native-active-target',
         name: 'Native active',
         address: 'active.example',
@@ -147,7 +147,7 @@ void main() {
       () async {
     final calls = <MethodCall>[];
     final target = TunnelTarget.single(
-      const TunnelProfile(
+      TunnelProfile(
         id: 'native-active-target',
         name: 'Native active',
         address: 'active.example',
@@ -204,7 +204,7 @@ void main() {
 
   test('hydrates native timeout state for the active route', () async {
     final target = TunnelTarget.single(
-      const TunnelProfile(
+      TunnelProfile(
         id: 'native-timeout-target',
         name: 'Native timeout',
         address: 'timeout.example',
@@ -242,7 +242,7 @@ void main() {
   test('does not seed a new route with saved direct TCP latency', () async {
     final calls = <MethodCall>[];
     final target = TunnelTarget.single(
-      const TunnelProfile(
+      TunnelProfile(
         id: 'new-active-target',
         name: 'New active',
         address: 'active.example',

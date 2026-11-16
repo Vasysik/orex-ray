@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../tunnel/tunnel_models.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 enum DnsPreset {
   system,
@@ -15,21 +16,21 @@ enum DnsPreset {
   String get storageValue => name;
 
   String get title => switch (this) {
-        DnsPreset.system => 'Системный DNS',
-        DnsPreset.automatic => 'DNS через VPN',
+        DnsPreset.system => 'Системный DNS'.tr,
+        DnsPreset.automatic => 'DNS через VPN'.tr,
         DnsPreset.cloudflare => 'Cloudflare',
         DnsPreset.google => 'Google',
-        DnsPreset.custom => 'Свой DNS',
+        DnsPreset.custom => 'Свой DNS'.tr,
       };
 
   String get description => switch (this) {
         DnsPreset.system =>
-          'Не задавать DNS в VPN и использовать DNS текущей сети',
+          'Не задавать DNS в VPN и использовать DNS текущей сети'.tr,
         DnsPreset.automatic =>
-          'DNS приложений: 1.1.1.1 и 8.8.8.8 через туннель',
-        DnsPreset.cloudflare => '1.1.1.1 и 1.0.0.1',
-        DnsPreset.google => '8.8.8.8 и 8.8.4.4',
-        DnsPreset.custom => 'Адреса, заданные вручную',
+          'DNS приложений: 1.1.1.1 и 8.8.8.8 через туннель'.tr,
+        DnsPreset.cloudflare => '1.1.1.1 и 1.0.0.1'.tr,
+        DnsPreset.google => '8.8.8.8 и 8.8.4.4'.tr,
+        DnsPreset.custom => 'Адреса, заданные вручную'.tr,
       };
 
   static DnsPreset fromStorageValue(String? value) => switch (value) {
@@ -55,13 +56,13 @@ enum LatencyProbePreset {
   String get title => switch (this) {
         LatencyProbePreset.cloudflare => 'Cloudflare',
         LatencyProbePreset.google => 'Google',
-        LatencyProbePreset.custom => 'Свой URL',
+        LatencyProbePreset.custom => 'Свой URL'.tr,
       };
 
   String get description => switch (this) {
         LatencyProbePreset.cloudflare => cloudflareUrl,
         LatencyProbePreset.google => googleUrl,
-        LatencyProbePreset.custom => 'Публичный HTTP(S) адрес',
+        LatencyProbePreset.custom => 'Публичный HTTP(S) адрес'.tr,
       };
 
   static LatencyProbePreset fromStorageValue(String? value) => switch (value) {
@@ -347,11 +348,11 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setSocksPort(int value) async {
     final port = _validPort(value);
     if (port == null) {
-      throw const FormatException('Порт должен быть от 1 до 65535');
+      throw FormatException('Порт должен быть от 1 до 65535'.tr);
     }
     if (port == _httpPort) {
-      throw const FormatException(
-          'SOCKS и HTTP должны использовать разные порты');
+      throw FormatException(
+          'SOCKS и HTTP должны использовать разные порты'.tr);
     }
     if (_socksPort == port) return;
     _socksPort = port;
@@ -362,11 +363,11 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setHttpPort(int value) async {
     final port = _validPort(value);
     if (port == null) {
-      throw const FormatException('Порт должен быть от 1 до 65535');
+      throw FormatException('Порт должен быть от 1 до 65535'.tr);
     }
     if (port == _socksPort) {
-      throw const FormatException(
-          'SOCKS и HTTP должны использовать разные порты');
+      throw FormatException(
+          'SOCKS и HTTP должны использовать разные порты'.tr);
     }
     if (_httpPort == port) return;
     _httpPort = port;
@@ -377,7 +378,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setMtu(int value) async {
     final mtu = _validMtu(value);
     if (mtu == null) {
-      throw const FormatException('MTU должен быть от 1280 до 9000');
+      throw FormatException('MTU должен быть от 1280 до 9000'.tr);
     }
     if (_mtu == mtu) return;
     _mtu = mtu;
@@ -432,7 +433,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     final normalized = value.trim();
     final parsed = _parseDnsList(normalized);
     if (normalized.isNotEmpty && parsed.isEmpty) {
-      throw const FormatException('Укажи хотя бы один корректный DNS-адрес');
+      throw FormatException('Укажи хотя бы один корректный DNS-адрес'.tr);
     }
     if (_customDns == normalized) return;
     _customDns = normalized;
@@ -442,7 +443,7 @@ class ConnectionSettingsController extends ChangeNotifier {
 
   Future<void> setLatencyProbePreset(LatencyProbePreset value) async {
     if (value == LatencyProbePreset.custom && _customLatencyProbeUrl.isEmpty) {
-      throw const FormatException('Сначала укажи публичный HTTP(S) URL');
+      throw FormatException('Сначала укажи публичный HTTP(S) URL'.tr);
     }
     if (_latencyProbePreset == value) return;
     _latencyProbePreset = value;
@@ -455,8 +456,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setCustomLatencyProbeUrl(String value) async {
     final normalized = _normalizePublicProbeUrl(value);
     if (normalized == null) {
-      throw const FormatException(
-        'URL проверки должен быть публичным HTTP(S) адресом',
+      throw FormatException(
+        'URL проверки должен быть публичным HTTP(S) адресом'.tr,
       );
     }
     if (_customLatencyProbeUrl == normalized &&
@@ -475,10 +476,10 @@ class ConnectionSettingsController extends ChangeNotifier {
 
   static String? validateLatencyProbeUrl(String value) {
     final normalized = value.trim();
-    if (normalized.isEmpty) return 'Укажи URL проверки';
-    if (normalized.length > 8192) return 'URL проверки слишком длинный';
+    if (normalized.isEmpty) return 'Укажи URL проверки'.tr;
+    if (normalized.length > 8192) return 'URL проверки слишком длинный'.tr;
     if (!_isSafePublicHttpUri(Uri.tryParse(normalized))) {
-      return 'Нужен публичный HTTP(S) URL без учётных данных';
+      return 'Нужен публичный HTTP(S) URL без учётных данных'.tr;
     }
     return null;
   }
@@ -527,8 +528,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setStatsIntervalSeconds(int value) async {
     final normalized = _validStatsInterval(value);
     if (normalized == null) {
-      throw const FormatException(
-        'Интервал интерфейса должен быть 1, 2, 3, 5, 10, 15 или 30 секунд',
+      throw FormatException(
+        'Интервал интерфейса должен быть 1, 2, 3, 5, 10, 15 или 30 секунд'.tr,
       );
     }
     if (_statsIntervalSeconds == normalized) return;
@@ -540,8 +541,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setNotificationStatsIntervalSeconds(int value) async {
     final normalized = _validNotificationStatsInterval(value);
     if (normalized == null) {
-      throw const FormatException(
-        'Интервал уведомления должен быть 5, 10, 15, 30 или 60 секунд',
+      throw FormatException(
+        'Интервал уведомления должен быть 5, 10, 15, 30 или 60 секунд'.tr,
       );
     }
     if (_notificationStatsIntervalSeconds == normalized) return;
@@ -553,8 +554,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setPingIntervalSeconds(int value) async {
     final normalized = _validPingInterval(value);
     if (normalized == null) {
-      throw const FormatException(
-        'Интервал пинга должен быть 15, 30, 60, 120 или 300 секунд',
+      throw FormatException(
+        'Интервал пинга должен быть 15, 30, 60, 120 или 300 секунд'.tr,
       );
     }
     if (_pingIntervalSeconds == normalized) return;
@@ -566,8 +567,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setSubscriptionAutoUpdateHours(int value) async {
     final normalized = _validSubscriptionAutoUpdateHours(value);
     if (normalized == null) {
-      throw const FormatException(
-        'Автообновление подписок: 0, 1, 6, 12, 24 или 72 часа',
+      throw FormatException(
+        'Автообновление подписок: 0, 1, 6, 12, 24 или 72 часа'.tr,
       );
     }
     if (_subscriptionAutoUpdateHours == normalized) return;
@@ -579,8 +580,8 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setSubscriptionMetadataRefreshMinutes(int value) async {
     final normalized = _validSubscriptionMetadataRefreshMinutes(value);
     if (normalized == null) {
-      throw const FormatException(
-        'Метаданные подписок: 0, 10, 30, 60, 360 или 720 минут',
+      throw FormatException(
+        'Метаданные подписок: 0, 10, 30, 60, 360 или 720 минут'.tr,
       );
     }
     if (_subscriptionMetadataRefreshMinutes == normalized) return;

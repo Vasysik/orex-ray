@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../shared/theme/glass.dart';
 import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/responsive_motion.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({
@@ -38,12 +39,12 @@ class MoreScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Ещё', style: Theme.of(context).textTheme.headlineSmall),
+              Text('Ещё'.tr, style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 4),
               Text(
                 showApps
-                    ? 'Приложения, сеть, GeoData и поведение OrexRay'
-                    : 'Сеть, GeoData и поведение OrexRay',
+                    ? 'Приложения, сеть, GeoData и поведение OrexRay'.tr
+                    : 'Сеть, GeoData и поведение OrexRay'.tr,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -53,51 +54,51 @@ class MoreScreen extends StatelessWidget {
         if (showApps) ...[
           _MoreTile(
             icon: Icons.apps_rounded,
-            title: 'Приложения',
-            subtitle: 'Split tunneling и исключения Android',
+            title: 'Приложения'.tr,
+            subtitle: 'Split tunneling и исключения Android'.tr,
             onTap: onOpenApps,
           ),
           const SizedBox(height: 12),
         ],
         _MoreTile(
           icon: Icons.public_rounded,
-          title: 'Сеть',
-          subtitle: 'DNS, маршрутизация и логи',
+          title: 'Сеть'.tr,
+          subtitle: 'DNS, маршрутизация и логи'.tr,
           onTap: onOpenNetwork,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.travel_explore_rounded,
           title: 'GeoData',
-          subtitle: 'GeoIP, GeoSite и обновления',
+          subtitle: 'GeoIP, GeoSite и обновления'.tr,
           onTap: onOpenGeoData,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.battery_saver_rounded,
-          title: 'Фоновая работа',
-          subtitle: 'Уведомление, скорость и энергопотребление',
+          title: 'Фоновая работа'.tr,
+          subtitle: 'Уведомление, скорость и энергопотребление'.tr,
           onTap: onOpenBackground,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.palette_outlined,
-          title: 'Интерфейс',
-          subtitle: 'Тема и фирменный стиль Orex',
+          title: 'Интерфейс'.tr,
+          subtitle: 'Тема и фирменный стиль Orex'.tr,
           onTap: onOpenAppearance,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.monitor_heart_outlined,
-          title: 'Диагностика',
-          subtitle: 'Xray, watchdog, порты и безопасный отчёт',
+          title: 'Диагностика'.tr,
+          subtitle: 'Xray, watchdog, порты и безопасный отчёт'.tr,
           onTap: onOpenDiagnostics,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.info_outline_rounded,
-          title: 'О приложении',
-          subtitle: 'Версия, движок и диагностика',
+          title: 'О приложении'.tr,
+          subtitle: 'Версия, движок и диагностика'.tr,
           onTap: onOpenAbout,
         ),
       ],

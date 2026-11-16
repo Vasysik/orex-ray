@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/tunnel/tunnel_models.dart';
 import 'orex_palette.dart';
 import 'orex_theme.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 /// One presentation contract for the connection badge and the Windows tray.
 /// Ping here must be the *active route* status, not a stored direct server ping.
@@ -33,7 +34,7 @@ class ConnectionVisualStatus {
     if (snapshot.isConnected) {
       if (isRouteFailed(routePingStatus)) {
         return ConnectionVisualStatus._(
-          label: 'Нет ответа',
+          label: 'Нет ответа'.tr,
           color: danger,
           isProtected: false,
           trayStatus: routePingStatus == PingStatus.timeout
@@ -43,14 +44,14 @@ class ConnectionVisualStatus {
       }
       if (routePingStatus == PingStatus.success) {
         return ConnectionVisualStatus._(
-          label: 'Защищено',
+          label: 'Защищено'.tr,
           color: success,
           isProtected: true,
           trayStatus: 'connected',
         );
       }
       return ConnectionVisualStatus._(
-        label: 'Проверка',
+        label: 'Проверка'.tr,
         color: accent,
         isProtected: false,
         trayStatus: 'checking',
@@ -58,25 +59,25 @@ class ConnectionVisualStatus {
     }
     return switch (snapshot.status) {
       TunnelStatus.connecting => ConnectionVisualStatus._(
-          label: 'Подключение',
+          label: 'Подключение'.tr,
           color: accent,
           isProtected: false,
           trayStatus: 'connecting',
         ),
       TunnelStatus.disconnecting => ConnectionVisualStatus._(
-          label: 'Отключение',
+          label: 'Отключение'.tr,
           color: accent,
           isProtected: false,
           trayStatus: 'disconnecting',
         ),
       TunnelStatus.error => ConnectionVisualStatus._(
-          label: 'Ошибка',
+          label: 'Ошибка'.tr,
           color: danger,
           isProtected: false,
           trayStatus: 'error',
         ),
       _ => ConnectionVisualStatus._(
-          label: 'Не подключено',
+          label: 'Не подключено'.tr,
           color: accent,
           isProtected: false,
           trayStatus: 'disconnected',

@@ -5,7 +5,7 @@ import 'responsive_motion.dart';
 
 /// An action which stays in the header even when its caption is collapsed.
 class OrexHeaderAction {
-  const OrexHeaderAction({
+  OrexHeaderAction({
     required this.tooltip,
     required this.label,
     required this.icon,

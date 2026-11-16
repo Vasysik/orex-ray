@@ -3,6 +3,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import '../../core/update/orexray_updates.dart';
 import '../theme/orex_palette.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 Future<void> showOrexRayUpdateDialog(BuildContext context, OrexRayUpdates updates) {
   if (updates.available == null) return Future<void>.value();
@@ -64,7 +65,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         if (mounted) {
           setState(() {
             _permissionRequired = true;
-            _error = 'Разреши установку из OrexRay в настройках Android, вернись сюда и снова нажми «Установить».';
+            _error = 'Разреши установку из OrexRay в настройках Android, вернись сюда и снова нажми «Установить».'.tr;
           });
         }
         return;
@@ -99,7 +100,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     return PopScope(
       canPop: !_busy,
       child: AlertDialog(
-        title: Text(_busy ? 'Скачивание обновления' : 'Доступна новая версия'),
+        title: Text(_busy ? 'Скачивание обновления'.tr : 'Доступна новая версия'.tr),
         content: SizedBox(
           width: 480,
           child: Column(
@@ -112,12 +113,12 @@ class _UpdateDialogState extends State<_UpdateDialog> {
               const SizedBox(height: 6),
               Text('${release.assetName} · ${(release.assetBytes / 1048576).toStringAsFixed(1)} МБ'),
               if (orexrayUpdateTestSameVersion && release.tag == widget.updates.current.label)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(top: 8),
-                  child: Text('ТЕСТ: повторная установка той же версии'),
+                  child: Text('ТЕСТ: повторная установка той же версии'.tr),
                 ),
               const SizedBox(height: 16),
-              Text('Что нового', style: Theme.of(context).textTheme.titleSmall),
+              Text('Что нового'.tr, style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
               // Only release notes scroll. Download progress is pinned beneath.
               ConstrainedBox(
@@ -135,7 +136,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                 LinearProgressIndicator(value: fraction, color: palette.accent),
                 const SizedBox(height: 8),
                 Text(_total == 0
-                    ? 'Подключение к GitHub…'
+                    ? 'Подключение к GitHub…'.tr
                     : '${(_received / 1048576).toStringAsFixed(1)} из '
                       '${(_total / 1048576).toStringAsFixed(1)} МБ '
                       '(${(100 * (fraction ?? 0)).round()}%)'),
@@ -150,13 +151,13 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         actions: [
           TextButton(
             onPressed: _busy ? () => _token?.cancel() : _close,
-            child: Text(_busy ? 'Отменить загрузку' : 'Закрыть'),
+            child: Text(_busy ? 'Отменить загрузку'.tr : 'Закрыть'.tr),
           ),
           if (!_busy)
             FilledButton.icon(
               onPressed: _start,
               icon: const Icon(Icons.download_rounded),
-              label: Text(_permissionRequired ? 'Установить' : _error == null ? 'Скачать и установить' : 'Повторить'),
+              label: Text(_permissionRequired ? 'Установить'.tr : _error == null ? 'Скачать и установить'.tr : 'Повторить'.tr),
             ),
         ],
       ),

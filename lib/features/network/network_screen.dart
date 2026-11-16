@@ -4,6 +4,7 @@ import '../../core/settings/connection_settings_controller.dart';
 import '../../shared/theme/orex_palette.dart';
 import '../../shared/widgets/orex_edit_dialog.dart';
 import '../../shared/widgets/settings_section.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class NetworkScreen extends StatelessWidget {
   const NetworkScreen({super.key, required this.settings});
@@ -17,15 +18,15 @@ class NetworkScreen extends StatelessWidget {
       builder: (context, _) => ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const SettingsPageHeader(
-            title: 'Сеть',
-            subtitle: 'DNS и маршрутизация Xray',
+          SettingsPageHeader(
+            title: 'Сеть'.tr,
+            subtitle: 'DNS и маршрутизация Xray'.tr,
             icon: Icons.public_rounded,
           ),
           const SizedBox(height: 22),
           SettingsSection(
             title: 'DNS',
-            subtitle: 'VPN-применение требует переподключения.',
+            subtitle: 'VPN-применение требует переподключения.'.tr,
             children: [
               RadioGroup<DnsPreset>(
                 groupValue: settings.dnsPreset,
@@ -59,10 +60,10 @@ class NetworkScreen extends StatelessWidget {
                 ListTile(
                   leading: Icon(Icons.edit_note_rounded,
                       color: OrexPalette.of(context).accent),
-                  title: const Text('Адреса DNS'),
+                  title: Text('Адреса DNS'.tr),
                   subtitle: Text(
                     settings.customDns.isEmpty
-                        ? 'Не заданы'
+                        ? 'Не заданы'.tr
                         : settings.customDns,
                   ),
                   trailing: const Icon(Icons.chevron_right_rounded),
@@ -74,14 +75,14 @@ class NetworkScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SettingsSection(
-            title: 'Маршрутизация',
+            title: 'Маршрутизация'.tr,
             children: [
               SwitchListTile(
                 secondary: Icon(Icons.home_work_outlined,
                     color: OrexPalette.of(context).accent),
-                title: const Text('Локальные сети напрямую'),
+                title: Text('Локальные сети напрямую'.tr),
                 subtitle:
-                    const Text('Не отправлять частные IP-диапазоны через Xray'),
+                    Text('Не отправлять частные IP-диапазоны через Xray'.tr),
                 value: settings.bypassPrivateNetworks,
                 onChanged: settings.setBypassPrivateNetworks,
               ),
@@ -89,9 +90,9 @@ class NetworkScreen extends StatelessWidget {
               SwitchListTile(
                 secondary: Icon(Icons.manage_search_rounded,
                     color: OrexPalette.of(context).accent),
-                title: const Text('Sniffing протоколов'),
-                subtitle: const Text(
-                    'Определять HTTP, TLS и QUIC для корректной маршрутизации'),
+                title: Text('Sniffing протоколов'.tr),
+                subtitle: Text(
+                    'Определять HTTP, TLS и QUIC для корректной маршрутизации'.tr),
                 value: settings.sniffingEnabled,
                 onChanged: settings.setSniffingEnabled,
               ),
@@ -99,8 +100,8 @@ class NetworkScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SettingsSection(
-            title: 'Проверка задержки',
-            subtitle: 'Публичный адрес для измерения задержки',
+            title: 'Проверка задержки'.tr,
+            subtitle: 'Публичный адрес для измерения задержки'.tr,
             children: [
               RadioGroup<LatencyProbePreset>(
                 groupValue: settings.latencyProbePreset,
@@ -135,7 +136,7 @@ class NetworkScreen extends StatelessWidget {
                   leading: Icon(Icons.link_rounded,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: const Text('Изменить URL'),
+                  title: Text('Изменить URL'.tr),
                   subtitle: Text(settings.customLatencyProbeUrl),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   mouseCursor: SystemMouseCursors.click,
@@ -168,12 +169,12 @@ Future<void> _editCustomLatencyProbeUrl(
 ) {
   return showOrexEditDialog(
     context,
-    title: 'URL проверки задержки',
+    title: 'URL проверки задержки'.tr,
     initialValue: settings.customLatencyProbeUrl,
     keyboardType: TextInputType.url,
     textInputAction: TextInputAction.done,
     labelText: 'https://example.com/health',
-    helperText: 'Только публичный HTTP(S) адрес',
+    helperText: 'Только публичный HTTP(S) адрес'.tr,
     validator: ConnectionSettingsController.validateLatencyProbeUrl,
     onSave: settings.setCustomLatencyProbeUrl,
   );
@@ -185,11 +186,11 @@ Future<void> _editCustomDns(
 ) {
   return showOrexEditDialog(
     context,
-    title: 'Свой DNS',
+    title: 'Свой DNS'.tr,
     initialValue: settings.customDns,
     maxLines: 3,
     hintText: '9.9.9.9, 149.112.112.112',
-    helperText: 'Разделяй адреса пробелами или запятыми',
+    helperText: 'Разделяй адреса пробелами или запятыми'.tr,
     onSave: (value) async {
       await settings.setCustomDns(value);
       await settings.setDnsPreset(DnsPreset.custom);

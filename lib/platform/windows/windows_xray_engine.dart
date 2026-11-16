@@ -18,6 +18,7 @@ import 'windows_system_proxy_controller.dart';
 import 'xray_core_manager.dart';
 import 'xray_stats_client.dart';
 import 'xray_watchdog.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class WindowsXrayEngine implements
     TunnelEngine,
@@ -176,7 +177,7 @@ class WindowsXrayEngine implements
         TunnelStatus.error,
         mode: mode,
         profile: profile,
-        error: 'Этот режим не поддерживается в Windows.',
+        error: 'Этот режим не поддерживается в Windows.'.tr,
       );
       return;
     }
@@ -201,7 +202,7 @@ class WindowsXrayEngine implements
       TunnelStatus.connecting,
       mode: mode,
       profile: profile,
-      message: 'Подготавливаем Xray Core…',
+      message: 'Подготавливаем Xray Core…'.tr,
       stats: const TrafficStats(),
     );
     // Paint the connecting state before core verification/config generation.
@@ -247,8 +248,7 @@ class WindowsXrayEngine implements
       _lastOutboundInterface = outboundInterface;
       if (mode == ConnectionMode.vpnTun && outboundInterface == null) {
         throw StateError(
-          'Не найден активный физический сетевой интерфейс с маршрутом в '
-          'интернет. Подключи Wi-Fi, Ethernet или мобильную точку и повтори.',
+          'Не найден активный физический сетевой интерфейс с маршрутом в интернет. Подключи Wi-Fi, Ethernet или мобильную точку и повтори.'.tr,
         );
       }
       if (outboundInterface != null) {
@@ -303,7 +303,7 @@ class WindowsXrayEngine implements
         TunnelStatus.connecting,
         mode: mode,
         profile: profile,
-        message: 'Проверяем конфигурацию…',
+        message: 'Проверяем конфигурацию…'.tr,
       );
       await _validateConfig(install, configFile, assetDirectory);
       if (!_isCurrentOperation(operationId)) return;
@@ -392,7 +392,7 @@ class WindowsXrayEngine implements
           TunnelStatus.connecting,
           mode: mode,
           profile: profile,
-          message: 'Включаем системный прокси Windows…',
+          message: 'Включаем системный прокси Windows…'.tr,
         );
         final enableFuture = _systemProxy
             .enable(
@@ -532,7 +532,7 @@ class WindowsXrayEngine implements
         TunnelStatus.connecting,
         mode: mode,
         profile: profile,
-        message: 'Xray перезапускается после сбоя…',
+        message: 'Xray перезапускается после сбоя…'.tr,
         stats: const TrafficStats(),
       );
       await Future<void>.delayed(delay);
@@ -631,12 +631,12 @@ class WindowsXrayEngine implements
     void Function(double progress)? onProgress,
   }) async {
     if (_process != null || _current.isBusy || _current.isConnected) {
-      throw StateError('Сначала отключи активное соединение.');
+      throw StateError('Сначала отключи активное соединение.'.tr);
     }
     final protectedInstall = await WindowsElevationController.isProtectedInstall();
     if (protectedInstall && !await WindowsElevationController.isElevated()) {
       throw StateError(
-        'Для записи в Program Files нужны права администратора.',
+        'Для записи в Program Files нужны права администратора.'.tr,
       );
     }
     _appendAppLog('Xray Core reinstall requested.');
@@ -735,7 +735,7 @@ class WindowsXrayEngine implements
       final output = '${await stderr}\n${await stdout}'.trim();
       if (exitCode != 0) {
         throw FormatException(
-          output.isEmpty ? 'Xray отклонил конфигурацию.' : output,
+          output.isEmpty ? 'Xray отклонил конфигурацию.'.tr : output,
         );
       }
     } catch (_) {
@@ -757,11 +757,11 @@ class WindowsXrayEngine implements
 
     process.stdout
         .transform(utf8.decoder)
-        .transform(const LineSplitter())
+        .transform(LineSplitter())
         .listen(capture);
     process.stderr
         .transform(utf8.decoder)
-        .transform(const LineSplitter())
+        .transform(LineSplitter())
         .listen(capture);
   }
 
@@ -811,8 +811,7 @@ class WindowsXrayEngine implements
         (normalized.contains('access is denied') ||
             normalized.contains('access denied') ||
             normalized.contains('permission'))) {
-      return 'Для режима VPN Windows нужны права администратора. '
-          'Системный и локальный прокси работают без них.';
+      return 'Для режима VPN Windows нужны права администратора. Системный и локальный прокси работают без них.'.tr;
     }
     if (text.contains('SocketException') || text.contains('HttpException')) {
       return 'Не удалось скачать Xray Core. Проверь интернет и попробуй снова.\n$text';
@@ -1082,7 +1081,7 @@ class WindowsXrayEngine implements
       _status(
         TunnelStatus.disconnecting,
         mode: mode,
-        message: 'Останавливаем OrexRay…',
+        message: 'Останавливаем OrexRay…'.tr,
       );
     }
     _statsTimer?.cancel();
@@ -1119,9 +1118,7 @@ class WindowsXrayEngine implements
             TunnelStatus.error,
             mode: mode,
             profile: _current.profile,
-            error: 'Не удалось остановить Xray. Заверши OrexRay через трей '
-                'или Диспетчер задач — системная привязка процесса остановит '
-                'Xray вместе с приложением.',
+            error: 'Не удалось остановить Xray. Заверши OrexRay через трей или Диспетчер задач — системная привязка процесса остановит Xray вместе с приложением.'.tr,
             stats: const TrafficStats(),
           );
           return;
@@ -1215,14 +1212,14 @@ class WindowsXrayEngine implements
   }
 
   String _startingMessage(ConnectionMode mode) => switch (mode) {
-        ConnectionMode.vpnTun => 'Создаём VPN-интерфейс…',
-        ConnectionMode.systemProxy => 'Запускаем локальный прокси…',
-        ConnectionMode.localProxy => 'Запускаем локальный прокси…',
+        ConnectionMode.vpnTun => 'Создаём VPN-интерфейс…'.tr,
+        ConnectionMode.systemProxy => 'Запускаем локальный прокси…'.tr,
+        ConnectionMode.localProxy => 'Запускаем локальный прокси…'.tr,
       };
 
   String _connectedMessage(ConnectionMode mode) => switch (mode) {
-        ConnectionMode.vpnTun => 'VPN активен',
-        ConnectionMode.systemProxy => 'Системный прокси активен',
+        ConnectionMode.vpnTun => 'VPN активен'.tr,
+        ConnectionMode.systemProxy => 'Системный прокси активен'.tr,
         ConnectionMode.localProxy =>
           'SOCKS5 :${_settings.socksPort} · HTTP :${_settings.httpPort}',
       };
