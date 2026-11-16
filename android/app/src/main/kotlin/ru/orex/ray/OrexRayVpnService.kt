@@ -188,7 +188,28 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val commandIntent = intent ?: restoreRestartIntent() ?: run {
+        val restoredIntent = if (intent == null) restoreRestartIntent() else null
+        val commandIntent = intent ?: restoredIntent ?: run {
+            stopSelf()
+            return Service.START_NOT_STICKY
+        }
+        if (restoredIntent != null && vpnConsentMissing(restoredIntent)) {
+            // A sticky restart after the VPN consent was revoked (reinstall,
+            // settings reset) can never rebuild the tunnel: establish()
+            // returns null. Drop the restart state and ask the UI to request
+            // consent instead of surfacing a misleading interface error.
+            Log.w(TAG, "Sticky restart without VPN consent; dropping restart state")
+            restartServiceOnKill = false
+            clearRestartState()
+            OrexRayTunnelEvents.emitTransient(
+                this,
+                OrexRayTunnelEvents.event(
+                    status = "disconnected",
+                    mode = restoredIntent.getStringExtra(EXTRA_MODE) ?: MODE_VPN,
+                    targetId = restoredIntent.getStringExtra(EXTRA_TARGET_ID),
+                    message = "Подтверди системное разрешение VPN",
+                ),
+            )
             stopSelf()
             return Service.START_NOT_STICKY
         }
@@ -844,6 +865,11 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
 
     private fun restoreRestartIntent(): Intent? =
         OrexRayStartIntentStore.loadRestart(this)
+
+    private fun vpnConsentMissing(intent: Intent): Boolean {
+        val mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_VPN
+        return mode == MODE_VPN && VpnService.prepare(this) != null
+    }
 
     private fun updateRestartMetadata() {
         OrexRayStartIntentStore.updateRestartMetadata(

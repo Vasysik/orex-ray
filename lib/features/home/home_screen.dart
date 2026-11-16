@@ -1406,7 +1406,7 @@ String _pingLabel(TunnelController tunnel, TunnelTarget? target) {
   final status = tunnel.effectivePingStatusFor(target);
   if (status != PingStatus.success) return '—';
   final ping = tunnel.effectiveLatencyFor(target);
-  return ping == null ? '—' : '$ping мс';
+  return ping == null ? '—' : '{} мс'.trf([ping]);
 }
 
 String _statusTitle(TunnelStatus status) => switch (status) {
@@ -1424,15 +1424,17 @@ String _formatDuration(Duration value) {
   return '$hours:$minutes:$seconds';
 }
 
-String _speed(int value) => '${_bytes(value)}/с';
+String _speed(int value) => '${_bytes(value)}${'/с'.tr}';
 
 String _bytes(int value) {
-  if (value < 1024) return '$value Б';
-  if (value < 1024 * 1024) return '${(value / 1024).toStringAsFixed(1)} КБ';
-  if (value < 1024 * 1024 * 1024) {
-    return '${(value / (1024 * 1024)).toStringAsFixed(1)} МБ';
+  if (value < 1024) return '$value ${'Б'.tr}';
+  if (value < 1024 * 1024) {
+    return '${(value / 1024).toStringAsFixed(1)} ${'КБ'.tr}';
   }
-  return '${(value / (1024 * 1024 * 1024)).toStringAsFixed(2)} ГБ';
+  if (value < 1024 * 1024 * 1024) {
+    return '${(value / (1024 * 1024)).toStringAsFixed(1)} ${'МБ'.tr}';
+  }
+  return '${(value / (1024 * 1024 * 1024)).toStringAsFixed(2)} ${'ГБ'.tr}';
 }
 
 IconData _modeIcon(ConnectionMode mode) => switch (mode) {

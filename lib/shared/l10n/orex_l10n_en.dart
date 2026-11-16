@@ -877,6 +877,17 @@ const orexL10nEn = <String, String>{
   'Стиль': 'Style',
   'Стратегия': 'Strategy',
   'ТБ': 'TB',
+  '/с': '/s',
+  'Графитовые оттенки с медным акцентом и белочкой':
+      'Graphite shades with a copper accent and a squirrel',
+  'Классический Orex': 'Classic Orex',
+  'Оригинальное оформление с медью, охрой и белочкой':
+      'The original look with copper, ochre and a squirrel',
+  'Мягкая салатовая тема с котом и капустой':
+      'A soft lime theme with a cat and a cabbage',
+  'Чёрно-красная тема с белочкой': 'A black and red theme with a squirrel',
+  'Чёрно-зелёная тема с котом-хакером':
+      'A black and green theme with a hacker cat',
   'ТЕСТ: повторная установка той же версии': 'TEST: reinstalling the same version',
   'Таймаут загрузки JSON': 'JSON download timeout',
   'Таймаут загрузки подписки': 'Subscription download timeout',

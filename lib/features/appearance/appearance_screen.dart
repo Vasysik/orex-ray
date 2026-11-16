@@ -203,10 +203,13 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
                       child: Icon(Icons.public_rounded, color: accent),
                     ),
         ),
-        title: Text(preview?.name ?? 'Загрузка темы…'.tr),
+        // Built-in preset texts are app data, so they follow the app
+        // language; user-created themes keep whatever name they entered.
+        title: Text(preview == null ? 'Загрузка темы…'.tr : preview.name.tr),
         subtitle: Text(
-          preview?.description ??
-              (failed ? 'Не удалось прочитать JSON пресета'.tr : 'Загрузка описания…'.tr),
+          preview == null
+              ? (failed ? 'Не удалось прочитать JSON пресета'.tr : 'Загрузка описания…'.tr)
+              : preview.description.tr,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),

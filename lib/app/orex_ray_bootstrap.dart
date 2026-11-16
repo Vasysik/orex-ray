@@ -143,25 +143,32 @@ class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
             // Keep the splash over the real UI until the shell has painted
             // its first frames. This hides the viewport settle and the lazy
             // page warm-up instead of flashing half-built interface elements.
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                OrexRayApp(
-                  theme: data.theme,
-                  profiles: data.profiles,
-                  connectionSettings: data.settings,
-                  appRouting: data.appRouting,
-                  geoData: data.geoData,
-                  appVersion: data.appVersion,
-                  onFirstFrame: _handleFirstFrame,
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  child: _shellPainted
-                      ? const SizedBox.shrink()
-                      : IgnorePointer(child: splash),
-                ),
-              ],
+            // The Directionality wrapper is required: this Stack sits above
+            // the inner MaterialApp, so without it the default
+            // AlignmentDirectional alignment has no text direction and the
+            // root render object throws on every layout pass.
+            return Directionality(
+              textDirection: TextDirection.ltr,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  OrexRayApp(
+                    theme: data.theme,
+                    profiles: data.profiles,
+                    connectionSettings: data.settings,
+                    appRouting: data.appRouting,
+                    geoData: data.geoData,
+                    appVersion: data.appVersion,
+                    onFirstFrame: _handleFirstFrame,
+                  ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    child: _shellPainted
+                        ? const SizedBox.shrink()
+                        : IgnorePointer(child: splash),
+                  ),
+                ],
+              ),
             );
           },
         ),

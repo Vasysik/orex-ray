@@ -3678,7 +3678,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                                 inherited
                                     ? 'Включён через группу · {}'.trf([profile.endpoint])
                                     : '${profile.endpoint} · '
-                                        '${profile.latencyMs == null ? '- мс' : '${profile.latencyMs} мс'}',
+                                        '${profile.latencyMs == null ? '- мс'.tr : '{} мс'.trf([profile.latencyMs])}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
