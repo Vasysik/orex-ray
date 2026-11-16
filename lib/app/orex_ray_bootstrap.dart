@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../core/app_version.dart';
 import '../core/apps/app_routing_controller.dart';
@@ -12,8 +13,11 @@ import '../core/settings/connection_settings_controller.dart';
 import '../platform/windows/windows_direct_latency_probe.dart';
 import '../platform/windows/windows_elevation_controller.dart';
 import '../shared/theme/glass.dart';
+import '../shared/theme/orex_builtin_presets.dart';
+import '../shared/theme/orex_palette.dart';
 import '../shared/theme/orex_theme.dart';
 import '../shared/theme/theme_controller.dart';
+import '../shared/l10n/orex_l10n.dart';
 import '../shared/widgets/squirrel_mascot.dart';
 import 'orex_ray_app.dart';
 
@@ -43,8 +47,29 @@ class _BootstrapData {
 }
 
 class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
+  // The theme loads on its own fast path so the splash window can repaint in
+  // the user's colors long before the heavier controllers are ready.
+  late final Future<ThemeController> _themeFuture = _loadTheme();
   late final Future<OrexAppVersion> _versionFuture = OrexAppVersion.load();
   late final Future<_BootstrapData> _future = _initialize();
+
+  bool _shellPainted = false;
+
+  Future<ThemeController> _loadTheme() async {
+    final theme = await ThemeController.load();
+    if (theme.selectedId == null) {
+      // No explicit choice yet (fresh install or a legacy "null = default"
+      // selection): the default is a regular built-in preset, not a special
+      // hardwired theme, so it supports the same copy/export actions.
+      try {
+        await theme.selectBuiltin(OrexBuiltinPreset.defaultId);
+      } on Object {
+        // A missing preset asset must never block startup; the palette
+        // fallbacks keep the app fully usable.
+      }
+    }
+    return theme;
+  }
 
   Future<_BootstrapData> _initialize() async {
     final minimumSplash =
@@ -59,12 +84,13 @@ class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
         ? WindowsDirectLatencyProbe()
         : LatencyProbe(canMeasureWhileVpnActive: Platform.isAndroid);
     final results = await Future.wait<Object>([
-      ThemeController.load(),
+      _themeFuture,
       ProfilesController.load(latencyProbe: latencyProbe),
       ConnectionSettingsController.load(),
       AppRoutingController.load(),
       _versionFuture,
       geoDataFuture,
+      OrexL10n.load(),
     ]);
     final settings = results[2] as ConnectionSettingsController;
     if (Platform.isWindows &&
@@ -92,47 +118,106 @@ class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
   Widget build(BuildContext context) {
     return FutureBuilder<OrexAppVersion>(
       future: _versionFuture,
-      builder: (context, versionSnapshot) => FutureBuilder<_BootstrapData>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return _BootstrapApp(
-              child: _StartupError(error: snapshot.error.toString()),
-            );
-          }
-          final data = snapshot.data;
-          if (data == null) {
-            return _BootstrapApp(
+      builder: (context, versionSnapshot) => FutureBuilder<ThemeController>(
+        future: _themeFuture,
+        builder: (context, themeSnapshot) =>
+            FutureBuilder<_BootstrapData>(
+          future: _future,
+          builder: (context, snapshot) {
+            final splash = _BootstrapApp(
+              theme: themeSnapshot.data,
               child: OrexRaySplashScreen(
                 appVersion: versionSnapshot.data ?? OrexAppVersion.fallback,
               ),
             );
-          }
-          return OrexRayApp(
-            theme: data.theme,
-            profiles: data.profiles,
-            connectionSettings: data.settings,
-            appRouting: data.appRouting,
-            geoData: data.geoData,
-            appVersion: data.appVersion,
-          );
-        },
+            if (snapshot.hasError) {
+              return _BootstrapApp(
+                theme: themeSnapshot.data,
+                child: _StartupError(error: snapshot.error.toString()),
+              );
+            }
+            final data = snapshot.data;
+            if (data == null) {
+              return splash;
+            }
+            // Keep the splash over the real UI until the shell has painted
+            // its first frames. This hides the viewport settle and the lazy
+            // page warm-up instead of flashing half-built interface elements.
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                OrexRayApp(
+                  theme: data.theme,
+                  profiles: data.profiles,
+                  connectionSettings: data.settings,
+                  appRouting: data.appRouting,
+                  geoData: data.geoData,
+                  appVersion: data.appVersion,
+                  onFirstFrame: _handleFirstFrame,
+                ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: _shellPainted
+                      ? const SizedBox.shrink()
+                      : IgnorePointer(child: splash),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
+  }
+
+  void _handleFirstFrame() {
+    if (!mounted || _shellPainted) return;
+    setState(() => _shellPainted = true);
   }
 }
 
 class _BootstrapApp extends StatelessWidget {
-  const _BootstrapApp({required this.child});
+  const _BootstrapApp({this.theme, required this.child});
 
+  /// Colors of the default built-in preset, used only for the few frames
+  /// before SharedPreferences answers. Keeping them in sync with the gray
+  /// default avoids a brown-to-gray flash on fresh installs.
+  static const fallbackColors = <String, Color>{
+    'accent': Color(0xFFCB8552),
+    'secondary': Color(0xFFA46742),
+    'background': Color(0xFF202020),
+    'surface': Color(0xFF2B2B2B),
+    'text': Color(0xFFF5F5F5),
+    'mutedText': Color(0xFFB8B8B8),
+    'border': Color(0xFF454545),
+    'success': Color(0xFF6CCB75),
+    'danger': Color(0xFFFF7373),
+  };
+
+  /// When the theme controller is already loaded, the splash repaints in the
+  /// user's colors instead of a fixed launch look.
+  final ThemeController? theme;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
+    final activeTheme = theme?.activeTheme;
+    final brightness = activeTheme?.light == true
+        ? Brightness.light
+        : Brightness.dark;
+    final colors = theme?.colors ?? fallbackColors;
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: OrexTheme.dark,
+      theme: OrexTheme.withColors(brightness, colors).copyWith(
+        extensions: [OrexPalette.resolve(brightness, colors)],
+      ),
       home: child,
+      locale: OrexL10n.instanceOrNull?.locale,
+      supportedLocales: OrexL10n.supportedLocales,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
     );
   }
 }
@@ -165,17 +250,17 @@ class OrexRaySplashScreen extends StatelessWidget {
                 const SizedBox(height: 10),
                 Text(
                   appVersion.settingsSubtitle,
-                  style: const TextStyle(
-                    color: OrexColors.cream,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 28),
-                const SizedBox.square(
+                SizedBox.square(
                   dimension: 28,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.6,
-                    color: OrexColors.copper,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ],

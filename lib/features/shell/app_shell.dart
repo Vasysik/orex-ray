@@ -174,11 +174,17 @@ class _AppShellState extends State<AppShell> {
   int _index = 0;
   bool _appsPageLoaded = false;
 
+  // Pages are mounted lazily: building all eleven screens into the startup
+  // frame was a measurable source of first-launch jank. Once visited, a page
+  // stays mounted inside the IndexedStack and keeps its state.
+  final Set<int> _mountedPages = {0};
+
   void _selectPage(int index) {
     if (index == _appsIndex && !_appsPageLoaded) {
       _appsPageLoaded = true;
       unawaited(widget.appRouting.loadApps());
     }
+    _mountedPages.add(index);
     setState(() => _index = index);
   }
 
@@ -302,9 +308,18 @@ class _AppShellState extends State<AppShell> {
               ];
               final mobileSelected = _index <= 2 ? _index : 3;
               final visiblePageIndex = desktop ? normalizedPageIndex : _index;
+              // The desktop-normalized target must exist even if the user
+              // arrived through the mobile "More" page.
+              _mountedPages.add(visiblePageIndex);
               final pageStack = IndexedStack(
                 index: visiblePageIndex,
-                children: pages,
+                children: [
+                  for (var i = 0; i < pages.length; i++)
+                    if (_mountedPages.contains(i))
+                      pages[i]
+                    else
+                      const SizedBox.shrink(),
+                ],
               );
               final content = OrexResponsiveReveal(
                 layoutKey: desktop

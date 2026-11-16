@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the background of the default gray built-in theme so the
+         native launch window flows into the Flutter splash without a flash. -->
+    <color name="orexray_launch_background">#FF202020</color>
+</resources>

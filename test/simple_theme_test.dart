@@ -21,7 +21,7 @@ void main() {
     expect(classic.iconTheme.color, base.iconTheme.color);
   });
 
-  test('all four built-in preset JSONs embed mascot bytes', () async {
+  test('built-in preset JSONs are valid, mascot is optional', () async {
     for (final preset in OrexBuiltinPreset.values) {
       final contents = await rootBundle.loadString(preset.assetPath);
       final parsed = jsonDecode(contents) as Map<String, dynamic>;
@@ -34,10 +34,16 @@ void main() {
       expect(preview.description, parsed['description']);
       expect(preview.accent,
           SimpleThemeProfile.parseColors(parsed['colors'])['accent']);
-      expect(preview.mascotBytes, isNotEmpty);
-      final mascot = parsed['mascot'] as String;
-      expect(mascot, startsWith('data:image/webp;base64,'));
-      expect(base64Decode(mascot.split(';base64,').last), isNotEmpty);
+      // Presets without a mascot (classic) fall back to the default
+      // squirrel; presets with one must embed self-contained webp bytes.
+      final mascot = parsed['mascot'];
+      if (mascot == null) {
+        expect(preview.mascotBytes, isNull);
+      } else {
+        expect(preview.mascotBytes, isNotEmpty);
+        expect(mascot as String, startsWith('data:image/webp;base64,'));
+        expect(base64Decode(mascot.split(';base64,').last), isNotEmpty);
+      }
       expect(parsed['colors'], isA<Map>());
     }
   });

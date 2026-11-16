@@ -290,26 +290,33 @@ class ThemeController extends ChangeNotifier {
     }
     final colors = SimpleThemeProfile.parseColors(data['colors']);
     final (opacity, blur, glow) = SimpleThemeProfile.parseGlass(data['glass']);
+    // The mascot is optional: presets without one fall back to the default
+    // squirrel, exactly like a user theme with the mascot reset.
     final encoded = data['mascot'];
-    if (encoded is! String || !encoded.startsWith('data:image/') ||
-        !encoded.contains(';base64,')) {
-      throw const FormatException('Отсутствует маскот встроенной темы');
-    }
-    final parts = encoded.split(';base64,');
-    if (parts.length != 2 || parts.last.length > maxMascotBytes * 4 ~/ 3 + 8) {
-      throw const FormatException('Неверные данные маскота');
-    }
-    final bytes = base64Decode(parts.last);
-    final mime = _mimeType(bytes);
-    if (parts.first != 'data:$mime') {
-      throw const FormatException('Неверный тип маскота');
+    Uint8List? mascotBytes;
+    if (encoded != null) {
+      if (encoded is! String || !encoded.startsWith('data:image/') ||
+          !encoded.contains(';base64,')) {
+        throw const FormatException('Неверные данные маскота встроенной темы');
+      }
+      final parts = encoded.split(';base64,');
+      if (parts.length != 2 || parts.last.length > maxMascotBytes * 4 ~/ 3 + 8) {
+        throw const FormatException('Неверные данные маскота');
+      }
+      mascotBytes = base64Decode(parts.last);
+      final mime = _mimeType(mascotBytes);
+      if (parts.first != 'data:$mime') {
+        throw const FormatException('Неверный тип маскота');
+      }
     }
     final previousPath = existingIndex >= 0
         ? _themes[existingIndex].mascotPath
         : '';
-    final path = previousPath.isNotEmpty && await File(previousPath).exists()
-        ? previousPath
-        : await _storeMascot(bytes);
+    final path = mascotBytes == null
+        ? ''
+        : previousPath.isNotEmpty && await File(previousPath).exists()
+            ? previousPath
+            : await _storeMascot(mascotBytes);
     final entry = SimpleThemeProfile(
       id: preset.storageId,
       name: (data['name'] as String).trim(),

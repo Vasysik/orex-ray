@@ -69,8 +69,14 @@ class OrexBuiltinPreset {
   String get storageId => 'preset_$id';
   String get assetPath => 'assets/themes/presets/$id.json';
 
+  static const defaultId = 'noir';
+
+  /// The first entry is the out-of-box default: a neutral gray theme that
+  /// most users keep. Every preset is equal — any of them can be copied,
+  /// exported or re-selected, none is hardwired into the UI.
   static const values = <OrexBuiltinPreset>[
-    OrexBuiltinPreset('noir'),
+    OrexBuiltinPreset(defaultId),
+    OrexBuiltinPreset('classic'),
     OrexBuiltinPreset('cabbage'),
     OrexBuiltinPreset('hardcore'),
     OrexBuiltinPreset('hacker'),

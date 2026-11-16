@@ -1,0 +1,24 @@
+{
+  "format": "orexray-theme",
+  "version": 1,
+  "name": "Классический Orex",
+  "description": "Оригинальное оформление с медью, охрой и белочкой",
+  "colors": {
+    "accent": "#FFD47939",
+    "secondary": "#FFD9A05B",
+    "background": "#FF1C140E",
+    "surface": "#FF2A1D14",
+    "text": "#FFF3E6D5",
+    "mutedText": "#FFB39A82",
+    "border": "#2EE7C18B",
+    "success": "#FF8FB36A",
+    "danger": "#FFB36A6A"
+  },
+  "glass": {
+    "enabled": true,
+    "opacity": 0.55,
+    "blur": 18,
+    "glow": 0.0
+  },
+  "mascot": null
+}

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../core/app_version.dart';
 import '../core/update/orexray_updates.dart';
@@ -20,6 +21,7 @@ import '../shared/theme/orex_theme.dart';
 import '../shared/theme/orex_palette.dart';
 import '../shared/widgets/squirrel_mascot.dart';
 import '../shared/theme/theme_controller.dart';
+import '../shared/l10n/orex_l10n.dart';
 
 class OrexRayApp extends StatefulWidget {
   const OrexRayApp({
@@ -31,6 +33,7 @@ class OrexRayApp extends StatefulWidget {
     required this.geoData,
     this.appVersion = OrexAppVersion.fallback,
     this.tunnelEngine,
+    this.onFirstFrame,
   });
 
   final ThemeController theme;
@@ -40,6 +43,10 @@ class OrexRayApp extends StatefulWidget {
   final GeoDataController geoData;
   final OrexAppVersion appVersion;
   final TunnelEngine? tunnelEngine;
+
+  /// Fired once the shell has painted its first settled frames; the bootstrap
+  /// keeps the splash window on top until then.
+  final VoidCallback? onFirstFrame;
 
   @override
   State<OrexRayApp> createState() => _OrexRayAppState();
@@ -69,6 +76,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.theme.addListener(_refresh);
+    OrexL10n.instance.addListener(_refresh);
     widget.connectionSettings.addListener(_syncPlatformStartupSettings);
     if (Platform.isWindows) {
       _windowsLifecycle = WindowsLifecycleController(
@@ -79,6 +87,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
       unawaited(_windowsLifecycle!.initialize());
     }
     _syncPlatformStartupSettings();
+    _notifyFirstFrameWhenSettled();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncStatsUiActivity(WidgetsBinding.instance.lifecycleState);
       unawaited(_initializeUpdates());
@@ -94,6 +103,30 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
           _tunnel.connect,
         ));
       }
+    });
+  }
+
+  /// The splash stays up until two real frames have painted plus a short
+  /// settle window for the viewport and navigation animations, with a hard
+  /// cap so a wedged frame can never trap the user on the splash.
+  void _notifyFirstFrameWhenSettled() {
+    final callback = widget.onFirstFrame;
+    if (callback == null) return;
+    var frames = 0;
+    void tick() {
+      if (!mounted) return;
+      frames++;
+      if (frames >= 2) {
+        Timer(const Duration(milliseconds: 280), () {
+          if (mounted) callback();
+        });
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) => tick());
+      }
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => tick());
+    Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) callback();
     });
   }
 
@@ -176,6 +209,7 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.theme.removeListener(_refresh);
+    OrexL10n.instance.removeListener(_refresh);
     widget.connectionSettings.removeListener(_syncPlatformStartupSettings);
     _windowsLifecycle?.dispose();
     _updates?.dispose();
@@ -221,6 +255,13 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
       themeMode: widget.theme.activeTheme == null
           ? ThemeMode.dark
           : (widget.theme.activeTheme!.light ? ThemeMode.light : ThemeMode.dark),
+      locale: OrexL10n.instance.locale,
+      supportedLocales: OrexL10n.supportedLocales,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       home: AppShell(
         tunnel: _tunnel,
         profiles: widget.profiles,
