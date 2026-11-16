@@ -47,7 +47,7 @@ class VlessLinkParser {
     _requireMaxLength(uri.host, _maxAddressLength, 'Адрес сервера'.tr);
     for (final entry in uri.queryParameters.entries) {
       _requireMaxLength(entry.key, 256, 'Имя параметра'.tr);
-      _requireMaxLength(entry.value, _maxFieldLength, 'Параметр ${entry.key}');
+      _requireMaxLength(entry.value, _maxFieldLength, 'Параметр {}'.trf([entry.key]));
     }
 
     final query = uri.queryParameters;
@@ -67,7 +67,7 @@ class VlessLinkParser {
       );
     }
     if (!{'none', 'tls', 'reality'}.contains(security)) {
-      throw VlessLinkFormatException('Пока не поддерживаем security=$security');
+      throw VlessLinkFormatException('Пока не поддерживаем security={}'.trf([security]));
     }
 
     final decodedUserId = _decode(uri.userInfo).trim();
@@ -150,7 +150,7 @@ class VlessLinkParser {
         'xhttp' || 'splithttp' => 'xhttp',
         'httpupgrade' => 'httpupgrade',
         final unsupported => throw VlessLinkFormatException(
-            'Пока не поддерживаем transport=$unsupported',
+            'Пока не поддерживаем transport={}'.trf([unsupported]),
           ),
       };
 
@@ -182,7 +182,7 @@ class VlessLinkParser {
 
   void _requireMaxLength(String value, int maxLength, String fieldName) {
     if (value.length > maxLength) {
-      throw VlessLinkFormatException('$fieldName слишком длинный');
+      throw VlessLinkFormatException('{} слишком длинный'.trf([fieldName]));
     }
   }
 }

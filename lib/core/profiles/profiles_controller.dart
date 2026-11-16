@@ -1621,7 +1621,7 @@ class ProfilesController extends ChangeNotifier {
   void _validateProfileInput(TunnelProfile profile) {
     void check(String value, int limit, String fieldName) {
       if (value.length > limit) {
-        throw FormatException('$fieldName слишком длинный');
+        throw FormatException('{} слишком длинный'.trf([fieldName]));
       }
     }
 

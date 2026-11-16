@@ -1078,7 +1078,7 @@ class _QuickTargetTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '${target.endpoint} · ${latencyMs == null ? '- мс' : '$latencyMs мс'}',
+        '${target.endpoint} · ${latencyMs == null ? '- мс' : '{} мс'.trf([latencyMs])}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

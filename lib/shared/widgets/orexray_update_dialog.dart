@@ -76,7 +76,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       if (_downloaded != null) await widget.updates.deleteFile(_downloaded!);
       _downloaded = null;
     } catch (e) {
-      if (mounted) setState(() { _error = 'Ошибка обновления: $e'; });
+      if (mounted) setState(() { _error = 'Ошибка обновления: {}'.trf([e]); });
     } finally {
       if (mounted) setState(() { _busy = false; _token = null; });
     }
@@ -109,9 +109,9 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             children: [
               Text('OrexRay ${release.tag}', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 4),
-              Text('Установлено: ${widget.updates.current.label}'),
+              Text('Установлено: {}'.trf([widget.updates.current.label])),
               const SizedBox(height: 6),
-              Text('${release.assetName} · ${(release.assetBytes / 1048576).toStringAsFixed(1)} МБ'),
+              Text('{} · {} МБ'.trf([release.assetName, (release.assetBytes / 1048576).toStringAsFixed(1)])),
               if (orexrayUpdateTestSameVersion && release.tag == widget.updates.current.label)
                 Padding(
                   padding: EdgeInsets.only(top: 8),
@@ -137,9 +137,11 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                 const SizedBox(height: 8),
                 Text(_total == 0
                     ? 'Подключение к GitHub…'.tr
-                    : '${(_received / 1048576).toStringAsFixed(1)} из '
-                      '${(_total / 1048576).toStringAsFixed(1)} МБ '
-                      '(${(100 * (fraction ?? 0)).round()}%)'),
+                    : '{} из {} МБ ({})'.trf([
+                        (_received / 1048576).toStringAsFixed(1),
+                        (_total / 1048576).toStringAsFixed(1),
+                        '${(100 * (fraction ?? 0)).round()}%',
+                      ])),
               ],
               if (_error != null) ...[
                 const SizedBox(height: 12),

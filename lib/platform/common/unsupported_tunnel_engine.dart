@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../core/tunnel/tunnel_engine.dart';
 import '../../core/tunnel/tunnel_models.dart';
+import '../../shared/l10n/orex_l10n.dart';
 
 class UnsupportedTunnelEngine implements TunnelEngine {
   UnsupportedTunnelEngine(this.platformName)
@@ -31,7 +32,7 @@ class UnsupportedTunnelEngine implements TunnelEngine {
       profile: profile,
       stats: const TrafficStats(),
       errorMessage:
-          'VPN-движок для $platformName не поддерживается. OrexRay сейчас работает на Windows и Android.',
+          'VPN-движок для {} не поддерживается. OrexRay сейчас работает на Windows и Android.'.trf([platformName]),
     );
     _controller.add(_current);
   }

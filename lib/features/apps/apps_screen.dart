@@ -154,8 +154,7 @@ class _AppsScreenState extends State<AppsScreen> {
                   ],
                   const SizedBox(height: 12),
                   Text(
-                    '${widget.controller.selectedPackages.length} выбрано · '
-                    '${apps.length} показано · ${widget.controller.apps.length} всего',
+                    '{} выбрано · {} показано · {} всего'.trf([widget.controller.selectedPackages.length, apps.length, widget.controller.apps.length]),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 8),

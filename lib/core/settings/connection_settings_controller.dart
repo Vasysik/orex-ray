@@ -517,7 +517,7 @@ class ConnectionSettingsController extends ChangeNotifier {
         .toList(growable: false);
     if (invalid.isNotEmpty) {
       throw FormatException(
-        'Правило «${invalid.first}» должно начинаться с geoip: или geosite:',
+        'Правило «{}» должно начинаться с geoip: или geosite:'.trf([invalid.first]),
       );
     }
     assign(normalized);

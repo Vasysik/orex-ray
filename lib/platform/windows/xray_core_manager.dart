@@ -277,7 +277,7 @@ class XrayCoreManager {
       final response = await request.close().timeout(_requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
-          'GitHub вернул HTTP ${response.statusCode}',
+          'GitHub вернул HTTP {}'.trf([response.statusCode]),
           uri: uri,
         );
       }
@@ -343,7 +343,7 @@ class XrayCoreManager {
     for (final fileName in _requiredRuntimeFiles) {
       final entry = entries[fileName];
       if (entry == null) {
-        throw FormatException('В архиве Xray отсутствует $fileName.');
+        throw FormatException('В архиве Xray отсутствует {}.'.trf([fileName]));
       }
       await _writeEntryAtomically(
         entry,
@@ -360,7 +360,7 @@ class XrayCoreManager {
     for (final fileName in _optionalDataFiles) {
       final entry = entries[fileName];
       if (entry == null) {
-        throw FormatException('В архиве Xray отсутствует $fileName.');
+        throw FormatException('В архиве Xray отсутствует {}.'.trf([fileName]));
       }
       await _writeEntryAtomically(
         entry,
@@ -448,7 +448,7 @@ class XrayCoreManager {
       final fileName = p.basename(normalized).toLowerCase();
       if (!allowed.contains(fileName)) continue;
       if (result.containsKey(fileName)) {
-        throw FormatException('Архив Xray содержит дубликат $fileName.');
+        throw FormatException('Архив Xray содержит дубликат {}.'.trf([fileName]));
       }
       result[fileName] = entry;
     }
@@ -458,7 +458,7 @@ class XrayCoreManager {
   List<int> _entryBytes(ArchiveFile entry) {
     final content = entry.content;
     if (content is List<int>) return content;
-    throw FormatException('Не удалось прочитать ${entry.name} из архива Xray.');
+    throw FormatException('Не удалось прочитать {} из архива Xray.'.trf([entry.name]));
   }
 
   Future<void> _writeEntryAtomically(ArchiveFile entry, File destination) async {

@@ -1,3 +1,4 @@
+
 class EgressIdentity {
   const EgressIdentity({
     required this.countryCode,

@@ -236,7 +236,7 @@ class _ProtoReader {
         _skipBytes(4);
         return;
       default:
-        throw FormatException('Неподдерживаемый protobuf wire type: $wireType');
+        throw FormatException('Неподдерживаемый protobuf wire type: {}'.trf([wireType]));
     }
   }
 

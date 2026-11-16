@@ -147,7 +147,7 @@ class ProfilesScreen extends StatelessWidget {
     if (profile == null || !context.mounted) return;
     OrexNotice.show(
       context,
-      SnackBar(content: Text('Профиль «${profile.name}» импортирован')),
+      SnackBar(content: Text('Профиль «{}» импортирован'.trf([profile.name]))),
     );
   }
 
@@ -158,18 +158,18 @@ class ProfilesScreen extends StatelessWidget {
     );
     if (result == null || !context.mounted) return;
     final parts = <String>[
-      if (result.addedCount > 0) 'добавлено ${result.addedCount}',
-      if (result.updatedCount > 0) 'обновлено ${result.updatedCount}',
-      if (result.removedCount > 0) 'удалено ${result.removedCount}',
+      if (result.addedCount > 0) 'добавлено {}'.trf([result.addedCount]),
+      if (result.updatedCount > 0) 'обновлено {}'.trf([result.updatedCount]),
+      if (result.removedCount > 0) 'удалено {}'.trf([result.removedCount]),
       if (result.skippedUnsupported > 0)
-        'пропущено ${result.skippedUnsupported}',
+        'пропущено {}'.trf([result.skippedUnsupported]),
     ];
     OrexNotice.show(
       context,
       SnackBar(
         content: Text(
           parts.isEmpty
-              ? 'Подписка «${result.subscription.name}» обновлена'
+              ? 'Подписка «{}» обновлена'.trf([result.subscription.name])
               : 'Подписка «${result.subscription.name}»: ${parts.join(', ')}',
         ),
       ),
@@ -187,8 +187,7 @@ class ProfilesScreen extends StatelessWidget {
         context,
         SnackBar(
           content: Text(
-            '«${result.subscription.name}» обновлена: '
-            '${result.subscription.profileIds.length} серверов',
+            '«{}» обновлена: {} серверов'.trf([result.subscription.name, result.subscription.profileIds.length]),
           ),
         ),
       );
@@ -202,7 +201,7 @@ class ProfilesScreen extends StatelessWidget {
       if (!context.mounted) return;
       OrexNotice.show(
         context,
-        SnackBar(content: Text('Не удалось обновить подписку: $error')),
+        SnackBar(content: Text('Не удалось обновить подписку: {}'.trf([error]))),
       );
     }
   }
@@ -216,8 +215,7 @@ class ProfilesScreen extends StatelessWidget {
       builder: (_) => OrexConfirmDialog(
         title: 'Удалить подписку?'.tr,
         content: Text(
-          '«${subscription.name}» и ${subscription.profileIds.length} '
-          'серверов этой подписки будут удалены.'.tr,
+          '«{}» и {} серверов этой подписки будут удалены.'.trf([subscription.name, subscription.profileIds.length]),
         ),
         confirmLabel: 'Удалить'.tr,
         icon: Icons.delete_outline_rounded,
@@ -233,10 +231,10 @@ class ProfilesScreen extends StatelessWidget {
     );
     if (result == null || !context.mounted) return;
     final parts = <String>[
-      if (result.addedCount > 0) 'добавлено ${result.addedCount}',
-      if (result.updatedCount > 0) 'обновлено ${result.updatedCount}',
+      if (result.addedCount > 0) 'добавлено {}'.trf([result.addedCount]),
+      if (result.updatedCount > 0) 'обновлено {}'.trf([result.updatedCount]),
       if (result.skippedUnsupported > 0)
-        'пропущено неподдерживаемых ${result.skippedUnsupported}',
+        'пропущено неподдерживаемых {}'.trf([result.skippedUnsupported]),
     ];
     OrexNotice.show(
       context,
@@ -273,7 +271,7 @@ class ProfilesScreen extends StatelessWidget {
     final exportCount = selectedIds?.length ?? profiles.profiles.length;
     final action = await showOrexChoiceSheet<_XrayJsonExportAction>(
       context,
-      title: exportingMultiple ? 'Экспорт $exportCount профилей' : 'Экспорт профиля'.tr,
+      title: exportingMultiple ? 'Экспорт {} профилей'.trf([exportCount]) : 'Экспорт профиля'.tr,
       options: [
         if (singleId != null)
           OrexChoiceSheetOption<_XrayJsonExportAction>(
@@ -353,7 +351,7 @@ class ProfilesScreen extends StatelessWidget {
       if (!context.mounted) return;
       OrexNotice.show(
         context,
-        SnackBar(content: Text('Не удалось экспортировать профиль: $error')),
+        SnackBar(content: Text('Не удалось экспортировать профиль: {}'.trf([error]))),
       );
     }
   }
@@ -450,7 +448,7 @@ class ProfilesScreen extends StatelessWidget {
       context: context,
       builder: (_) => OrexConfirmDialog(
         title: 'Удалить?'.tr,
-        content: Text('«$name» будет удалён с этого устройства.'),
+        content: Text('«{}» будет удалён с этого устройства.'.trf([name])),
         confirmLabel: 'Удалить'.tr,
         icon: Icons.delete_outline_rounded,
       ),
@@ -558,7 +556,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
         builder: (_) => OrexConfirmDialog(
           title: selectedSubscriptions.length == 1
               ? 'Удалить подписку?'.tr
-              : 'Удалить ${selectedSubscriptions.length} подписки?',
+              : 'Удалить {} подписки?'.trf([selectedSubscriptions.length]),
           content: Text(
             'Подписки и все принадлежащие им серверы будут удалены с устройства.'.tr,
           ),
@@ -580,7 +578,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => OrexConfirmDialog(
-        title: 'Удалить ${manualIds.length} профилей?',
+        title: 'Удалить {} профилей?'.trf([manualIds.length]),
         content: Text(
           'Выбранные серверы будут удалены с этого устройства.'.tr,
         ),
@@ -863,7 +861,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
         context,
         SnackBar(
           content: Text(
-            'Перемещено $changed; серверы подписок оставлены в своих группах',
+            'Перемещено {}; серверы подписок оставлены в своих группах'.trf([changed]),
           ),
         ),
       );
@@ -885,7 +883,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
       context: context,
       builder: (_) => OrexConfirmDialog(
         title: 'Расформировать группу?'.tr,
-        content: Text('Профили из группы «$name» останутся в разделе «Серверы».'),
+        content: Text('Профили из группы «{}» останутся в разделе «Серверы».'.trf([name])),
         confirmLabel: 'Расформировать'.tr,
         icon: Icons.folder_off_outlined,
       ),
@@ -904,7 +902,7 @@ class _ProfilesBodyState extends State<_ProfilesBody> {
       if (!context.mounted) return;
       OrexNotice.show(
         context,
-        SnackBar(content: Text('Не удалось открыть ссылку: $error')),
+        SnackBar(content: Text('Не удалось открыть ссылку: {}'.trf([error]))),
       );
     }
   }
@@ -1745,7 +1743,7 @@ class _ProfileGroupHeader extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          subtitle: Text('$count серверов'),
+          subtitle: Text('{} серверов'.trf([count])),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1866,7 +1864,7 @@ class _ImportSubscriptionDialogState extends State<_ImportSubscriptionDialog> {
       setState(() => _error = error.message.toString());
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = 'Не удалось добавить подписку: $error');
+      setState(() => _error = 'Не удалось добавить подписку: {}'.trf([error]));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1965,7 +1963,7 @@ class _SubscriptionCard extends StatelessWidget {
     final normalizedName = subscription.name.trim().toLowerCase();
     final normalizedHost = host.trim().toLowerCase();
     final summaryItems = <String>[
-      '$count серверов',
+      '{} серверов'.trf([count]),
       if (normalizedHost.isNotEmpty && normalizedHost != normalizedName) host,
       if (subscription.lastUpdatedEpochMs case final updated?)
         _relativeSubscriptionUpdate(updated),
@@ -2227,14 +2225,13 @@ class _SubscriptionMetadataPanel extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Использовано ${_formatSubscriptionBytes(info.usedBytes)} / '
-                  '${_formatSubscriptionBytes(total)}',
+                  'Использовано {} / {}'.trf([_formatSubscriptionBytes(info.usedBytes), _formatSubscriptionBytes(total)]),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
               if (remaining != null)
                 Text(
-                  'Осталось ${_formatSubscriptionBytes(remaining)}',
+                  'Осталось {}'.trf([_formatSubscriptionBytes(remaining)]),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: OrexPalette.of(context).accent,
                         fontWeight: FontWeight.w600,
@@ -2452,7 +2449,7 @@ class _ProfileCard extends StatelessWidget {
                   if (duplicateName) ...[
                     const SizedBox(width: 8),
                     Tooltip(
-                      message: 'ID профиля: ${profile.id}',
+                      message: 'ID профиля: {}'.trf([profile.id]),
                       child: Text(
                         '#${profile.id.length > 8 ? profile.id.substring(0, 8).toUpperCase() : profile.id.toUpperCase()}',
                         key: ValueKey('duplicate-profile-id-${profile.id}'),
@@ -2575,7 +2572,7 @@ class _PingBadge extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
-          latency == null ? '- мс'.tr : '$latency мс',
+          latency == null ? '- мс'.tr : '{} мс'.trf([latency]),
           style: TextStyle(
               color: color, fontSize: 12, fontWeight: FontWeight.w600),
         ),
@@ -2635,9 +2632,11 @@ class _BalancerCard extends StatelessWidget {
           ],
         ),
         subtitle: Text(
-          '${members.length} серверов'
-          '${activeMemberName == null ? '' : ' · $activeMemberName'}'
-          '\n${members.map((e) => e.name).join(' · ')}',
+          '{} серверов{}\n{}'.trf([
+            members.length,
+            activeMemberName == null ? '' : ' · $activeMemberName',
+            members.map((e) => e.name).join(' · '),
+          ]),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
@@ -2776,7 +2775,7 @@ class _ImportLinkDialogState extends State<_ImportLinkDialog> {
       if (mounted) {
         setState(() {
           _importing = false;
-          _error = 'Не удалось импортировать: $error';
+          _error = 'Не удалось импортировать: {}'.trf([error]);
         });
       }
     }
@@ -2942,7 +2941,7 @@ class _ImportXrayJsonDialogState extends State<_ImportXrayJsonDialog> {
       _importing = false;
       _error = error is FormatException
           ? error.message.toString()
-          : 'Не удалось импортировать JSON: $error';
+          : 'Не удалось импортировать JSON: {}'.trf([error]);
     });
   }
 
@@ -3161,13 +3160,13 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       return;
     }
     if (_needsUserId && _uuid.text.trim().isEmpty) {
-      setState(() => _error = 'Для ${_protocol.title} нужен UUID');
+      setState(() => _error = 'Для {} нужен UUID'.trf([_protocol.title]));
       return;
     }
     if ((_protocol == OutboundProtocol.trojan ||
             _protocol == OutboundProtocol.shadowsocks) &&
         _protocolPassword.text.isEmpty) {
-      setState(() => _error = 'Для ${_protocol.title} нужен пароль');
+      setState(() => _error = 'Для {} нужен пароль'.trf([_protocol.title]));
       return;
     }
     if (_canUseOptionalCredentials &&
@@ -3551,7 +3550,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                   for (final profile in widget.profiles)
                     DropdownMenuItem(
                       value: BalancerProfile.fallbackProfile(profile.id),
-                      child: Text('Профиль · ${profile.name}'),
+                      child: Text('Профиль · {}'.trf([profile.name])),
                     ),
                 ],
                 onChanged: (value) => setState(
@@ -3614,7 +3613,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  subtitle: Text('${group.profileIds.length} серверов'),
+                  subtitle: Text('{} серверов'.trf([group.profileIds.length])),
                   mouseCursor: SystemMouseCursors.click,
                   onTap: () => setState(() {
                     if (!_expandedGroups.add(group.key)) {
@@ -3677,7 +3676,7 @@ class _BalancerDialogState extends State<_BalancerDialog> {
                               ),
                               subtitle: Text(
                                 inherited
-                                    ? 'Включён через группу · ${profile.endpoint}'
+                                    ? 'Включён через группу · {}'.trf([profile.endpoint])
                                     : '${profile.endpoint} · '
                                         '${profile.latencyMs == null ? '- мс' : '${profile.latencyMs} мс'}',
                                 maxLines: 1,

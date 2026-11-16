@@ -22,7 +22,7 @@ class OrexProxyCopy {
     await Clipboard.setData(ClipboardData(text: address));
     if (!context.mounted) return;
     if (Scaffold.maybeOf(context) != null) {
-      OrexNotice.copied(context, '$protocol: адрес скопирован');
+      OrexNotice.copied(context, '{}: адрес скопирован'.trf([protocol]));
     }
   }
 

@@ -323,7 +323,7 @@ class XrayJsonCodec {
     }
 
     if (endpoints.isEmpty) {
-      throw FormatException('Outbound ${protocol.title} не содержит серверов');
+      throw FormatException('Outbound {} не содержит серверов'.trf([protocol.title]));
     }
     if (endpoints.length > maxProfiles) {
       throw FormatException('В одном outbound больше 500 профилей'.tr);
@@ -429,7 +429,7 @@ class XrayJsonCodec {
         .trim()
         .toLowerCase();
     if (!{'none', 'tls', 'reality'}.contains(security)) {
-      throw FormatException('Неподдерживаемый Xray security=$security');
+      throw FormatException('Неподдерживаемый Xray security={}'.trf([security]));
     }
 
     var path = '';
@@ -444,7 +444,7 @@ class XrayJsonCodec {
       final headerType = _string(header['type'], fallback: 'none').toLowerCase();
       if (headerType != 'none' && headerType.isNotEmpty) {
         throw FormatException(
-          'TCP header type=$headerType пока нельзя представить профилем OrexRay',
+          'TCP header type={} пока нельзя представить профилем OrexRay'.trf([headerType]),
         );
       }
     } else if (transport == 'websocket') {
@@ -518,7 +518,7 @@ class XrayJsonCodec {
 
   void _validateEndpoint(OutboundProtocol protocol, _Endpoint endpoint) {
     if (endpoint.address.trim().isEmpty) {
-      throw FormatException('В outbound ${protocol.title} нет адреса');
+      throw FormatException('В outbound {} нет адреса'.trf([protocol.title]));
     }
     if (endpoint.address.length > 1024) {
       throw FormatException('Адрес Xray слишком длинный'.tr);
@@ -529,12 +529,12 @@ class XrayJsonCodec {
     if ((protocol == OutboundProtocol.vless ||
             protocol == OutboundProtocol.vmess) &&
         endpoint.userId.trim().isEmpty) {
-      throw FormatException('В outbound ${protocol.title} нет UUID');
+      throw FormatException('В outbound {} нет UUID'.trf([protocol.title]));
     }
     if ((protocol == OutboundProtocol.trojan ||
             protocol == OutboundProtocol.shadowsocks) &&
         endpoint.password.isEmpty) {
-      throw FormatException('В outbound ${protocol.title} нет пароля');
+      throw FormatException('В outbound {} нет пароля'.trf([protocol.title]));
     }
     if (protocol == OutboundProtocol.shadowsocks &&
         endpoint.encryption.trim().isEmpty) {
@@ -556,7 +556,7 @@ class XrayJsonCodec {
         'xhttp' || 'splithttp' => 'xhttp',
         'httpupgrade' => 'httpupgrade',
         final unsupported => throw FormatException(
-            'Неподдерживаемый Xray transport=$unsupported',
+            'Неподдерживаемый Xray transport={}'.trf([unsupported]),
           ),
       };
 

@@ -62,7 +62,7 @@ class AboutScreen extends StatelessWidget {
                     title: Text(model.available != null ? 'Установить обновление'.tr : 'Проверить обновления'.tr),
                     subtitle: Text(switch (model.state) {
                       OrexRayUpdateState.checking => 'Проверяем GitHub Releases…'.tr,
-                      OrexRayUpdateState.available => 'Доступна ${model.available!.tag}',
+                      OrexRayUpdateState.available => 'Доступна {}'.trf([model.available!.tag]),
                       OrexRayUpdateState.upToDate => 'Установлена последняя версия'.tr,
                       OrexRayUpdateState.error => model.error ?? 'Проверка не удалась'.tr,
                       _ => 'Источник: GitHub Releases'.tr,
@@ -190,7 +190,7 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
       if (!mounted) return;
       OrexNotice.show(
         context,
-        SnackBar(content: Text('Не удалось переустановить Xray Core: $error')),
+        SnackBar(content: Text('Не удалось переустановить Xray Core: {}'.trf([error]))),
       );
     } finally {
       if (mounted) {

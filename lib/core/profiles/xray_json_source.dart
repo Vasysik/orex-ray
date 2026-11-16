@@ -36,7 +36,7 @@ class XrayJsonSource {
     } on TimeoutException {
       throw FormatException('Таймаут загрузки JSON'.tr);
     } on SocketException catch (error) {
-      throw FormatException('Не удалось загрузить JSON: ${error.message}');
+      throw FormatException('Не удалось загрузить JSON: {}'.trf([error.message]));
     } finally {
       client.close(force: true);
     }
@@ -56,7 +56,7 @@ class XrayJsonSource {
         );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw FormatException(
-        'Сервер JSON вернул HTTP ${response.statusCode}',
+        'Сервер JSON вернул HTTP {}'.trf([response.statusCode]),
       );
     }
     final declaredLength = response.contentLength;

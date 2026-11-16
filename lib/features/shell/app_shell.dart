@@ -371,7 +371,7 @@ class _AppShellState extends State<AppShell> {
                                 key: const ValueKey('orexray-update-banner'),
                                 leading: Icon(Icons.system_update_rounded, color: OrexPalette.of(context).accent),
                                 title: Text('Доступна новая версия OrexRay'.tr),
-                                subtitle: Text('Версия ${updates.available!.tag} · GitHub Releases'),
+                                subtitle: Text('Версия {} · GitHub Releases'.trf([updates.available!.tag])),
                                 onTap: () => showOrexRayUpdateDialog(context, updates),
                                 trailing: IconButton(
                                   tooltip: 'Скрыть уведомление'.tr,

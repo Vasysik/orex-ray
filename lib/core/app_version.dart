@@ -1,4 +1,5 @@
 import 'package:package_info_plus/package_info_plus.dart';
+import '../shared/l10n/orex_l10n.dart';
 
 class OrexAppVersion {
   const OrexAppVersion({
@@ -12,9 +13,9 @@ class OrexAppVersion {
   final String buildNumber;
 
   String get label => '$version+$buildNumber';
-  String get versionLine => 'Версия: $version';
-  String get buildLine => 'Сборка: $buildNumber';
-  String get settingsSubtitle => 'Версия $version · Сборка $buildNumber';
+  String get versionLine => 'Версия: {}'.trf([version]);
+  String get buildLine => 'Сборка: {}'.trf([buildNumber]);
+  String get settingsSubtitle => 'Версия {} · Сборка {}'.trf([version, buildNumber]);
 
   /// Android split-per-ABI APKs can expose a platform `versionCode` like
   /// `2003` for logical build `3` (Flutter encodes ABI in the thousands and

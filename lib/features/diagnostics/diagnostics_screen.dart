@@ -171,7 +171,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             tint: OrexColors.danger,
             opacity: 0.14,
             padding: const EdgeInsets.all(16),
-            child: Text('Не удалось собрать диагностику: $_error'),
+            child: Text('Не удалось собрать диагностику: {}'.trf([_error])),
           )
         else if (value == null)
           const Center(child: CircularProgressIndicator())
@@ -231,7 +231,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Последние ${value.logs.length} строк лога',
+                  'Последние {} строк лога'.trf([value.logs.length]),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 10),

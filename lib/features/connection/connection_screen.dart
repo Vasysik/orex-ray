@@ -178,7 +178,7 @@ class ConnectionScreen extends StatelessWidget {
                     color: editableIconColor,
                   ),
                   title: const Text('MTU'),
-                  subtitle: Text('${settings.mtu} байт'),
+                  subtitle: Text('{} байт'.trf([settings.mtu])),
                   trailing: Icon(
                     Icons.chevron_right_rounded,
                     color: chevronColor,

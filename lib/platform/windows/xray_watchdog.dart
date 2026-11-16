@@ -57,7 +57,7 @@ class XrayExitClassifier {
         canRestart: false,
         message: port == null
             ? 'Xray не смог занять локальный порт. Проверь настройки портов.'.tr
-            : 'Локальный порт $port уже занят. Измени порт или закрой другой процесс.',
+            : 'Локальный порт {} уже занят. Измени порт или закрой другой процесс.'.trf([port]),
       );
     }
     if (_containsAny(text, const [
@@ -91,7 +91,7 @@ class XrayExitClassifier {
       canRestart: exitCode != 0,
       message: exitCode == 0
           ? 'Xray завершился без ошибки.'.tr
-          : 'Xray неожиданно завершился с кодом $exitCode.',
+          : 'Xray неожиданно завершился с кодом {}.'.trf([exitCode]),
     );
   }
 

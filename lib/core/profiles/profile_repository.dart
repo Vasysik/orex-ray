@@ -253,7 +253,7 @@ class ProfileRepository {
       await _clearSubscriptionJournal();
     } on Object catch (error) {
       // Refuse partial state instead of silently discarding a saved profile.
-      throw StateError('Не удалось восстановить данные подписок: $error');
+      throw StateError('Не удалось восстановить данные подписок: {}'.trf([error]));
     }
   }
 

@@ -165,7 +165,7 @@ class GeoDataController extends ChangeNotifier {
     _updating = true;
     _progress = 0;
     _error = null;
-    _message = 'Импортируем $targetFileName…';
+    _message = 'Импортируем {}…'.trf([targetFileName]);
     notifyListeners();
 
     final temp = File(p.join(_directory.path, '.$targetFileName.import'));
@@ -201,7 +201,7 @@ class GeoDataController extends ChangeNotifier {
         }
         rethrow;
       }
-      _message = '$targetFileName импортирован. Переподключись, чтобы Xray перечитал данные.';
+      _message = '{} импортирован. Переподключись, чтобы Xray перечитал данные.'.trf([targetFileName]);
       await refreshStatus();
     } on Object catch (error) {
       _error = _friendlyError(error);
@@ -236,7 +236,7 @@ class GeoDataController extends ChangeNotifier {
       const files = ['geoip.dat', 'geosite.dat'];
       for (var index = 0; index < files.length; index++) {
         final fileName = files[index];
-        _message = 'Обновляем $fileName…';
+        _message = 'Обновляем {}…'.trf([fileName]);
         _progress = index / files.length;
         notifyListeners();
         await _downloadVerified(client, fileName, index, files.length);
@@ -288,12 +288,12 @@ class GeoDataController extends ChangeNotifier {
     final response = await request.close().timeout(_networkTimeout);
     if (response.statusCode != HttpStatus.ok) {
       throw HttpException(
-        'Сервер вернул HTTP ${response.statusCode} для $fileName',
+        'Сервер вернул HTTP {} для {}'.trf([response.statusCode, fileName]),
         uri: uri,
       );
     }
     if (response.contentLength > _maxAssetBytes) {
-      throw FormatException('$fileName больше 256 МБ');
+      throw FormatException('{} больше 256 МБ'.trf([fileName]));
     }
 
     final temp = File(p.join(_directory.path, '.$fileName.download'));
@@ -308,7 +308,7 @@ class GeoDataController extends ChangeNotifier {
       await for (final chunk in response.timeout(_networkTimeout)) {
         received += chunk.length;
         if (received > _maxAssetBytes) {
-          throw FormatException('$fileName больше 256 МБ');
+          throw FormatException('{} больше 256 МБ'.trf([fileName]));
         }
         sink.add(chunk);
         final now = DateTime.now();
@@ -345,7 +345,7 @@ class GeoDataController extends ChangeNotifier {
       } catch (_) {
         // The checksum failure is the important error; temp cleanup is best effort.
       }
-      throw StateError('SHA-256 не совпал для $fileName');
+      throw StateError('SHA-256 не совпал для {}'.trf([fileName]));
     }
 
     final backup = File('${destination.path}.bak');

@@ -134,7 +134,7 @@ class GeoDataScreen extends StatelessWidget {
                 subtitle: Text(
                   controller.lastCheckedAt == null
                       ? 'Ещё не проверялось'.tr
-                      : 'Последняя проверка: ${_formatDate(controller.lastCheckedAt!)}',
+                      : 'Последняя проверка: {}'.trf([_formatDate(controller.lastCheckedAt!)]),
                 ),
                 value: controller.autoUpdate,
                 onChanged: controller.setAutoUpdate,
@@ -219,7 +219,7 @@ class GeoDataScreen extends StatelessWidget {
     if (!context.mounted || controller.error != null) return;
     OrexNotice.show(
       context,
-      SnackBar(content: Text('$targetFileName импортирован')),
+      SnackBar(content: Text('{} импортирован'.trf([targetFileName]))),
     );
   }
 }
@@ -249,7 +249,7 @@ class _AssetTile extends StatelessWidget {
             : 'Не установлен'.tr,
       ),
       trailing: IconButton(
-        tooltip: 'Импортировать свой ${asset.fileName}',
+        tooltip: 'Импортировать свой {}'.trf([asset.fileName]),
         onPressed: importing ? null : onImport,
         icon: const Icon(Icons.file_open_rounded),
       ),
@@ -276,7 +276,7 @@ class _RuleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shown = value.trim().isEmpty ? 'Пример: $example' : value;
+    final shown = value.trim().isEmpty ? 'Пример: {}'.trf([example]) : value;
     return ListTile(
       enabled: enabled,
       leading: Icon(icon, color: enabled ? OrexPalette.of(context).accent : null),

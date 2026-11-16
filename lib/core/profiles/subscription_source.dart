@@ -66,7 +66,7 @@ class SubscriptionSource {
     } on TimeoutException {
       throw FormatException('Таймаут загрузки подписки'.tr);
     } on SocketException catch (error) {
-      throw FormatException('Не удалось загрузить подписку: ${error.message}');
+      throw FormatException('Не удалось загрузить подписку: {}'.trf([error.message]));
     } finally {
       client.close(force: true);
     }
@@ -90,7 +90,7 @@ class SubscriptionSource {
     } on TimeoutException {
       throw FormatException('Таймаут проверки подписки'.tr);
     } on SocketException catch (error) {
-      throw FormatException('Не удалось проверить подписку: ${error.message}');
+      throw FormatException('Не удалось проверить подписку: {}'.trf([error.message]));
     } finally {
       client.close(force: true);
     }
@@ -202,7 +202,7 @@ class SubscriptionSource {
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw FormatException(
-        'Сервер подписки вернул HTTP ${response.statusCode}',
+        'Сервер подписки вернул HTTP {}'.trf([response.statusCode]),
       );
     }
   }

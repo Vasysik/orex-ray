@@ -280,7 +280,7 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
     } on Object catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось загрузить картинку: $error')),
+          SnackBar(content: Text('Не удалось загрузить картинку: {}'.trf([error]))),
         );
       }
     }
@@ -291,7 +291,7 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
     for (final role in OrexPalette.roles.keys) {
       if (_parseColor(_colors[role]!.text) == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Неверный HEX: ${OrexPalette.roles[role]}')),
+          SnackBar(content: Text('Неверный HEX: {}'.trf([OrexPalette.roles[role]]))),
         );
         return;
       }
@@ -317,7 +317,7 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
     } on Object catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось сохранить: $error')),
+          SnackBar(content: Text('Не удалось сохранить: {}'.trf([error]))),
         );
       }
     } finally {

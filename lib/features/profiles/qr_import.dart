@@ -172,8 +172,7 @@ class _QrCameraDialogState extends State<QrCameraDialog> {
                       errorBuilder: (context, error) => Center(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Text('Камера недоступна: ${error.errorCode.name}. '
-                              'Проверь разрешение на камеру.'.tr),
+                          child: Text('Камера недоступна: {}. Проверь разрешение на камеру.'.trf([error.errorCode.name])),
                         ),
                       ),
                     ),

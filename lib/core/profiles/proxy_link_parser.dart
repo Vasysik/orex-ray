@@ -371,7 +371,7 @@ class ProxyLinkParser {
   ) {
     if (credentials.user.isEmpty != credentials.password.isEmpty) {
       throw VlessLinkFormatException(
-        'Для $protocol нужны одновременно имя пользователя и пароль',
+        'Для {} нужны одновременно имя пользователя и пароль'.trf([protocol]),
       );
     }
   }
@@ -440,14 +440,14 @@ class ProxyLinkParser {
         'xhttp' || 'splithttp' => 'xhttp',
         'httpupgrade' => 'httpupgrade',
         final unsupported => throw VlessLinkFormatException(
-            'Пока не поддерживается transport=$unsupported',
+            'Пока не поддерживается transport={}'.trf([unsupported]),
           ),
       };
 
   String _normalizeSecurity(String value) {
     final security = value.trim().toLowerCase();
     if ({'none', 'tls', 'reality'}.contains(security)) return security;
-    throw VlessLinkFormatException('Пока не поддерживается security=$security');
+    throw VlessLinkFormatException('Пока не поддерживается security={}'.trf([security]));
   }
 
   String _normalizeVmessSecurity(String value) {
@@ -456,7 +456,7 @@ class ProxyLinkParser {
       return security;
     }
     throw VlessLinkFormatException(
-        'Пока не поддерживается VMess scy=$security');
+        'Пока не поддерживается VMess scy={}'.trf([security]));
   }
 
   List<String> _splitCsv(String? value) {
@@ -523,7 +523,7 @@ class ProxyLinkParser {
         .replaceAll('_', '/')
         .replaceAll(RegExp(r'\s'), '');
     if (normalized.isEmpty) {
-      throw VlessLinkFormatException('В ссылке $protocol нет данных');
+      throw VlessLinkFormatException('В ссылке {} нет данных'.trf([protocol]));
     }
     final padded = normalized.padRight(
       normalized.length + (4 - normalized.length % 4) % 4,
@@ -532,7 +532,7 @@ class ProxyLinkParser {
     try {
       return utf8.decode(base64.decode(padded));
     } on FormatException {
-      throw VlessLinkFormatException('В ссылке $protocol неверный Base64');
+      throw VlessLinkFormatException('В ссылке {} неверный Base64'.trf([protocol]));
     }
   }
 
@@ -543,7 +543,7 @@ class ProxyLinkParser {
 
   void _require(String value, int maxLength, String fieldName) {
     if (value.length > maxLength) {
-      throw VlessLinkFormatException('$fieldName слишком длинное');
+      throw VlessLinkFormatException('{} слишком длинное'.trf([fieldName]));
     }
   }
 
