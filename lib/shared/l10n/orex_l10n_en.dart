@@ -189,7 +189,7 @@ const orexL10nEn = <String, String>{
       'No background timer: checks run on launch and when returning to the app.',
   'Белочка OrexRay в защищённой ореховой скорлупе':
       'The OrexRay squirrel in a hardened nutshell',
-  'Белочка ждёт сервер': 'The squirrel is waiting for a server',
+  'Белочка ждёт сервер': 'No server yet',
   'Белочка защищает маршрут': 'The squirrel guards the route',
   'Белочка пока без маршрута': 'The squirrel has no route yet',
   'Блокировать': 'Block',
