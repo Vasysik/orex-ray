@@ -1,26 +1,97 @@
 # OrexRay
 
+[![Скачать с GitHub Releases](https://img.shields.io/badge/Download-Releases-C87E4F?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Vasysik/orex-ray/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-8a8a8a?style=for-the-badge)](LICENSE)
+
 Тёплый Xray-клиент на **Flutter** для **Android** и **Windows**. OrexRay
 объединяет системный VPN, системный прокси, локальные SOCKS5/HTTP-прокси,
-профили VLESS/VMess/Trojan/Shadowsocks/SOCKS/HTTP, балансировщики и per-app маршрутизацию в одном интерфейсе в
-визуальном стиле Orex.
+профили VLESS/VMess/Trojan/Shadowsocks/SOCKS/HTTP, балансировщики и per-app
+маршрутизацию в одном интерфейсе в визуальном стиле Orex.
+
+[English](README.md) · **Русский** · [Changelog](CHANGELOG.md)
+
+<p>
+  <img src="docs/screenshots/android-home.png" width="230" alt="Главный экран OrexRay">
+  <img src="docs/screenshots/android-profiles.png" width="230" alt="Профили">
+  <img src="docs/screenshots/android-appearance.png" width="230" alt="Темы">
+</p>
+<p>
+  <img src="docs/screenshots/android-tablet-home.png" width="700" alt="OrexRay на планшете в ландшафтной ориентации">
+</p>
+
+## Почему OrexRay
+
+- **VPN одним нажатием** — Android `VpnService` с реальным TCP/UDP через
+  Xray, фоновая работа как foreground service, а плитка быстрых настроек
+  работает, даже когда приложение закрыто.
+- **Все режимы подключения** — полный TUN VPN, системный прокси Windows и
+  локальные SOCKS5 (`127.0.0.1:20808`) / HTTP (`127.0.0.1:20809`) прокси для
+  ручной настройки приложений.
+- **Полные Xray-профили** — VLESS/REALITY, VMess, Trojan, Shadowsocks, SOCKS
+  и HTTP без искусственного упрощения. Импорт ссылок, подписок, QR-кодов,
+  сырого JSON или полных конфигов.
+- **Балансировщики** — автоматический выбор сервера с наименьшим пингом,
+  round-robin или random на каждое соединение. Группы серверов остаются
+  динамическими.
+- **Split tunneling** — выбирайте, какие приложения идут через VPN, а какие
+  мимо (Android).
+- **Подписки** — автообновление HTTP/HTTPS подписок, учёт квоты и срока,
+  обновление метаданных лёгкими HEAD-запросами.
+- **Темы** — нейтральная серая тема из коробки, несколько встроенных
+  пресетов и полноценный редактор тем: цвета, стеклянные панели, маскоты,
+  экспорт/импорт JSON.
+- **Два языка** — русский и английский, по умолчанию следует за системой.
+
+## Установка
+
+### Android
+
+Скачайте свежий APK для вашего устройства (`arm64-v8a` подходит большинству
+современных телефонов) с [GitHub Releases](https://github.com/Vasysik/orex-ray/releases)
+и установите его. OrexRay умеет обновляться сам через GitHub Releases.
+
+### Windows
+
+Скачайте установщик (`OrexRay-<version>-x64-setup.exe`) с
+[GitHub Releases](https://github.com/Vasysik/orex-ray/releases). Режим
+TUN/VPN требует прав администратора; системный прокси и локальный прокси
+работают без них.
+
+## Быстрый старт
+
+1. Откройте **Профили** и импортируйте ссылку (`vless://`, `vmess://`,
+   `trojan://`, `ss://`, `socks5://`, `http(s)://`), URL подписки, QR-код или
+   Xray JSON.
+2. Вернитесь на **Главную** и нажмите большую круглую кнопку.
+3. Опционально: настройте маршрутизацию в **Подключение**, split tunneling в
+   **Приложения** и темы в **Интерфейс**.
+
+## Документация
+
+- [Схема сборок](docs/release-builds.md) · [Android release](docs/release-android.md) · [Windows release](docs/release-windows.md)
+- [Обновление приложения через GitHub Releases](docs/github-app-updates.md)
+- [Android debug / ADB](docs/android-debugging.md)
+
+## Сборка из исходников
+
+```bash
+flutter pub get
+flutter build apk --release        # Android
+flutter build windows --release    # Windows
+```
 
 Текущая версия задаётся только в `pubspec.yaml` в поле `version`.
 
-История изменений: [CHANGELOG.md](CHANGELOG.md).
+## Лицензия
 
-<p>
-  <img src="docs/screenshots/android-home.png" width="240" alt="Главный экран OrexRay">
-  <img src="docs/screenshots/android-profiles.png" width="240" alt="Профили">
-  <img src="docs/screenshots/android-appearance.png" width="240" alt="Темы">
-</p>
+OrexRay распространяется по лицензии [MIT](LICENSE): исходный код можно
+использовать, изменять и распространять, в том числе коммерчески, при
+сохранении уведомления об авторских правах и текста лицензии. Программное
+обеспечение предоставляется «как есть», без гарантий. См. также
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Текущая сборка находится в стадии private beta / dogfood, но фокус уже не на добавлении базовых режимов, а на надёжности long-running VPN. Android VPN уже
-пропускает реальный TCP/UDP-трафик через Xray, работает в фоне и может
-одновременно поднимать локальные SOCKS5/HTTP-прокси. Windows-часть поддерживает
-системный прокси, локальный прокси и отдельный TUN-режим. Это уже рабочий
-клиент, но перед широкой раздачей ещё нужны длительные тесты на разных
-прошивках, сетях и профилях.
+<details>
+<summary><b>Полная документация</b> — продуктовый фокус, режимы подключения, надёжность, профили, темы, балансировщики, безопасность, архитектура</summary>
 
 ## 1. Продуктовый фокус
 
@@ -104,7 +175,6 @@ DNS, системной таблицы маршрутов и явной прив
 останавливает уже работающий TUN только потому, что `GetBestInterface` вернул имя
 физического адаптера. Реальный acceptance test для TUN — сменившийся внешний IP и
 проходящий IPv4/IPv6-трафик.
-
 
 ## Надёжность long-running подключения
 
@@ -201,7 +271,6 @@ proxy самого Xray. Из ответа Cloudflare trace сохраняютс
 Если у нескольких профилей одинаковые названия, в списке показывается
 дополнительная короткая метка их ID, чтобы не путать серверы. Одинаковые
 имена не запрещены и не влияют на уникальность самих профилей.
-
 
 Подписка хранится как отдельный источник: её URL не превращается в HTTP-proxy.
 При обновлении OrexRay заменяет только серверы этой подписки, сохраняя вручную
@@ -637,9 +706,4 @@ Legacy-параметр `allowInsecure` больше не считается п�
 современный Xray удалил его. Старые данные могут оставаться читаемыми для
 миграции, но новые конфигурации не должны полагаться на отключение TLS-проверки.
 
-## 14. Лицензия
-
-OrexRay распространяется по лицензии [MIT](LICENSE): исходный код можно
-использовать, изменять и распространять, в том числе коммерчески, при
-сохранении уведомления об авторских правах и текста лицензии. Программное
-обеспечение предоставляется «как есть», без гарантий.
+</details>
