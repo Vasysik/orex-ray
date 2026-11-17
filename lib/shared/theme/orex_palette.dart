@@ -19,15 +19,15 @@ class OrexPalette extends ThemeExtension<OrexPalette> {
 
   /// Labels are resolved per access so a language switch applies immediately.
   static Map<String, String> get roles => <String, String>{
-    'accent': 'Акцент'.tr,
-    'secondary': 'Дополнительный цвет'.tr,
-    'background': 'Фон'.tr,
-    'surface': 'Панели'.tr,
-    'text': 'Основной текст'.tr,
-    'mutedText': 'Второстепенный текст'.tr,
-    'border': 'Границы'.tr,
-    'success': 'Успешное соединение'.tr,
-    'danger': 'Ошибка / предупреждение'.tr,
+    'accent': 'Accent'.tr,
+    'secondary': 'Secondary color'.tr,
+    'background': 'Background'.tr,
+    'surface': 'Panels'.tr,
+    'text': 'Primary text'.tr,
+    'mutedText': 'Secondary text'.tr,
+    'border': 'Borders'.tr,
+    'success': 'Successful connection'.tr,
+    'danger': 'Error / warning'.tr,
   };
 
   final Color accent;

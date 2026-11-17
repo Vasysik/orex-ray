@@ -54,13 +54,13 @@ class SubscriptionParser {
     var text = input.trim();
     if (text.startsWith('\uFEFF')) text = text.substring(1).trimLeft();
     if (text.isEmpty) {
-      throw FormatException('Подписка пустая'.tr);
+      throw FormatException('The subscription is empty'.tr);
     }
 
     final metadata = _extractMetadata(text);
     text = metadata.body.trim();
     if (text.isEmpty) {
-      throw FormatException('В подписке нет серверов'.tr);
+      throw FormatException('The subscription has no servers'.tr);
     }
 
     final jsonResult = _tryJson(text);
@@ -113,7 +113,7 @@ class SubscriptionParser {
     }
 
     throw FormatException(
-      'В подписке не найдено поддерживаемых серверов'.tr,
+      'No supported servers found in the subscription'.tr,
     );
   }
 

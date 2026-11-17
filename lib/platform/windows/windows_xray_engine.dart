@@ -177,7 +177,7 @@ class WindowsXrayEngine implements
         TunnelStatus.error,
         mode: mode,
         profile: profile,
-        error: 'Этот режим не поддерживается в Windows.'.tr,
+        error: 'This mode is not supported on Windows.'.tr,
       );
       return;
     }
@@ -202,7 +202,7 @@ class WindowsXrayEngine implements
       TunnelStatus.connecting,
       mode: mode,
       profile: profile,
-      message: 'Подготавливаем Xray Core…'.tr,
+      message: 'Preparing Xray Core…'.tr,
       stats: const TrafficStats(),
     );
     // Paint the connecting state before core verification/config generation.
@@ -248,7 +248,7 @@ class WindowsXrayEngine implements
       _lastOutboundInterface = outboundInterface;
       if (mode == ConnectionMode.vpnTun && outboundInterface == null) {
         throw StateError(
-          'Не найден активный физический сетевой интерфейс с маршрутом в интернет. Подключи Wi-Fi, Ethernet или мобильную точку и повтори.'.tr,
+          'No active physical network interface with an internet route found. Connect Wi-Fi, Ethernet or a mobile hotspot and try again.'.tr,
         );
       }
       if (outboundInterface != null) {
@@ -303,7 +303,7 @@ class WindowsXrayEngine implements
         TunnelStatus.connecting,
         mode: mode,
         profile: profile,
-        message: 'Проверяем конфигурацию…'.tr,
+        message: 'Checking the configuration…'.tr,
       );
       await _validateConfig(install, configFile, assetDirectory);
       if (!_isCurrentOperation(operationId)) return;
@@ -392,7 +392,7 @@ class WindowsXrayEngine implements
           TunnelStatus.connecting,
           mode: mode,
           profile: profile,
-          message: 'Включаем системный прокси Windows…'.tr,
+          message: 'Enabling the Windows system proxy…'.tr,
         );
         final enableFuture = _systemProxy
             .enable(
@@ -532,7 +532,7 @@ class WindowsXrayEngine implements
         TunnelStatus.connecting,
         mode: mode,
         profile: profile,
-        message: 'Xray перезапускается после сбоя…'.tr,
+        message: 'Xray is restarting after a failure…'.tr,
         stats: const TrafficStats(),
       );
       await Future<void>.delayed(delay);
@@ -631,12 +631,12 @@ class WindowsXrayEngine implements
     void Function(double progress)? onProgress,
   }) async {
     if (_process != null || _current.isBusy || _current.isConnected) {
-      throw StateError('Сначала отключи активное соединение.'.tr);
+      throw StateError('Disconnect the active connection first.'.tr);
     }
     final protectedInstall = await WindowsElevationController.isProtectedInstall();
     if (protectedInstall && !await WindowsElevationController.isElevated()) {
       throw StateError(
-        'Для записи в Program Files нужны права администратора.'.tr,
+        'Writing to Program Files requires administrator rights.'.tr,
       );
     }
     _appendAppLog('Xray Core reinstall requested.');
@@ -735,7 +735,7 @@ class WindowsXrayEngine implements
       final output = '${await stderr}\n${await stdout}'.trim();
       if (exitCode != 0) {
         throw FormatException(
-          output.isEmpty ? 'Xray отклонил конфигурацию.'.tr : output,
+          output.isEmpty ? 'Xray rejected the configuration.'.tr : output,
         );
       }
     } catch (_) {
@@ -811,7 +811,7 @@ class WindowsXrayEngine implements
         (normalized.contains('access is denied') ||
             normalized.contains('access denied') ||
             normalized.contains('permission'))) {
-      return 'Для режима VPN Windows нужны права администратора. Системный и локальный прокси работают без них.'.tr;
+      return 'Windows VPN mode requires administrator rights. System and local proxy work without them.'.tr;
     }
     if (text.contains('SocketException') || text.contains('HttpException')) {
       return 'Не удалось скачать Xray Core. Проверь интернет и попробуй снова.\n$text';
@@ -1081,7 +1081,7 @@ class WindowsXrayEngine implements
       _status(
         TunnelStatus.disconnecting,
         mode: mode,
-        message: 'Останавливаем OrexRay…'.tr,
+        message: 'Stopping OrexRay…'.tr,
       );
     }
     _statsTimer?.cancel();
@@ -1118,7 +1118,7 @@ class WindowsXrayEngine implements
             TunnelStatus.error,
             mode: mode,
             profile: _current.profile,
-            error: 'Не удалось остановить Xray. Заверши OrexRay через трей или Диспетчер задач — системная привязка процесса остановит Xray вместе с приложением.'.tr,
+            error: 'Failed to stop Xray. Quit OrexRay via the tray or Task Manager — the system process binding will stop Xray together with the app.'.tr,
             stats: const TrafficStats(),
           );
           return;
@@ -1212,14 +1212,14 @@ class WindowsXrayEngine implements
   }
 
   String _startingMessage(ConnectionMode mode) => switch (mode) {
-        ConnectionMode.vpnTun => 'Создаём VPN-интерфейс…'.tr,
-        ConnectionMode.systemProxy => 'Запускаем локальный прокси…'.tr,
-        ConnectionMode.localProxy => 'Запускаем локальный прокси…'.tr,
+        ConnectionMode.vpnTun => 'Creating the VPN interface…'.tr,
+        ConnectionMode.systemProxy => 'Starting the local proxy…'.tr,
+        ConnectionMode.localProxy => 'Starting the local proxy…'.tr,
       };
 
   String _connectedMessage(ConnectionMode mode) => switch (mode) {
-        ConnectionMode.vpnTun => 'VPN активен'.tr,
-        ConnectionMode.systemProxy => 'Системный прокси активен'.tr,
+        ConnectionMode.vpnTun => 'VPN is active'.tr,
+        ConnectionMode.systemProxy => 'System proxy is active'.tr,
         ConnectionMode.localProxy =>
           'SOCKS5 :${_settings.socksPort} · HTTP :${_settings.httpPort}',
       };

@@ -30,7 +30,7 @@ class SimpleThemeProfile {
     if (!opacity.isFinite || opacity < 0.15 || opacity > 0.95 ||
         !blur.isFinite || blur < 0 || blur > 36 ||
         !glow.isFinite || glow < -0.85 || glow > 0.85) {
-      throw FormatException('Некорректные параметры стекла'.tr);
+      throw FormatException('Invalid glass parameters'.tr);
     }
   }
 
@@ -80,7 +80,7 @@ class SimpleThemeProfile {
       return (defaultGlassOpacity, defaultGlassBlur, defaultGlassGlow);
     }
     if (source is! Map) {
-      throw FormatException('Некорректный блок glass'.tr);
+      throw FormatException('Invalid glass block'.tr);
     }
     double value(String name, double fallback) {
       final raw = source[name];
@@ -88,7 +88,7 @@ class SimpleThemeProfile {
         return fallback;
       }
       if (raw is! num) {
-        throw FormatException('Параметр стекла должен быть числом'.tr);
+        throw FormatException('The glass parameter must be a number'.tr);
       }
       return raw.toDouble();
     }
@@ -116,7 +116,7 @@ class SimpleThemeProfile {
     final id = json['id'];
     final name = json['name'];
     if (id is! String || id.isEmpty || name is! String || name.trim().isEmpty) {
-      throw FormatException('Неверный идентификатор или имя темы'.tr);
+      throw FormatException('Invalid theme ID or name'.tr);
     }
     final (opacity, blur, glow) = parseGlass(json['glass']);
     return SimpleThemeProfile(
@@ -136,20 +136,20 @@ class SimpleThemeProfile {
 
   static Map<String, Color> parseColors(Object? raw) {
     if (raw is! Map) {
-      throw FormatException('Некорректные цвета темы'.tr);
+      throw FormatException('Invalid theme colors'.tr);
     }
     final parsed = <String, Color>{};
     for (final entry in raw.entries) {
       if (entry.key is! String || !OrexPalette.roles.containsKey(entry.key)) {
-        throw FormatException('Неизвестная цветовая роль'.tr);
+        throw FormatException('Unknown color role'.tr);
       }
       final hex = entry.value;
       if (hex is! String) {
-        throw FormatException('Цвет должен быть HEX'.tr);
+        throw FormatException('The color must be HEX'.tr);
       }
       var digits = hex.replaceFirst('#', '');
       if (!RegExp(r'^(?:[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$').hasMatch(digits)) {
-        throw FormatException('Недопустимый HEX-цвет'.tr);
+        throw FormatException('Invalid HEX color'.tr);
       }
       if (digits.length == 6) {
         digits = 'FF$digits';

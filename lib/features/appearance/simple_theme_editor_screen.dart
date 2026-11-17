@@ -153,23 +153,23 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
               Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_name.text.isEmpty ? 'Новая тема'.tr : _name.text,
+                  Text(_name.text.isEmpty ? 'New theme'.tr : _name.text,
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 4),
-                  Text('Предпросмотр реальных элементов интерфейса'.tr,
+                  Text('Preview of real interface elements'.tr,
                     style: Theme.of(context).textTheme.bodySmall),
                 ],
               )),
               const SizedBox(width: 10),
-              StatusPill(label: 'Готово'.tr, color: palette.accent),
+              StatusPill(label: 'Done'.tr, color: palette.accent),
             ]),
             const SizedBox(height: 14),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(child: _previewPanelCard(
                 context: context,
-                title: 'Подключение'.tr,
-                subtitle: 'Кнопка VPN и стеклянная карточка'.tr,
+                title: 'Connection'.tr,
+                subtitle: 'VPN button and glass card'.tr,
                 trailing: Container(
                   width: 54, height: 54,
                   decoration: BoxDecoration(
@@ -183,19 +183,19 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
                   ),
                   child: Icon(Icons.power_settings_new_rounded, color: palette.text, size: 28),
                 ),
-                footer: Text('Локальный прокси: доступен'.tr,
+                footer: Text('Local proxy: available'.tr,
                     style: Theme.of(context).textTheme.bodyMedium),
               )),
               const SizedBox(width: 12),
               Expanded(child: _previewPanelCard(
                 context: context,
-                title: 'Кнопки и бейджи'.tr,
-                subtitle: 'Цвета берутся из темы'.tr,
+                title: 'Buttons and badges'.tr,
+                subtitle: 'Colors come from the theme'.tr,
                 footer: Wrap(spacing: 10, runSpacing: 10,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    FilledButton(onPressed: () {}, child: Text('Подключить'.tr)),
-                    StatusPill(label: '86 мс'.tr, color: palette.secondary),
+                    FilledButton(onPressed: () {}, child: Text('Connect'.tr)),
+                    StatusPill(label: '86 ms'.tr, color: palette.secondary),
                   ],
                 ),
               )),
@@ -210,11 +210,11 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
   Future<void> _chooseMascot() async {
     try {
       final file = await openFile(acceptedTypeGroups: [
-        XTypeGroup(label: 'Изображение'.tr, extensions: ['png', 'jpg', 'jpeg', 'webp']),
+        XTypeGroup(label: 'Image'.tr, extensions: ['png', 'jpg', 'jpeg', 'webp']),
       ]);
       if (file == null) return;
       if (await file.length() > ThemeController.maxMascotBytes) {
-        throw FormatException('Маскот больше 6 МБ'.tr);
+        throw FormatException('The mascot is larger than 6 MB'.tr);
       }
       final bytes = await file.readAsBytes();
       if (!mounted) return;
@@ -222,7 +222,7 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
     } on Object catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось загрузить картинку: {}'.trf([error]))),
+          SnackBar(content: Text('Failed to load the image: {}'.trf([error]))),
         );
       }
     }
@@ -239,7 +239,7 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
       final color = _parseColor(_colors[role]!.text);
       if (color == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Неверный HEX: {}'.trf([OrexPalette.roles[role]]))),
+          SnackBar(content: Text('Invalid HEX: {}'.trf([OrexPalette.roles[role]]))),
         );
         return;
       }
@@ -269,7 +269,7 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
     } on Object catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось сохранить: {}'.trf([error]))),
+          SnackBar(content: Text('Failed to save: {}'.trf([error]))),
         );
       }
     } finally {
@@ -324,25 +324,25 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
               // the earlier editor layout, not the temporary plain ListTiles.
               _buildRealPreview(),
               const SizedBox(height: 16),
-              SettingsSection(title: 'Общее'.tr, children: [
+              SettingsSection(title: 'General'.tr, children: [
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: TextField(
                     controller: _name,
                     maxLength: 80,
                     onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(labelText: 'Название темы'.tr),
+                    decoration: InputDecoration(labelText: 'Theme name'.tr),
                   ),
                 ),
                 SwitchListTile(
-                  title: Text('Светлое оформление'.tr),
-                  subtitle: Text('Использовать светлые элементы интерфейса'.tr),
+                  title: Text('Light appearance'.tr),
+                  subtitle: Text('Use light interface elements'.tr),
                   value: _light,
                   onChanged: (value) => setState(() => _light = value),
                 ),
               ]),
               const SizedBox(height: 16),
-              SettingsSection(title: 'Палитра (HEX)'.tr, children: [
+              SettingsSection(title: 'Palette (HEX)'.tr, children: [
                 Padding(
                   padding: const EdgeInsets.all(12),
                   child: Wrap(spacing: 12, runSpacing: 12, children: [
@@ -367,34 +367,34 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
                 ),
               ]),
               const SizedBox(height: 16),
-              SettingsSection(title: 'Стекло'.tr, children: [
-                _slider('Прозрачность панелей'.tr, 1 - _opacity, 0.05, 0.85,
+              SettingsSection(title: 'Glass'.tr, children: [
+                _slider('Panel transparency'.tr, 1 - _opacity, 0.05, 0.85,
                     '${((1 - _opacity) * 100).round()}%',
                     (v) => _opacity = 1 - v, divisions: 16),
-                _slider('Размытие'.tr, _blur, 0, 36, '${_blur.round()} px',
+                _slider('Blur'.tr, _blur, 0, 36, '${_blur.round()} px',
                     (v) => _blur = v, divisions: 36),
-                _slider('Затенение / свечение'.tr, _glow, -0.85, 0.85,
+                _slider('Shading / glow'.tr, _glow, -0.85, 0.85,
                     '${(_glow * 100).round() > 0 ? '+' : ''}${(_glow * 100).round()}%',
                     (v) => _glow = v, divisions: 34),
                 Padding(
                   padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: Text('−85% — тёмная тень, 0% — как у классического Orex, +85% — цветное свечение.'.tr),
+                  child: Text('−85% — dark shadow, 0% — like classic Orex, +85% — colored glow.'.tr),
                 ),
               ]),
               const SizedBox(height: 16),
-              SettingsSection(title: 'Маскот'.tr, children: [
+              SettingsSection(title: 'Mascot'.tr, children: [
                 ListTile(
                   key: const ValueKey('theme-mascot-picker'),
                   leading: const Icon(Icons.upload_file_rounded),
-                  title: Text('Выбрать изображение'.tr),
-                  subtitle: Text('PNG, JPEG или WebP до 6 МБ; картинка включена в JSON'.tr),
+                  title: Text('Choose an image'.tr),
+                  subtitle: Text('PNG, JPEG or WebP up to 6 MB; the image is embedded in the JSON'.tr),
                   onTap: _chooseMascot,
                 ),
                 if (_selectedImage != null ||
                     (!_resetMascot && widget.initial.mascotPath.isNotEmpty))
                   ListTile(
                     leading: const Icon(Icons.restore),
-                    title: Text('Вернуть стандартную белочку'.tr),
+                    title: Text('Restore the default squirrel'.tr),
                     onTap: () => setState(() {
                       _resetMascot = true; _selectedImage = null;
                     }),
@@ -404,7 +404,7 @@ class _SimpleThemeEditorScreenState extends State<SimpleThemeEditorScreen> {
               FilledButton.icon(
                 onPressed: _saving ? null : _save,
                 icon: const Icon(Icons.check_rounded),
-                label: Text('Сохранить тему'.tr),
+                label: Text('Save theme'.tr),
               ),
             ]),
           ));

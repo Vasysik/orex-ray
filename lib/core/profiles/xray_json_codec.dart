@@ -39,21 +39,21 @@ class XrayJsonCodec {
     String sourceLabel = '',
   }) {
     if (utf8.encode(payload).length > maxPayloadBytes) {
-      throw FormatException('JSON Xray больше 5 МБ'.tr);
+      throw FormatException('Xray JSON is larger than 5 MB'.tr);
     }
     var text = payload.trim();
     if (text.startsWith('\uFEFF')) {
       text = text.substring(1).trimLeft();
     }
     if (text.isEmpty) {
-      throw FormatException('JSON Xray пуст'.tr);
+      throw FormatException('Xray JSON is empty'.tr);
     }
 
     Object? decoded;
     try {
       decoded = jsonDecode(text);
     } on FormatException {
-      throw FormatException('Некорректный JSON Xray'.tr);
+      throw FormatException('Invalid Xray JSON'.tr);
     }
 
     final profiles = <TunnelProfile>[];
@@ -65,10 +65,10 @@ class XrayJsonCodec {
       int depth = 0,
     }) {
       if (depth > _maxNestingDepth) {
-        throw FormatException('Слишком глубокая вложенность JSON Xray'.tr);
+        throw FormatException('Xray JSON nesting too deep'.tr);
       }
       if (profiles.length > maxProfiles) {
-        throw FormatException('В JSON больше 500 профилей'.tr);
+        throw FormatException('The JSON contains more than 500 profiles'.tr);
       }
       if (value is List) {
         for (final item in value) {
@@ -78,7 +78,7 @@ class XrayJsonCodec {
       }
       if (value is! Map) {
         throw FormatException(
-          'JSON Xray должен быть объектом или массивом объектов'.tr,
+          'Xray JSON must be an object or an array of objects'.tr,
         );
       }
 
@@ -109,7 +109,7 @@ class XrayJsonCodec {
             if (!_isIgnorableProtocol(protocol)) skippedUnsupported += 1;
           } else {
             if (profiles.length + parsed.length > maxProfiles) {
-              throw FormatException('В JSON больше 500 профилей'.tr);
+              throw FormatException('The JSON contains more than 500 profiles'.tr);
             }
             profiles.addAll(parsed);
           }
@@ -128,7 +128,7 @@ class XrayJsonCodec {
           if (!_isIgnorableProtocol(protocol)) skippedUnsupported += 1;
         } else {
           if (profiles.length + parsed.length > maxProfiles) {
-            throw FormatException('В JSON больше 500 профилей'.tr);
+            throw FormatException('The JSON contains more than 500 profiles'.tr);
           }
           profiles.addAll(parsed);
         }
@@ -136,17 +136,17 @@ class XrayJsonCodec {
       }
 
       throw FormatException(
-        'Не найден объект outbound или массив outbounds'.tr,
+        'No outbound object or outbounds array found'.tr,
       );
     }
 
     addRoot(decoded);
     if (profiles.length > maxProfiles) {
-      throw FormatException('В JSON больше 500 профилей'.tr);
+      throw FormatException('The JSON contains more than 500 profiles'.tr);
     }
     if (profiles.isEmpty) {
       throw FormatException(
-        'В JSON нет поддерживаемых Xray outbound-профилей'.tr,
+        'The JSON contains no supported Xray outbound profiles'.tr,
       );
     }
     return XrayJsonDecodeResult(
@@ -164,17 +164,17 @@ class XrayJsonCodec {
   }) {
     final profiles = values.toList(growable: false);
     if (profiles.isEmpty) {
-      throw FormatException('Нет профилей для экспорта'.tr);
+      throw FormatException('No profiles to export'.tr);
     }
     if (profiles.length > maxProfiles) {
-      throw FormatException('Можно экспортировать не больше 500 профилей'.tr);
+      throw FormatException('You can export no more than 500 profiles'.tr);
     }
 
     final configs = profiles.map(_exportConfig).toList(growable: false);
     final value = !forceArray && configs.length == 1 ? configs.single : configs;
     final encoded = const JsonEncoder.withIndent('  ').convert(value);
     if (utf8.encode(encoded).length > maxPayloadBytes) {
-      throw FormatException('Экспорт JSON Xray больше 5 МБ'.tr);
+      throw FormatException('The Xray JSON export is larger than 5 MB'.tr);
     }
     return encoded;
   }
@@ -323,10 +323,10 @@ class XrayJsonCodec {
     }
 
     if (endpoints.isEmpty) {
-      throw FormatException('Outbound {} не содержит серверов'.trf([protocol.title]));
+      throw FormatException('Outbound {} contains no servers'.trf([protocol.title]));
     }
     if (endpoints.length > maxProfiles) {
-      throw FormatException('В одном outbound больше 500 профилей'.tr);
+      throw FormatException('A single outbound has more than 500 profiles'.tr);
     }
 
     final profiles = <TunnelProfile>[];
@@ -429,7 +429,7 @@ class XrayJsonCodec {
         .trim()
         .toLowerCase();
     if (!{'none', 'tls', 'reality'}.contains(security)) {
-      throw FormatException('Неподдерживаемый Xray security={}'.trf([security]));
+      throw FormatException('Unsupported Xray security={}'.trf([security]));
     }
 
     var path = '';
@@ -444,7 +444,7 @@ class XrayJsonCodec {
       final headerType = _string(header['type'], fallback: 'none').toLowerCase();
       if (headerType != 'none' && headerType.isNotEmpty) {
         throw FormatException(
-          'TCP header type={} пока нельзя представить профилем OrexRay'.trf([headerType]),
+          'TCP header type={} cannot be represented as an OrexRay profile yet'.trf([headerType]),
         );
       }
     } else if (transport == 'websocket') {
@@ -489,7 +489,7 @@ class XrayJsonCodec {
       shortId = _string(reality['shortId']);
       spiderX = _string(reality['spiderX']);
       if (realityPassword.trim().isEmpty) {
-        throw FormatException('Для REALITY в JSON нужен public key'.tr);
+        throw FormatException('REALITY in JSON requires a public key'.tr);
       }
     } else if (security == 'tls') {
       final tls = _map(settings['tlsSettings']);
@@ -518,33 +518,33 @@ class XrayJsonCodec {
 
   void _validateEndpoint(OutboundProtocol protocol, _Endpoint endpoint) {
     if (endpoint.address.trim().isEmpty) {
-      throw FormatException('В outbound {} нет адреса'.trf([protocol.title]));
+      throw FormatException('Outbound {} has no address'.trf([protocol.title]));
     }
     if (endpoint.address.length > 1024) {
-      throw FormatException('Адрес Xray слишком длинный'.tr);
+      throw FormatException('Xray address is too long'.tr);
     }
     if (endpoint.port < 1 || endpoint.port > 65535) {
-      throw FormatException('Некорректный порт Xray outbound'.tr);
+      throw FormatException('Invalid Xray outbound port'.tr);
     }
     if ((protocol == OutboundProtocol.vless ||
             protocol == OutboundProtocol.vmess) &&
         endpoint.userId.trim().isEmpty) {
-      throw FormatException('В outbound {} нет UUID'.trf([protocol.title]));
+      throw FormatException('Outbound {} has no UUID'.trf([protocol.title]));
     }
     if ((protocol == OutboundProtocol.trojan ||
             protocol == OutboundProtocol.shadowsocks) &&
         endpoint.password.isEmpty) {
-      throw FormatException('В outbound {} нет пароля'.trf([protocol.title]));
+      throw FormatException('Outbound {} has no password'.trf([protocol.title]));
     }
     if (protocol == OutboundProtocol.shadowsocks &&
         endpoint.encryption.trim().isEmpty) {
-      throw FormatException('В Shadowsocks outbound нет метода'.tr);
+      throw FormatException('The Shadowsocks outbound has no method'.tr);
     }
     if ((protocol == OutboundProtocol.socks ||
             protocol == OutboundProtocol.http) &&
         (endpoint.userId.isEmpty != endpoint.password.isEmpty)) {
       throw FormatException(
-        'Для SOCKS/HTTP нужны и имя пользователя, и пароль'.tr,
+        'SOCKS/HTTP requires both a username and a password'.tr,
       );
     }
   }
@@ -556,7 +556,7 @@ class XrayJsonCodec {
         'xhttp' || 'splithttp' => 'xhttp',
         'httpupgrade' => 'httpupgrade',
         final unsupported => throw FormatException(
-            'Неподдерживаемый Xray transport={}'.trf([unsupported]),
+            'Unsupported Xray transport={}'.trf([unsupported]),
           ),
       };
 

@@ -35,13 +35,13 @@ class QrLinkImport {
   /// Returns null only when the user cancels file selection.
   static Future<String?> pickFromImage() async {
     final file = await openFile(acceptedTypeGroups: [
-      XTypeGroup(label: 'QR-код'.tr, extensions: ['png', 'jpg', 'jpeg']),
+      XTypeGroup(label: 'QR code'.tr, extensions: ['png', 'jpg', 'jpeg']),
     ]);
     if (file == null) {
       return null;
     }
     if (await file.length() > maxImageBytes) {
-      throw FormatException('Изображение QR больше 10 МБ'.tr);
+      throw FormatException('The QR image is larger than 10 MB'.tr);
     }
     final bytes = await file.readAsBytes();
     return compute(decodeImage, bytes);
@@ -51,7 +51,7 @@ class QrLinkImport {
   @visibleForTesting
   static String decodeImage(Uint8List bytes) {
     if (bytes.length > maxImageBytes) {
-      throw FormatException('Изображение QR больше 10 МБ'.tr);
+      throw FormatException('The QR image is larger than 10 MB'.tr);
     }
     // The image package may throw a RangeError on malformed or truncated
     // input instead of returning null. Normalize decoder errors for the UI.
@@ -59,13 +59,13 @@ class QrLinkImport {
     try {
       decoded = img.decodeImage(bytes);
     } on Object {
-      throw FormatException('Не удалось прочитать изображение'.tr);
+      throw FormatException('Failed to read the image'.tr);
     }
     if (decoded == null) {
-      throw FormatException('Не удалось прочитать изображение'.tr);
+      throw FormatException('Failed to read the image'.tr);
     }
     if (decoded.width * decoded.height > maxPixels) {
-      throw FormatException('Изображение QR слишком большое'.tr);
+      throw FormatException('The QR image is too large'.tr);
     }
     final rgba = decoded.convert(numChannels: 4)
         .getBytes(order: img.ChannelOrder.rgba);
@@ -78,11 +78,11 @@ class QrLinkImport {
       );
       final link = result.text.trim();
       if (!isSupportedLink(link)) {
-        throw FormatException('QR не содержит поддерживаемую ссылку профиля'.tr);
+        throw FormatException('The QR code does not contain a supported profile link'.tr);
       }
       return link;
     } on zx.ReaderException {
-      throw FormatException('QR-код на изображении не найден'.tr);
+      throw FormatException('No QR code found in the image'.tr);
     }
   }
 }
@@ -121,7 +121,7 @@ class _QrCameraDialogState extends State<QrCameraDialog> {
       }
       if (!QrLinkImport.isSupportedLink(link)) {
         if (_error == null) {
-          setState(() => _error = 'Нужен QR со ссылкой VLESS, VMess, Trojan или другого прокси'.tr);
+          setState(() => _error = 'A QR with a VLESS, VMess, Trojan or other proxy link is required'.tr);
         }
         continue;
       }
@@ -153,10 +153,10 @@ class _QrCameraDialogState extends State<QrCameraDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(children: [
-                  Expanded(child: Text('Сканировать QR'.tr,
+                  Expanded(child: Text('Scan QR'.tr,
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600))),
                   IconButton(
-                    tooltip: 'Закрыть сканер'.tr,
+                    tooltip: 'Close the scanner'.tr,
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded),
                   ),
@@ -172,14 +172,14 @@ class _QrCameraDialogState extends State<QrCameraDialog> {
                       errorBuilder: (context, error) => Center(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Text('Камера недоступна: {}. Проверь разрешение на камеру.'.trf([error.errorCode.name])),
+                          child: Text('Camera unavailable: {}. Check the camera permission.'.trf([error.errorCode.name])),
                         ),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text(_error ?? 'Наведите камеру на QR-код подключения.'.tr,
+                Text(_error ?? 'Point the camera at the connection QR code.'.tr,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall),
               ],

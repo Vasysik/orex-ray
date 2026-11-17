@@ -148,7 +148,7 @@ class _Header extends StatelessWidget {
             children: [
               Text('OrexRay', style: Theme.of(context).textTheme.headlineSmall),
               Text(
-                'Xray-клиент с характером Orex'.tr,
+                'An Xray client with Orex character'.tr,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -184,7 +184,7 @@ class _Header extends StatelessWidget {
           Theme.of(context).textTheme.headlineSmall,
         );
         final subtitleWidth = textWidth(
-          'Xray-клиент с характером Orex'.tr,
+          'An Xray client with Orex character'.tr,
           Theme.of(context).textTheme.bodySmall,
         );
         final brandTextWidth =
@@ -281,12 +281,12 @@ class _ModeSelector extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Как направлять трафик'.tr,
+                    'How to route traffic'.tr,
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
                 if (!tunnel.canChangeMode)
-                  Text('Сначала отключитесь'.tr,
+                  Text('Disconnect first'.tr,
                       style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
@@ -384,12 +384,12 @@ class _ConnectionHero extends StatelessWidget {
     final fallbackMessage = snapshot.message ??
         (hasProfile
             ? 'Готовы подключить ${profile.name}'
-            : 'Сначала добавьте профиль'.tr);
+            : 'Add a profile first'.tr);
     final secondaryText = !showStatusText && active
         ? routeFailed
-            ? 'Ошибка соединения'.tr
+            ? 'Connection error'.tr
             : pingStatus != PingStatus.success
-                ? 'Проверяем маршрут…'.tr
+                ? 'Checking the route…'.tr
                 : fallbackMessage
         : fallbackMessage;
 
@@ -406,10 +406,10 @@ class _ConnectionHero extends StatelessWidget {
           if (showStatusText) ...[
             Text(
               routeFailed
-                  ? 'Ошибка соединения'.tr
+                  ? 'Connection error'.tr
                   : snapshot.status == TunnelStatus.connected &&
                           pingStatus != PingStatus.success
-                      ? 'Проверяем маршрут…'.tr
+                      ? 'Checking the route…'.tr
                       : _statusTitle(snapshot.status),
               style: Theme.of(context).textTheme.titleLarge,
             ),
@@ -433,7 +433,7 @@ class _ConnectionHero extends StatelessWidget {
                 ? _formatDuration(snapshot.stats.duration)
                 : hasProfile
                     ? profile.endpoint
-                    : 'Белочка пока без маршрута'.tr,
+                    : 'The squirrel has no route yet'.tr,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium,
           ),
@@ -479,14 +479,14 @@ class _ConnectButton extends StatelessWidget {
       button: true,
       enabled: canTap,
       label: connecting
-          ? 'Отменить подключение OrexRay'.tr
+          ? 'Cancel OrexRay connection'.tr
           : active
               ? routeFailed
-                  ? 'Отключить OrexRay, маршрут не отвечает'.tr
-                  : 'Отключить OrexRay'.tr
+                  ? 'Disconnect OrexRay, route is unresponsive'.tr
+                  : 'Disconnect OrexRay'.tr
               : disconnecting
-                  ? 'OrexRay отключается'.tr
-                  : 'Подключить OrexRay'.tr,
+                  ? 'OrexRay is disconnecting'.tr
+                  : 'Connect OrexRay'.tr,
       child: MouseRegion(
         cursor: canTap ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(
@@ -596,7 +596,7 @@ class _MobileStatusCard extends StatelessWidget {
               Expanded(
                 child: _CompactMetric(
                   icon: Icons.south_rounded,
-                  label: 'Скачивание'.tr,
+                  label: 'Download'.tr,
                   value: _speed(snapshot.stats.downloadBytesPerSecond),
                 ),
               ),
@@ -604,7 +604,7 @@ class _MobileStatusCard extends StatelessWidget {
               Expanded(
                 child: _CompactMetric(
                   icon: Icons.north_rounded,
-                  label: 'Отдача'.tr,
+                  label: 'Upload'.tr,
                   value: _speed(snapshot.stats.uploadBytesPerSecond),
                 ),
               ),
@@ -612,7 +612,7 @@ class _MobileStatusCard extends StatelessWidget {
               Expanded(
                 child: _CompactMetric(
                   icon: Icons.network_ping_rounded,
-                  label: 'Пинг'.tr,
+                  label: 'Ping'.tr,
                   value: pingLabel,
                   busy: tunnel.refreshingLatency,
                   onTap: snapshot.profile == null
@@ -655,14 +655,14 @@ class _MobileTrafficRow extends StatelessWidget {
       return painter.width;
     }
 
-    final labelWidth = 24 + 10 + measure('Трафик'.tr, labelStyle);
+    final labelWidth = 24 + 10 + measure('Traffic'.tr, labelStyle);
     final valueWidth = measure(value, valueStyle);
     final label = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.data_usage_rounded, color: OrexPalette.of(context).accent),
         const SizedBox(width: 10),
-        Text('Трафик'.tr, style: labelStyle),
+        Text('Traffic'.tr, style: labelStyle),
       ],
     );
 
@@ -861,12 +861,12 @@ class _QuickInfo extends StatelessWidget {
                   const SizedBox(height: 18),
                   const Divider(height: 1),
                   const SizedBox(height: 18),
-                  _InfoRow(label: 'Протокол'.tr, value: profile.protocol),
+                  _InfoRow(label: 'Protocol'.tr, value: profile.protocol),
                   const SizedBox(height: 12),
-                  _InfoRow(label: 'Транспорт'.tr, value: profile.transportLabel),
+                  _InfoRow(label: 'Transport'.tr, value: profile.transportLabel),
                   const SizedBox(height: 12),
                   _InfoRow(
-                    label: 'Задержка'.tr,
+                    label: 'Latency'.tr,
                     value: pingLabel,
                   ),
                 ],
@@ -920,7 +920,7 @@ class _QuickInfo extends StatelessWidget {
       groups.add(
         _QuickTargetGroup(
           key: 'balancers',
-          title: 'Балансировщики'.tr,
+          title: 'Balancers'.tr,
           icon: Icons.hub_rounded,
           targets: balancers,
         ),
@@ -958,7 +958,7 @@ class _QuickInfo extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                       child: Text(
-                        'Быстрая смена профиля'.tr,
+                        'Quick profile switch'.tr,
                         style: Theme.of(sheetContext)
                             .textTheme
                             .titleMedium
@@ -1078,7 +1078,7 @@ class _QuickTargetTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '${target.endpoint} · ${latencyMs == null ? '- мс' : '{} мс'.trf([latencyMs])}',
+        '${target.endpoint} · ${latencyMs == null ? '- мс' : '{} ms'.trf([latencyMs])}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -1100,11 +1100,11 @@ class _NoProfileCard extends StatelessWidget {
       children: [
         const SquirrelMascot(size: 70, compact: true),
         const SizedBox(height: 14),
-        Text('Нет активного профиля'.tr,
+        Text('No active profile'.tr,
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 5),
         Text(
-          'Откройте вкладку «Профили» и импортируйте или создайте профиль'.tr,
+          'Open the "Profiles" tab and import or create a profile'.tr,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall,
         ),
@@ -1131,7 +1131,7 @@ class _TrafficCard extends StatelessWidget {
           Expanded(
             child: _Metric(
               icon: Icons.south_rounded,
-              label: 'Скачивание'.tr,
+              label: 'Download'.tr,
               value: _speed(snapshot.stats.downloadBytesPerSecond),
             ),
           ),
@@ -1139,7 +1139,7 @@ class _TrafficCard extends StatelessWidget {
           Expanded(
             child: _Metric(
               icon: Icons.north_rounded,
-              label: 'Отдача'.tr,
+              label: 'Upload'.tr,
               value: _speed(snapshot.stats.uploadBytesPerSecond),
             ),
           ),
@@ -1147,7 +1147,7 @@ class _TrafficCard extends StatelessWidget {
           Expanded(
             child: _Metric(
               icon: Icons.data_usage_rounded,
-              label: 'Трафик'.tr,
+              label: 'Traffic'.tr,
               value: '${_bytes(snapshot.stats.downloadBytes)} ↓ · '
                   '${_bytes(snapshot.stats.uploadBytes)} ↑',
             ),
@@ -1156,7 +1156,7 @@ class _TrafficCard extends StatelessWidget {
           Expanded(
             child: _Metric(
               icon: Icons.network_ping_rounded,
-              label: 'Пинг'.tr,
+              label: 'Ping'.tr,
               value: pingLabel,
               busy: tunnel.refreshingLatency,
               onTap: snapshot.profile == null
@@ -1232,10 +1232,10 @@ class _ProxyDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final available = tunnel.localProxyExpectedAvailable;
     final status = available
-        ? 'Доступен'.tr
+        ? 'Available'.tr
         : tunnel.localProxyDisabledInVpn
-            ? 'Отключён в TUN'.tr
-            : 'Неактивен'.tr;
+            ? 'Disabled in TUN'.tr
+            : 'Inactive'.tr;
     final textTheme = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1253,7 +1253,7 @@ class _ProxyDetails extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  Text('Локальный прокси'.tr, style: textTheme.titleSmall),
+                  Text('Local proxy'.tr, style: textTheme.titleSmall),
                   Text(
                     status,
                     style: textTheme.bodySmall?.copyWith(
@@ -1297,9 +1297,9 @@ class _ProxyDetails extends StatelessWidget {
           spacing: 8,
           runSpacing: 6,
           children: [
-            Text('Доступ из локальной сети:'.tr, style: textTheme.bodySmall),
+            Text('LAN access:'.tr, style: textTheme.bodySmall),
             Text(
-              tunnel.proxyAllowsLan ? 'Разрешён'.tr : 'Запрещён'.tr,
+              tunnel.proxyAllowsLan ? 'Allowed'.tr : 'Forbidden'.tr,
               style: textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
@@ -1406,15 +1406,15 @@ String _pingLabel(TunnelController tunnel, TunnelTarget? target) {
   final status = tunnel.effectivePingStatusFor(target);
   if (status != PingStatus.success) return '—';
   final ping = tunnel.effectiveLatencyFor(target);
-  return ping == null ? '—' : '{} мс'.trf([ping]);
+  return ping == null ? '—' : '{} ms'.trf([ping]);
 }
 
 String _statusTitle(TunnelStatus status) => switch (status) {
-      TunnelStatus.disconnected => 'Не подключено'.tr,
-      TunnelStatus.connecting => 'Подключаем…'.tr,
-      TunnelStatus.connected => 'OrexRay работает'.tr,
-      TunnelStatus.disconnecting => 'Отключаем…'.tr,
-      TunnelStatus.error => 'Ошибка подключения'.tr,
+      TunnelStatus.disconnected => 'Not connected'.tr,
+      TunnelStatus.connecting => 'Connecting…'.tr,
+      TunnelStatus.connected => 'OrexRay is running'.tr,
+      TunnelStatus.disconnecting => 'Disconnecting…'.tr,
+      TunnelStatus.error => 'Connection error'.tr,
     };
 
 String _formatDuration(Duration value) {
@@ -1424,17 +1424,17 @@ String _formatDuration(Duration value) {
   return '$hours:$minutes:$seconds';
 }
 
-String _speed(int value) => '${_bytes(value)}${'/с'.tr}';
+String _speed(int value) => '${_bytes(value)}${'/s'.tr}';
 
 String _bytes(int value) {
-  if (value < 1024) return '$value ${'Б'.tr}';
+  if (value < 1024) return '$value ${'B'.tr}';
   if (value < 1024 * 1024) {
-    return '${(value / 1024).toStringAsFixed(1)} ${'КБ'.tr}';
+    return '${(value / 1024).toStringAsFixed(1)} ${'KB'.tr}';
   }
   if (value < 1024 * 1024 * 1024) {
-    return '${(value / (1024 * 1024)).toStringAsFixed(1)} ${'МБ'.tr}';
+    return '${(value / (1024 * 1024)).toStringAsFixed(1)} ${'MB'.tr}';
   }
-  return '${(value / (1024 * 1024 * 1024)).toStringAsFixed(2)} ${'ГБ'.tr}';
+  return '${(value / (1024 * 1024 * 1024)).toStringAsFixed(2)} ${'GB'.tr}';
 }
 
 IconData _modeIcon(ConnectionMode mode) => switch (mode) {

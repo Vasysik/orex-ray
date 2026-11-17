@@ -1,8 +1,8 @@
 {
   "format": "orexray-theme",
   "version": 1,
-  "name": "Классический Orex",
-  "description": "Оригинальное оформление с медью, охрой и белочкой",
+  "name": "Classic Orex",
+  "description": "The original look with copper, ochre and a squirrel",
   "colors": {
     "accent": "#FFD47939",
     "secondary": "#FFD9A05B",

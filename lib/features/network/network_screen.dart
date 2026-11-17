@@ -19,14 +19,14 @@ class NetworkScreen extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         children: [
           SettingsPageHeader(
-            title: 'Сеть'.tr,
-            subtitle: 'DNS и маршрутизация Xray'.tr,
+            title: 'Network'.tr,
+            subtitle: 'Xray DNS and routing'.tr,
             icon: Icons.public_rounded,
           ),
           const SizedBox(height: 22),
           SettingsSection(
             title: 'DNS',
-            subtitle: 'VPN-применение требует переподключения.'.tr,
+            subtitle: 'Applying to the VPN requires reconnecting.'.tr,
             children: [
               RadioGroup<DnsPreset>(
                 groupValue: settings.dnsPreset,
@@ -60,10 +60,10 @@ class NetworkScreen extends StatelessWidget {
                 ListTile(
                   leading: Icon(Icons.edit_note_rounded,
                       color: OrexPalette.of(context).accent),
-                  title: Text('Адреса DNS'.tr),
+                  title: Text('DNS addresses'.tr),
                   subtitle: Text(
                     settings.customDns.isEmpty
-                        ? 'Не заданы'.tr
+                        ? 'Not set'.tr
                         : settings.customDns,
                   ),
                   trailing: const Icon(Icons.chevron_right_rounded),
@@ -75,14 +75,14 @@ class NetworkScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SettingsSection(
-            title: 'Маршрутизация'.tr,
+            title: 'Routing'.tr,
             children: [
               SwitchListTile(
                 secondary: Icon(Icons.home_work_outlined,
                     color: OrexPalette.of(context).accent),
-                title: Text('Локальные сети напрямую'.tr),
+                title: Text('Local networks directly'.tr),
                 subtitle:
-                    Text('Не отправлять частные IP-диапазоны через Xray'.tr),
+                    Text('Do not send private IP ranges through Xray'.tr),
                 value: settings.bypassPrivateNetworks,
                 onChanged: settings.setBypassPrivateNetworks,
               ),
@@ -90,9 +90,9 @@ class NetworkScreen extends StatelessWidget {
               SwitchListTile(
                 secondary: Icon(Icons.manage_search_rounded,
                     color: OrexPalette.of(context).accent),
-                title: Text('Sniffing протоколов'.tr),
+                title: Text('Protocol sniffing'.tr),
                 subtitle: Text(
-                    'Определять HTTP, TLS и QUIC для корректной маршрутизации'.tr),
+                    'Detect HTTP, TLS and QUIC for correct routing'.tr),
                 value: settings.sniffingEnabled,
                 onChanged: settings.setSniffingEnabled,
               ),
@@ -100,8 +100,8 @@ class NetworkScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SettingsSection(
-            title: 'Проверка задержки'.tr,
-            subtitle: 'Публичный адрес для измерения задержки'.tr,
+            title: 'Latency check'.tr,
+            subtitle: 'Public address for latency measurement'.tr,
             children: [
               RadioGroup<LatencyProbePreset>(
                 groupValue: settings.latencyProbePreset,
@@ -136,7 +136,7 @@ class NetworkScreen extends StatelessWidget {
                   leading: Icon(Icons.link_rounded,
                     color: OrexPalette.of(context).accent,
                   ),
-                  title: Text('Изменить URL'.tr),
+                  title: Text('Change URL'.tr),
                   subtitle: Text(settings.customLatencyProbeUrl),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   mouseCursor: SystemMouseCursors.click,
@@ -169,12 +169,12 @@ Future<void> _editCustomLatencyProbeUrl(
 ) {
   return showOrexEditDialog(
     context,
-    title: 'URL проверки задержки'.tr,
+    title: 'Latency check URL'.tr,
     initialValue: settings.customLatencyProbeUrl,
     keyboardType: TextInputType.url,
     textInputAction: TextInputAction.done,
     labelText: 'https://example.com/health',
-    helperText: 'Только публичный HTTP(S) адрес'.tr,
+    helperText: 'Public HTTP(S) address only'.tr,
     validator: ConnectionSettingsController.validateLatencyProbeUrl,
     onSave: settings.setCustomLatencyProbeUrl,
   );
@@ -186,11 +186,11 @@ Future<void> _editCustomDns(
 ) {
   return showOrexEditDialog(
     context,
-    title: 'Свой DNS'.tr,
+    title: 'Custom DNS'.tr,
     initialValue: settings.customDns,
     maxLines: 3,
     hintText: '9.9.9.9, 149.112.112.112',
-    helperText: 'Разделяй адреса пробелами или запятыми'.tr,
+    helperText: 'Separate addresses with spaces or commas'.tr,
     onSave: (value) async {
       await settings.setCustomDns(value);
       await settings.setDnsPreset(DnsPreset.custom);

@@ -48,15 +48,15 @@ class _AppsScreenState extends State<AppsScreen> {
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   SettingsPageHeader(
-                    title: 'Приложения'.tr,
+                    title: 'Apps'.tr,
                     subtitle:
-                        'Split tunneling: исключения или только выбранные приложения'.tr,
+                        'Split tunneling: exclusions or selected apps only'.tr,
                     icon: Icons.apps_rounded,
                   ),
                   const SizedBox(height: 22),
                   SettingsSection(
-                    title: 'Режим'.tr,
-                    subtitle: 'Применяется при следующем запуске Android VPN.'.tr,
+                    title: 'Mode'.tr,
+                    subtitle: 'Applies on the next Android VPN start.'.tr,
                     children: [
                       RadioGroup<AppRoutingMode>(
                         groupValue: widget.controller.mode,
@@ -91,9 +91,9 @@ class _AppsScreenState extends State<AppsScreen> {
                         TextField(
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search_rounded),
-                            hintText: 'Поиск приложения или пакета'.tr,
+                            hintText: 'Search for an app or package'.tr,
                             suffixIcon: IconButton(
-                              tooltip: 'Обновить список'.tr,
+                              tooltip: 'Refresh the list'.tr,
                               onPressed: widget.controller.loading
                                   ? null
                                   : () => unawaited(
@@ -122,7 +122,7 @@ class _AppsScreenState extends State<AppsScreen> {
                                 Icons.settings_suggest_rounded,
                                 size: 18,
                               ),
-                              label: Text('Системные'.tr),
+                              label: Text('System apps'.tr),
                               onSelected: (value) => unawaited(
                                 widget.controller.setShowSystemApps(value),
                               ),
@@ -133,7 +133,7 @@ class _AppsScreenState extends State<AppsScreen> {
                                 Icons.check_circle_outline_rounded,
                                 size: 18,
                               ),
-                              label: Text('Только выбранные'.tr),
+                              label: Text('Selected only'.tr),
                               onSelected: (value) =>
                                   setState(() => _selectedOnly = value),
                             ),
@@ -154,7 +154,7 @@ class _AppsScreenState extends State<AppsScreen> {
                   ],
                   const SizedBox(height: 12),
                   Text(
-                    '{} выбрано · {} показано · {} всего'.trf([widget.controller.selectedPackages.length, apps.length, widget.controller.apps.length]),
+                    '{} selected · {} shown · {} total'.trf([widget.controller.selectedPackages.length, apps.length, widget.controller.apps.length]),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 8),
@@ -173,7 +173,7 @@ class _AppsScreenState extends State<AppsScreen> {
                   child: GlassPanel(
                     borderRadius: 20,
                     padding: EdgeInsets.all(24),
-                    child: Center(child: Text('Приложения не найдены'.tr)),
+                    child: Center(child: Text('No apps found'.tr)),
                   ),
                 ),
               )
@@ -212,7 +212,7 @@ class _AppsScreenState extends State<AppsScreen> {
                                   Padding(
                                     padding: const EdgeInsets.only(left: 8),
                                     child: Tooltip(
-                                      message: 'Системное приложение'.tr,
+                                      message: 'System app'.tr,
                                       child: Icon(
                                         Icons.settings_rounded,
                                         size: 16,
@@ -323,8 +323,8 @@ class _UnsupportedAppsScreen extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       children: [
         SettingsPageHeader(
-          title: 'Приложения'.tr,
-          subtitle: 'Split tunneling по приложениям доступен на Android'.tr,
+          title: 'Apps'.tr,
+          subtitle: 'Per-app split tunneling is available on Android'.tr,
           icon: Icons.apps_rounded,
         ),
         SizedBox(height: 22),
@@ -332,7 +332,7 @@ class _UnsupportedAppsScreen extends StatelessWidget {
           borderRadius: 22,
           padding: EdgeInsets.all(24),
           child: Text(
-            'На Windows маршрутизация по процессам потребует отдельного Windows-native backend. Сейчас эта страница управляет Android VPN.'.tr,
+            'On Windows, per-process routing will require a separate Windows-native backend. This page currently manages the Android VPN.'.tr,
           ),
         ),
       ],

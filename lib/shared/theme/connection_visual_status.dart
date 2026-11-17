@@ -34,7 +34,7 @@ class ConnectionVisualStatus {
     if (snapshot.isConnected) {
       if (isRouteFailed(routePingStatus)) {
         return ConnectionVisualStatus._(
-          label: 'Нет ответа'.tr,
+          label: 'No response'.tr,
           color: danger,
           isProtected: false,
           trayStatus: routePingStatus == PingStatus.timeout
@@ -44,14 +44,14 @@ class ConnectionVisualStatus {
       }
       if (routePingStatus == PingStatus.success) {
         return ConnectionVisualStatus._(
-          label: 'Защищено'.tr,
+          label: 'Protected'.tr,
           color: success,
           isProtected: true,
           trayStatus: 'connected',
         );
       }
       return ConnectionVisualStatus._(
-        label: 'Проверка'.tr,
+        label: 'Check'.tr,
         color: accent,
         isProtected: false,
         trayStatus: 'checking',
@@ -59,25 +59,25 @@ class ConnectionVisualStatus {
     }
     return switch (snapshot.status) {
       TunnelStatus.connecting => ConnectionVisualStatus._(
-          label: 'Подключение'.tr,
+          label: 'Connection'.tr,
           color: accent,
           isProtected: false,
           trayStatus: 'connecting',
         ),
       TunnelStatus.disconnecting => ConnectionVisualStatus._(
-          label: 'Отключение'.tr,
+          label: 'Disconnect'.tr,
           color: accent,
           isProtected: false,
           trayStatus: 'disconnecting',
         ),
       TunnelStatus.error => ConnectionVisualStatus._(
-          label: 'Ошибка'.tr,
+          label: 'Error'.tr,
           color: danger,
           isProtected: false,
           trayStatus: 'error',
         ),
       _ => ConnectionVisualStatus._(
-          label: 'Не подключено'.tr,
+          label: 'Not connected'.tr,
           color: accent,
           isProtected: false,
           trayStatus: 'disconnected',

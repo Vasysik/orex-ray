@@ -12,7 +12,7 @@ class ProxyLinkExporter {
     if (profile.address.trim().isEmpty ||
         profile.port < 1 ||
         profile.port > 65535) {
-      throw FormatException('У профиля нет корректного адреса или порта'.tr);
+      throw FormatException('The profile has no valid address or port'.tr);
     }
     final address = _host(profile.address);
     final name = Uri.encodeComponent(profile.name);
@@ -20,7 +20,7 @@ class ProxyLinkExporter {
     switch (profile.outboundProtocol) {
       case OutboundProtocol.vless:
         if (profile.userId.trim().isEmpty) {
-          throw FormatException('У VLESS-профиля отсутствует ID'.tr);
+          throw FormatException('The VLESS profile is missing an ID'.tr);
         }
         final query = _streamQuery(profile)..['encryption'] = profile.encryption;
         if (profile.flow.isNotEmpty) query['flow'] = profile.flow;
@@ -28,7 +28,7 @@ class ProxyLinkExporter {
             '$address:${profile.port}${_query(query)}#$name';
       case OutboundProtocol.vmess:
         if (profile.userId.trim().isEmpty) {
-          throw FormatException('У VMess-профиля отсутствует ID'.tr);
+          throw FormatException('The VMess profile is missing an ID'.tr);
         }
         final payload = <String, Object?>{
           'v': '2',
@@ -59,13 +59,13 @@ class ProxyLinkExporter {
         return 'vmess://$encoded';
       case OutboundProtocol.trojan:
         if (profile.password.isEmpty) {
-          throw FormatException('У Trojan-профиля отсутствует пароль'.tr);
+          throw FormatException('The Trojan profile is missing a password'.tr);
         }
         return 'trojan://${Uri.encodeComponent(profile.password)}@'
             '$address:${profile.port}${_query(_streamQuery(profile))}#$name';
       case OutboundProtocol.shadowsocks:
         if (profile.password.isEmpty || profile.encryption.isEmpty) {
-          throw FormatException('У Shadowsocks отсутствует метод или пароль'.tr);
+          throw FormatException('Shadowsocks is missing a method or password'.tr);
         }
         final auth = base64Url
             .encode(utf8.encode('${profile.encryption}:${profile.password}'))
@@ -88,7 +88,7 @@ class ProxyLinkExporter {
   String _userInfo(TunnelProfile profile) {
     if (profile.userId.isEmpty && profile.password.isEmpty) return '';
     if (profile.userId.isEmpty || profile.password.isEmpty) {
-      throw FormatException('Нужны одновременно логин и пароль прокси'.tr);
+      throw FormatException('Both proxy login and password are required'.tr);
     }
     return '${Uri.encodeComponent(profile.userId)}:'
         '${Uri.encodeComponent(profile.password)}@';

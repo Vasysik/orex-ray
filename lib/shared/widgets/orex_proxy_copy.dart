@@ -22,7 +22,7 @@ class OrexProxyCopy {
     await Clipboard.setData(ClipboardData(text: address));
     if (!context.mounted) return;
     if (Scaffold.maybeOf(context) != null) {
-      OrexNotice.copied(context, '{}: адрес скопирован'.trf([protocol]));
+      OrexNotice.copied(context, '{}: address copied'.trf([protocol]));
     }
   }
 
@@ -80,18 +80,18 @@ class OrexProxyCopy {
             dense: true,
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.computer_rounded),
-            title: Text('127.0.0.1 · это устройство'.tr),
+            title: Text('127.0.0.1 · this device'.tr),
           ),
         ),
         if (!allowLan)
           PopupMenuItem<String>(
             enabled: false,
-            child: Text('Доступ из локальной сети запрещён'.tr),
+            child: Text('LAN access is forbidden'.tr),
           )
         else if (networkAddresses.isEmpty)
           PopupMenuItem<String>(
             enabled: false,
-            child: Text('IPv4-адрес локальной сети не найден'.tr),
+            child: Text('No LAN IPv4 address found'.tr),
           )
         else
           for (final item in networkAddresses)

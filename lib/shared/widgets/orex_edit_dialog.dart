@@ -148,11 +148,11 @@ class _OrexEditDialogState extends State<_OrexEditDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: Text('Отмена'.tr),
+          child: Text('Cancel'.tr),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Сохранение…'.tr : 'Сохранить'.tr),
+          child: Text(_saving ? 'Saving…'.tr : 'Save'.tr),
         ),
       ],
     );

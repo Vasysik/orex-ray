@@ -59,7 +59,7 @@ class SquirrelMascot extends StatelessWidget {
         .toInt();
     final mascot = Semantics(
       image: true,
-      label: 'Белочка OrexRay в защищённой ореховой скорлупе'.tr,
+      label: 'The OrexRay squirrel in a hardened nutshell'.tr,
       child: Container(
         width: size,
         height: size,

@@ -228,7 +228,7 @@ void main() {
     expect((lime['colors'] as Map)['background'], '#FF0E140A');
     expect((lime['colors'] as Map)['surface'], '#FF1C2812');
     expect((lime['colors'] as Map)['accent'], '#FFC9E279');
-    expect(noir['name'], 'Серая тема Орешка');
+    expect(noir['name'], 'Oreshka Gray theme');
     expect((noir['colors'] as Map)['accent'], '#FFCB8552');
     expect((noir['colors'] as Map)['secondary'], '#FFA46742');
     expect((noir['colors'] as Map)['background'], '#FF202020');

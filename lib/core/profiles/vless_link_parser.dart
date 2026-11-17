@@ -25,29 +25,29 @@ class VlessLinkParser {
 
   TunnelProfile parse(String input) {
     if (input.length > _maxLinkLength) {
-      throw VlessLinkFormatException('VLESS-ссылка больше 64 КБ'.tr);
+      throw VlessLinkFormatException('VLESS link is larger than 64 KB'.tr);
     }
 
     final raw = input.trim();
     if (raw.isEmpty) {
-      throw VlessLinkFormatException('Вставьте ссылку vless://'.tr);
+      throw VlessLinkFormatException('Paste a vless:// link'.tr);
     }
 
     final uri = Uri.tryParse(raw);
     if (uri == null || uri.scheme.toLowerCase() != 'vless') {
-      throw VlessLinkFormatException('Ссылка должна начинаться с vless://'.tr);
+      throw VlessLinkFormatException('The link must start with vless://'.tr);
     }
     if (uri.userInfo.trim().isEmpty) {
-      throw VlessLinkFormatException('В ссылке нет VLESS ID'.tr);
+      throw VlessLinkFormatException('The link has no VLESS ID'.tr);
     }
     if (uri.host.trim().isEmpty) {
-      throw VlessLinkFormatException('В ссылке нет адреса сервера'.tr);
+      throw VlessLinkFormatException('The link has no server address'.tr);
     }
 
-    _requireMaxLength(uri.host, _maxAddressLength, 'Адрес сервера'.tr);
+    _requireMaxLength(uri.host, _maxAddressLength, 'Server address'.tr);
     for (final entry in uri.queryParameters.entries) {
-      _requireMaxLength(entry.key, 256, 'Имя параметра'.tr);
-      _requireMaxLength(entry.value, _maxFieldLength, 'Параметр {}'.trf([entry.key]));
+      _requireMaxLength(entry.key, 256, 'Parameter name'.tr);
+      _requireMaxLength(entry.value, _maxFieldLength, 'Parameter {}'.trf([entry.key]));
     }
 
     final query = uri.queryParameters;
@@ -55,7 +55,7 @@ class VlessLinkParser {
     final transport = _normalizeTransport(query['type'] ?? 'tcp');
     final port = uri.hasPort ? uri.port : 443;
     if (port < 1 || port > 65535) {
-      throw VlessLinkFormatException('Порт должен быть от 1 до 65535'.tr);
+      throw VlessLinkFormatException('The port must be between 1 and 65535'.tr);
     }
 
     final realityPassword = query['pbk'] ?? query['password'] ?? '';
@@ -63,21 +63,21 @@ class VlessLinkParser {
 
     if (security == 'reality' && realityPassword.isEmpty) {
       throw VlessLinkFormatException(
-        'Для REALITY в ссылке нужен параметр pbk'.tr,
+        'REALITY in the link requires the pbk parameter'.tr,
       );
     }
     if (!{'none', 'tls', 'reality'}.contains(security)) {
-      throw VlessLinkFormatException('Пока не поддерживаем security={}'.trf([security]));
+      throw VlessLinkFormatException('security={} is not supported yet'.trf([security]));
     }
 
     final decodedUserId = _decode(uri.userInfo).trim();
     if (decodedUserId.isEmpty) {
-      throw VlessLinkFormatException('В ссылке пустой VLESS ID'.tr);
+      throw VlessLinkFormatException('The link has an empty VLESS ID'.tr);
     }
     _requireMaxLength(decodedUserId, _maxFieldLength, 'VLESS ID');
 
     final decodedName = _decode(uri.fragment).trim();
-    _requireMaxLength(decodedName, _maxNameLength, 'Имя профиля'.tr);
+    _requireMaxLength(decodedName, _maxNameLength, 'Profile name'.tr);
     final name = decodedName.isEmpty ? uri.host : decodedName;
 
     final encryption = query['encryption']?.trim().isNotEmpty == true
@@ -150,7 +150,7 @@ class VlessLinkParser {
         'xhttp' || 'splithttp' => 'xhttp',
         'httpupgrade' => 'httpupgrade',
         final unsupported => throw VlessLinkFormatException(
-            'Пока не поддерживаем transport={}'.trf([unsupported]),
+            'transport={} is not supported yet'.trf([unsupported]),
           ),
       };
 
@@ -158,7 +158,7 @@ class VlessLinkParser {
     try {
       return Uri.decodeComponent(value);
     } on FormatException {
-      throw VlessLinkFormatException('Ссылка содержит неверное кодирование'.tr);
+      throw VlessLinkFormatException('The link has invalid encoding'.tr);
     }
   }
 
@@ -170,7 +170,7 @@ class VlessLinkParser {
         .where((item) => item.isNotEmpty)
         .toList(growable: false);
     if (items.length > _maxAlpnItems) {
-      throw VlessLinkFormatException('Слишком много ALPN-значений'.tr);
+      throw VlessLinkFormatException('Too many ALPN values'.tr);
     }
     return items;
   }
@@ -182,7 +182,7 @@ class VlessLinkParser {
 
   void _requireMaxLength(String value, int maxLength, String fieldName) {
     if (value.length > maxLength) {
-      throw VlessLinkFormatException('{} слишком длинный'.trf([fieldName]));
+      throw VlessLinkFormatException('{} is too long'.trf([fieldName]));
     }
   }
 }

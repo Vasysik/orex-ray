@@ -14,7 +14,7 @@ class ExternalUrlLauncher {
     if (uri == null ||
         !uri.hasAuthority ||
         (uri.scheme != 'http' && uri.scheme != 'https')) {
-      throw FormatException('Некорректная внешняя ссылка'.tr);
+      throw FormatException('Invalid external link'.tr);
     }
 
     if (Platform.isAndroid) {
@@ -32,6 +32,6 @@ class ExternalUrlLauncher {
       );
       return;
     }
-    throw FormatException('Открытие ссылок на этой платформе не поддерживается'.tr);
+    throw FormatException('Opening links is not supported on this platform'.tr);
   }
 }

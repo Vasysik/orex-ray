@@ -13,9 +13,9 @@ class OrexAppVersion {
   final String buildNumber;
 
   String get label => '$version+$buildNumber';
-  String get versionLine => 'Версия: {}'.trf([version]);
-  String get buildLine => 'Сборка: {}'.trf([buildNumber]);
-  String get settingsSubtitle => 'Версия {} · Сборка {}'.trf([version, buildNumber]);
+  String get versionLine => 'Version: {}'.trf([version]);
+  String get buildLine => 'Build: {}'.trf([buildNumber]);
+  String get settingsSubtitle => 'Version {} · Build {}'.trf([version, buildNumber]);
 
   /// Android split-per-ABI APKs can expose a platform `versionCode` like
   /// `2003` for logical build `3` (Flutter encodes ABI in the thousands and

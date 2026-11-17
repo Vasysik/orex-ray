@@ -99,7 +99,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     if (!mounted) return;
     OrexNotice.show(
       context,
-      SnackBar(content: Text('Диагностический отчёт скопирован'.tr)),
+      SnackBar(content: Text('Diagnostic report copied'.tr)),
     );
   }
 
@@ -109,11 +109,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             context: context,
             builder: (dialogContext) => OrexConfirmDialog(
               icon: Icons.visibility_outlined,
-              title: 'Подробные сетевые логи'.tr,
+              title: 'Verbose network logs'.tr,
               content: Text(
-                'На уровнях «Информация» и «Отладка» Xray может писать адреса назначения и другую сетевую диагностику. Используй эти режимы только временно при поиске проблемы.'.tr,
+                'At "Information" and "Debug" levels Xray may log destination addresses and other network diagnostics. Use these modes only temporarily while troubleshooting.'.tr,
               ),
-              confirmLabel: 'Включить'.tr,
+              confirmLabel: 'Enable'.tr,
             ),
           ) ??
           false;
@@ -137,25 +137,25 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         ),
         const SizedBox(height: 20),
         SettingsSection(
-          title: 'Журнал'.tr,
-          subtitle: 'Уровень Xray и служебные события OrexRay.'.tr,
+          title: 'Log'.tr,
+          subtitle: 'Xray level and OrexRay service events.'.tr,
           children: [
             ListTile(
               leading:
                   Icon(Icons.terminal_rounded, color: OrexPalette.of(context).accent),
-              title: Text('Уровень логов'.tr),
+              title: Text('Log level'.tr),
               subtitle: Text(_logLevelTitle(widget.settings.logLevel)),
               trailing: DropdownButton<String>(
                 value: widget.settings.logLevel,
                 underline: const SizedBox.shrink(),
                 items: [
-                  DropdownMenuItem(value: 'error', child: Text('Ошибки'.tr)),
+                  DropdownMenuItem(value: 'error', child: Text('Errors'.tr)),
                   DropdownMenuItem(
                     value: 'warning',
-                    child: Text('Предупреждения'.tr),
+                    child: Text('Warnings'.tr),
                   ),
-                  DropdownMenuItem(value: 'info', child: Text('Информация'.tr)),
-                  DropdownMenuItem(value: 'debug', child: Text('Отладка'.tr)),
+                  DropdownMenuItem(value: 'info', child: Text('Information'.tr)),
+                  DropdownMenuItem(value: 'debug', child: Text('Debug'.tr)),
                 ],
                 onChanged: (next) {
                   if (next != null) _setLogLevel(next);
@@ -171,54 +171,54 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             tint: OrexColors.danger,
             opacity: 0.14,
             padding: const EdgeInsets.all(16),
-            child: Text('Не удалось собрать диагностику: {}'.trf([_error])),
+            child: Text('Failed to collect diagnostics: {}'.trf([_error])),
           )
         else if (value == null)
           const Center(child: CircularProgressIndicator())
         else ...[
           SettingsSection(
-            title: 'Состояние'.tr,
-            subtitle: 'Текущая runtime-картина без секретов подключения.'.tr,
+            title: 'Status'.tr,
+            subtitle: 'Current runtime picture without connection secrets.'.tr,
             children: [
               _DiagnosticRow(
                 label: 'OrexRay',
                 value: widget.appVersion.settingsSubtitle,
               ),
               _DiagnosticRow(label: 'Xray', value: value.xrayVersion),
-              _DiagnosticRow(label: 'Режим'.tr, value: value.mode.title),
-              _DiagnosticRow(label: 'Профиль'.tr, value: value.targetName),
-              _DiagnosticRow(label: 'Состояние Xray'.tr, value: value.xrayState),
+              _DiagnosticRow(label: 'Mode'.tr, value: value.mode.title),
+              _DiagnosticRow(label: 'Profile'.tr, value: value.targetName),
+              _DiagnosticRow(label: 'Xray status'.tr, value: value.xrayState),
               _DiagnosticRow(label: 'PID', value: value.pid?.toString() ?? '—'),
               _DiagnosticRow(
-                label: 'Порты'.tr,
+                label: 'Ports'.tr,
                 value: value.ports.entries
                     .map((e) => '${e.key} ${e.value}')
                     .join(' · '),
               ),
               _DiagnosticRow(
-                label: 'Системный proxy'.tr,
+                label: 'System proxy'.tr,
                 value: value.systemProxyStatus,
               ),
               _DiagnosticRow(
-                label: 'Физический интерфейс'.tr,
+                label: 'Physical interface'.tr,
                 value: value.outboundInterface ?? '—',
               ),
-              _DiagnosticRow(label: 'Маршрут TUN'.tr, value: value.routeSummary),
+              _DiagnosticRow(label: 'TUN route'.tr, value: value.routeSummary),
               _DiagnosticRow(label: 'Watchdog', value: value.restartSummary),
               _DiagnosticRow(
-                label: 'Последний exit code'.tr,
+                label: 'Last exit code'.tr,
                 value: value.lastExitCode?.toString() ?? '—',
               ),
               _DiagnosticRow(
-                label: 'Последняя ошибка'.tr,
+                label: 'Last error'.tr,
                 value: value.lastError ?? '—',
               ),
               if (Platform.isWindows && value.mode == ConnectionMode.vpnTun)
                 ListTile(
                   leading: Icon(Icons.info_outline_rounded),
-                  title: Text('Значок сети Windows'.tr),
+                  title: Text('Windows network icon'.tr),
                   subtitle: Text(
-                    'NCSI может показывать «Нет доступа к интернету» именно для виртуального TUN-адаптера. Проверка «Маршрут TUN» выше показывает фактический лучший маршрут Windows.'.tr,
+                    'NCSI may show "No internet access" specifically for the virtual TUN adapter. The "TUN route" check above shows the actual best Windows route.'.tr,
                   ),
                 ),
             ],
@@ -231,13 +231,13 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Последние {} строк лога'.trf([value.logs.length]),
+                  'Last {} log lines'.trf([value.logs.length]),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 10),
                 SelectableText(
                   value.logs.isEmpty
-                      ? 'Журнал пока пуст.'.tr
+                      ? 'The log is empty so far.'.tr
                       : value.logs.join('\n'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontFamily: 'monospace',
@@ -269,20 +269,20 @@ class _DiagnosticsHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return OrexAdaptiveHeader(
-      title: 'Диагностика'.tr,
-      subtitle: 'Состояние Xray, watchdog, маршруты и безопасный журнал'.tr,
+      title: 'Diagnostics'.tr,
+      subtitle: 'Xray status, watchdog, routes and safe log'.tr,
       icon: Icons.monitor_heart_outlined,
       actions: [
         OrexHeaderAction(
-          tooltip: 'Обновить диагностику'.tr,
-          label: 'Обновить'.tr,
+          tooltip: 'Refresh diagnostics'.tr,
+          label: 'Update'.tr,
           icon: Icons.refresh_rounded,
           busy: loading,
           onPressed: loading ? null : onRefresh,
         ),
         OrexHeaderAction(
-          tooltip: 'Скопировать отчёт'.tr,
-          label: 'Скопировать отчёт'.tr,
+          tooltip: 'Copy report'.tr,
+          label: 'Copy report'.tr,
           icon: Icons.copy_rounded,
           onPressed: canCopy ? onCopy : null,
         ),
@@ -308,8 +308,8 @@ class _DiagnosticRow extends StatelessWidget {
 }
 
 String _logLevelTitle(String value) => switch (value) {
-      'warning' => 'Предупреждения'.tr,
-      'info' => 'Информация'.tr,
-      'debug' => 'Отладка'.tr,
-      _ => 'Только ошибки'.tr,
+      'warning' => 'Warnings'.tr,
+      'info' => 'Information'.tr,
+      'debug' => 'Debug'.tr,
+      _ => 'Errors only'.tr,
     };

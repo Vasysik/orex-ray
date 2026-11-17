@@ -36,7 +36,7 @@ EN_OVERRIDE = {
 RU_OVERRIDE = {
     '{} is too long': '{} слишком длинный',
     'Cancel': 'Отмена',
-    'Connection error': 'Ошибка подключения',
+    'Connection error': 'Ошибка соединения',
     'security={} is not supported yet': 'Пока не поддерживается security={}',
     'transport={} is not supported yet': 'Пока не поддерживается transport={}',
     'Ungroup': 'Расформировать группу',
@@ -114,10 +114,12 @@ def main():
             lit_ru = "'" + ru.replace('\\', '\\\\').replace("'", "\\'") \
                 .replace('\n', '\\n').replace('$', '\\$') + "'"
             lit_en = "'" + escape(en) + "'"
+            # re.subn treats backslashes in the replacement as escapes, so
+            # pass literals through a function instead.
             text, n1 = re.subn(re.escape(lit_ru) + r'\.trf\(',
-                               lit_en + '.trf(', text)
+                               lambda m: lit_en + '.trf(', text)
             text, n2 = re.subn(re.escape(lit_ru) + r'\.tr(?![A-Za-z])',
-                               lit_en + '.tr', text)
+                               lambda m: lit_en + '.tr', text)
             total_replacements += n1 + n2
         if text != original:
             io.open(path, 'w', encoding='utf-8', newline='\n').write(text)
@@ -145,7 +147,7 @@ def main():
     ]
     for en in sorted(en_to_ru, key=str.lower):
         lines.append("  '%s': '%s'," % (escape(en), escape(en_to_ru[en])))
-    lines.append('}')
+    lines.append('};')
     lines.append('')
     io.open(RU_MAP, 'w', encoding='utf-8', newline='\n').write('\n'.join(lines))
     print('wrote', RU_MAP, 'entries:', len(en_to_ru))

@@ -14,16 +14,16 @@ class XrayJsonSource {
   Future<String> loadUrl(String value) async {
     final raw = value.trim();
     if (raw.isEmpty) {
-      throw FormatException('Укажи URL JSON'.tr);
+      throw FormatException('Provide the JSON URL'.tr);
     }
     if (raw.length > 8192) {
-      throw FormatException('URL JSON слишком длинный'.tr);
+      throw FormatException('JSON URL is too long'.tr);
     }
     final uri = Uri.tryParse(raw);
     if (uri == null ||
         !uri.hasAuthority ||
         (uri.scheme != 'http' && uri.scheme != 'https')) {
-      throw FormatException('Нужен HTTP/HTTPS URL с JSON'.tr);
+      throw FormatException('An HTTP/HTTPS URL with JSON is required'.tr);
     }
 
     final client = _clientFactory();
@@ -34,9 +34,9 @@ class XrayJsonSource {
       // than allowing each stage timeout to accumulate into a much longer wait.
       return await _loadUrl(client, uri).timeout(const Duration(seconds: 30));
     } on TimeoutException {
-      throw FormatException('Таймаут загрузки JSON'.tr);
+      throw FormatException('JSON download timeout'.tr);
     } on SocketException catch (error) {
-      throw FormatException('Не удалось загрузить JSON: {}'.trf([error.message]));
+      throw FormatException('Failed to load JSON: {}'.trf([error.message]));
     } finally {
       client.close(force: true);
     }
@@ -56,25 +56,25 @@ class XrayJsonSource {
         );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw FormatException(
-        'Сервер JSON вернул HTTP {}'.trf([response.statusCode]),
+        'The JSON server returned HTTP {}'.trf([response.statusCode]),
       );
     }
     final declaredLength = response.contentLength;
     if (declaredLength > XrayJsonCodec.maxPayloadBytes) {
-      throw FormatException('JSON Xray больше 5 МБ'.tr);
+      throw FormatException('Xray JSON is larger than 5 MB'.tr);
     }
 
     final bytes = <int>[];
     await for (final chunk in response.timeout(const Duration(seconds: 20))) {
       if (bytes.length + chunk.length > XrayJsonCodec.maxPayloadBytes) {
-        throw FormatException('JSON Xray больше 5 МБ'.tr);
+        throw FormatException('Xray JSON is larger than 5 MB'.tr);
       }
       bytes.addAll(chunk);
     }
     try {
       return utf8.decode(bytes);
     } on FormatException {
-      throw FormatException('JSON по URL не является UTF-8 текстом'.tr);
+      throw FormatException('JSON at URL is not UTF-8 text'.tr);
     }
   }
 }

@@ -201,20 +201,20 @@ class _ProtoReader {
     var shift = 0;
     while (shift < 70) {
       if (_offset >= _bytes.length) {
-        throw FormatException('Обрезанный protobuf varint.'.tr);
+        throw FormatException('Truncated protobuf varint.'.tr);
       }
       final byte = _bytes[_offset++];
       result |= (byte & 0x7f) << shift;
       if ((byte & 0x80) == 0) return result;
       shift += 7;
     }
-    throw FormatException('Слишком длинный protobuf varint.'.tr);
+    throw FormatException('Protobuf varint too long.'.tr);
   }
 
   List<int> readLengthDelimited() {
     final length = readVarint();
     if (length < 0 || _offset + length > _bytes.length) {
-      throw FormatException('Обрезанное protobuf поле.'.tr);
+      throw FormatException('Truncated protobuf field.'.tr);
     }
     final result = _bytes.sublist(_offset, _offset + length);
     _offset += length;
@@ -236,13 +236,13 @@ class _ProtoReader {
         _skipBytes(4);
         return;
       default:
-        throw FormatException('Неподдерживаемый protobuf wire type: {}'.trf([wireType]));
+        throw FormatException('Unsupported protobuf wire type: {}'.trf([wireType]));
     }
   }
 
   void _skipBytes(int count) {
     if (count < 0 || _offset + count > _bytes.length) {
-      throw FormatException('Обрезанное protobuf поле.'.tr);
+      throw FormatException('Truncated protobuf field.'.tr);
     }
     _offset += count;
   }

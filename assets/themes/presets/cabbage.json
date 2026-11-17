@@ -2,7 +2,7 @@
   "format": "orexray-theme",
   "version": 1,
   "name": "Soft Lime",
-  "description": "Мягкая салатовая тема с котом и капустой",
+  "description": "A soft lime theme with a cat and a cabbage",
   "colors": {
     "accent": "#FFC9E279",
     "secondary": "#FFAACD56",
@@ -13,7 +13,7 @@
     "border": "#FF485C2C"
   },
   "glass": {
-    "opacity": 0.60,
+    "opacity": 0.6,
     "blur": 18,
     "glow": 0.1
   },

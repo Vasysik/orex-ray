@@ -40,7 +40,7 @@ class XrayExitClassifier {
       return XrayExitDecision(
         kind: XrayExitKind.configuration,
         canRestart: false,
-        message: 'Xray отклонил конфигурацию. Автоперезапуск остановлен.'.tr,
+        message: 'Xray rejected the configuration. Auto-restart stopped.'.tr,
       );
     }
     if (_containsAny(text, const [
@@ -56,8 +56,8 @@ class XrayExitClassifier {
         kind: XrayExitKind.portConflict,
         canRestart: false,
         message: port == null
-            ? 'Xray не смог занять локальный порт. Проверь настройки портов.'.tr
-            : 'Локальный порт {} уже занят. Измени порт или закрой другой процесс.'.trf([port]),
+            ? 'Xray could not bind the local port. Check the port settings.'.tr
+            : 'Local port {} is already in use. Change the port or close the other process.'.trf([port]),
       );
     }
     if (_containsAny(text, const [
@@ -69,7 +69,7 @@ class XrayExitClassifier {
       return XrayExitDecision(
         kind: XrayExitKind.permission,
         canRestart: false,
-        message: 'Xray остановлен из-за недостаточных прав доступа.'.tr,
+        message: 'Xray was stopped due to insufficient permissions.'.tr,
       );
     }
     if (_containsAny(text, const [
@@ -83,15 +83,15 @@ class XrayExitClassifier {
       return XrayExitDecision(
         kind: XrayExitKind.transient,
         canRestart: true,
-        message: 'Сеть временно недоступна. OrexRay восстановит подключение.'.tr,
+        message: 'The network is temporarily unavailable. OrexRay will restore the connection.'.tr,
       );
     }
     return XrayExitDecision(
       kind: XrayExitKind.crash,
       canRestart: exitCode != 0,
       message: exitCode == 0
-          ? 'Xray завершился без ошибки.'.tr
-          : 'Xray неожиданно завершился с кодом {}.'.trf([exitCode]),
+          ? 'Xray exited without an error.'.tr
+          : 'Xray exited unexpectedly with code {}.'.trf([exitCode]),
     );
   }
 

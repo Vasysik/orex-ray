@@ -206,12 +206,12 @@ class ProxySubscription {
             .toList(growable: false)
         : const <String>[];
     if (id.isEmpty || url.isEmpty) {
-      throw FormatException('Некорректная сохранённая подписка'.tr);
+      throw FormatException('Invalid saved subscription'.tr);
     }
     return ProxySubscription(
       id: id,
       url: url,
-      name: name.isEmpty ? (Uri.tryParse(url)?.host ?? 'Подписка'.tr) : name,
+      name: name.isEmpty ? (Uri.tryParse(url)?.host ?? 'Subscription'.tr) : name,
       profileIds: List.unmodifiable(profileIds),
       lastUpdatedEpochMs: lastUpdated is num ? lastUpdated.toInt() : null,
       lastMetadataCheckEpochMs:

@@ -77,7 +77,7 @@ class AndroidXrayEngine
     await waitForInitialState();
     if (_current.isBusy || _current.isConnected) return;
     if (!supportedModes.contains(mode)) {
-      _emitError('Этот режим не поддерживается на Android.'.tr, mode: mode);
+      _emitError('This mode is not supported on Android.'.tr, mode: mode);
       return;
     }
 
@@ -90,8 +90,8 @@ class AndroidXrayEngine
         profile: target,
         stats: const TrafficStats(),
         message: mode == ConnectionMode.vpnTun
-            ? 'Готовим Android VPN…'.tr
-            : 'Запускаем локальный прокси…'.tr,
+            ? 'Preparing Android VPN…'.tr
+            : 'Starting the local proxy…'.tr,
       ),
     );
     // Let Flutter present the connecting frame before synchronous config
@@ -307,7 +307,7 @@ class AndroidXrayEngine
     _emit(
       _current.copyWith(
         status: TunnelStatus.disconnecting,
-        message: 'Останавливаем OrexRay…'.tr,
+        message: 'Stopping OrexRay…'.tr,
         clearError: true,
       ),
     );

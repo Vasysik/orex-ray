@@ -18,15 +18,15 @@ enum AppRoutingMode {
       };
 
   String get title => switch (this) {
-        AppRoutingMode.all => 'Все приложения'.tr,
-        AppRoutingMode.excludeSelected => 'Кроме выбранных'.tr,
-        AppRoutingMode.onlySelected => 'Только выбранные'.tr,
+        AppRoutingMode.all => 'All apps'.tr,
+        AppRoutingMode.excludeSelected => 'Except selected'.tr,
+        AppRoutingMode.onlySelected => 'Selected only'.tr,
       };
 
   String get description => switch (this) {
-        AppRoutingMode.all => 'Весь трафик приложений проходит через VPN'.tr,
-        AppRoutingMode.excludeSelected => 'Выбранные приложения обходят VPN'.tr,
-        AppRoutingMode.onlySelected => 'Только выбранные приложения используют VPN'.tr,
+        AppRoutingMode.all => 'All app traffic goes through the VPN'.tr,
+        AppRoutingMode.excludeSelected => 'Selected apps bypass the VPN'.tr,
+        AppRoutingMode.onlySelected => 'Only selected apps use the VPN'.tr,
       };
 
   static AppRoutingMode fromStorageValue(String? value) => switch (value) {

@@ -53,7 +53,7 @@ Future<T?> showOrexChoiceSheet<T>(
                     Padding(
                       padding: const EdgeInsets.all(14),
                       child: Text(
-                        emptyText ?? 'Ничего не найдено'.tr,
+                        emptyText ?? 'Nothing found'.tr,
                         style: Theme.of(ctx).textTheme.bodySmall,
                       ),
                     )

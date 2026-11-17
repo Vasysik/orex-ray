@@ -575,7 +575,7 @@ class TunnelController extends ChangeNotifier {
     if (profile == null) {
       _engineSnapshot = current.copyWith(
         status: TunnelStatus.error,
-        errorMessage: 'Сначала выбери профиль или балансировщик.'.tr,
+        errorMessage: 'Select a profile or balancer first.'.tr,
       );
       _profileUiRevision.value++;
       notifyListeners();
@@ -625,7 +625,7 @@ class TunnelController extends ChangeNotifier {
     void Function(double progress)? onProgress,
   }) async {
     if (!canReinstallXrayCore) {
-      throw StateError('Сначала отключи активное соединение.'.tr);
+      throw StateError('Disconnect the active connection first.'.tr);
     }
     await (_engine as TunnelCoreMaintenance).reinstallCore(
       onProgress: onProgress,

@@ -113,7 +113,7 @@ class GeoDataController extends ChangeNotifier {
   Future<void> setUpdateIntervalHours(int value) async {
     final normalized = _validInterval(value);
     if (normalized == null) {
-      throw FormatException('Интервал должен быть 12, 24, 72 или 168 часов'.tr);
+      throw FormatException('The interval must be 12, 24, 72 or 168 hours'.tr);
     }
     if (_updateIntervalHours == normalized) return;
     _updateIntervalHours = normalized;
@@ -160,12 +160,12 @@ class GeoDataController extends ChangeNotifier {
   Future<void> importCustomAsset(String targetFileName, XFile source) async {
     if (_updating) return;
     if (targetFileName != 'geoip.dat' && targetFileName != 'geosite.dat') {
-      throw FormatException('Поддерживаются только geoip.dat и geosite.dat'.tr);
+      throw FormatException('Only geoip.dat and geosite.dat are supported'.tr);
     }
     _updating = true;
     _progress = 0;
     _error = null;
-    _message = 'Импортируем {}…'.trf([targetFileName]);
+    _message = 'Importing {}…'.trf([targetFileName]);
     notifyListeners();
 
     final temp = File(p.join(_directory.path, '.$targetFileName.import'));
@@ -184,10 +184,10 @@ class GeoDataController extends ChangeNotifier {
       }
       final length = await temp.length();
       if (length <= 0) {
-        throw FormatException('Выбран пустой GeoData-файл'.tr);
+        throw FormatException('An empty GeoData file is selected'.tr);
       }
       if (length > 256 * 1024 * 1024) {
-        throw FormatException('GeoData-файл больше 256 МБ'.tr);
+        throw FormatException('GeoData file is larger than 256 MB'.tr);
       }
 
       if (await backup.exists()) await backup.delete();
@@ -201,7 +201,7 @@ class GeoDataController extends ChangeNotifier {
         }
         rethrow;
       }
-      _message = '{} импортирован. Переподключись, чтобы Xray перечитал данные.'.trf([targetFileName]);
+      _message = '{} imported. Reconnect so Xray rereads the data.'.trf([targetFileName]);
       await refreshStatus();
     } on Object catch (error) {
       _error = _friendlyError(error);
@@ -225,7 +225,7 @@ class GeoDataController extends ChangeNotifier {
     _updating = true;
     _progress = 0;
     _error = null;
-    _message = silent ? null : 'Проверяем GeoData…'.tr;
+    _message = silent ? null : 'Checking GeoData…'.tr;
     notifyListeners();
 
     final client = HttpClient()
@@ -236,7 +236,7 @@ class GeoDataController extends ChangeNotifier {
       const files = ['geoip.dat', 'geosite.dat'];
       for (var index = 0; index < files.length; index++) {
         final fileName = files[index];
-        _message = 'Обновляем {}…'.trf([fileName]);
+        _message = 'Updating {}…'.trf([fileName]);
         _progress = index / files.length;
         notifyListeners();
         await _downloadVerified(client, fileName, index, files.length);
@@ -246,7 +246,7 @@ class GeoDataController extends ChangeNotifier {
         _lastCheckedKey,
         _lastCheckedAt!.toIso8601String(),
       );
-      _message = 'GeoData обновлена. Новые данные применятся при следующем подключении.'.tr;
+      _message = 'GeoData updated. The new data will apply on the next connection.'.tr;
       _progress = 1;
       await refreshStatus();
     } on Object catch (error) {
@@ -288,12 +288,12 @@ class GeoDataController extends ChangeNotifier {
     final response = await request.close().timeout(_networkTimeout);
     if (response.statusCode != HttpStatus.ok) {
       throw HttpException(
-        'Сервер вернул HTTP {} для {}'.trf([response.statusCode, fileName]),
+        'The server returned HTTP {} for {}'.trf([response.statusCode, fileName]),
         uri: uri,
       );
     }
     if (response.contentLength > _maxAssetBytes) {
-      throw FormatException('{} больше 256 МБ'.trf([fileName]));
+      throw FormatException('{} is larger than 256 MB'.trf([fileName]));
     }
 
     final temp = File(p.join(_directory.path, '.$fileName.download'));
@@ -308,7 +308,7 @@ class GeoDataController extends ChangeNotifier {
       await for (final chunk in response.timeout(_networkTimeout)) {
         received += chunk.length;
         if (received > _maxAssetBytes) {
-          throw FormatException('{} больше 256 МБ'.trf([fileName]));
+          throw FormatException('{} is larger than 256 MB'.trf([fileName]));
         }
         sink.add(chunk);
         final now = DateTime.now();
@@ -345,7 +345,7 @@ class GeoDataController extends ChangeNotifier {
       } catch (_) {
         // The checksum failure is the important error; temp cleanup is best effort.
       }
-      throw StateError('SHA-256 не совпал для {}'.trf([fileName]));
+      throw StateError('SHA-256 mismatch for {}'.trf([fileName]));
     }
 
     final backup = File('${destination.path}.bak');
@@ -375,14 +375,14 @@ class GeoDataController extends ChangeNotifier {
       throw HttpException('HTTP ${response.statusCode}', uri: uri);
     }
     if (response.contentLength > maxBytes) {
-      throw FormatException('Ответ сервера GeoData слишком большой'.tr);
+      throw FormatException('The GeoData server response is too large'.tr);
     }
 
     final bytes = <int>[];
     await for (final chunk in response.timeout(_networkTimeout)) {
       bytes.addAll(chunk);
       if (bytes.length > maxBytes) {
-        throw FormatException('Ответ сервера GeoData слишком большой'.tr);
+        throw FormatException('The GeoData server response is too large'.tr);
       }
     }
     return utf8.decode(bytes);
@@ -391,7 +391,7 @@ class GeoDataController extends ChangeNotifier {
   String _parseSha256(String value) {
     final token = value.trim().split(RegExp(r'\s+')).first.toLowerCase();
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(token)) {
-      throw FormatException('Некорректная контрольная сумма GeoData'.tr);
+      throw FormatException('Invalid GeoData checksum'.tr);
     }
     return token;
   }
@@ -399,7 +399,7 @@ class GeoDataController extends ChangeNotifier {
   String _friendlyError(Object error) {
     final text = error.toString();
     if (text.contains('SocketException') || text.contains('HttpException')) {
-      return 'Не удалось скачать GeoData. Проверь интернет и попробуй снова.'.tr;
+      return 'Failed to download GeoData. Check your internet connection and try again.'.tr;
     }
     return text.replaceFirst('Bad state: ', '').replaceFirst('FormatException: ', '');
   }

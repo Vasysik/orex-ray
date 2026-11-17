@@ -273,38 +273,38 @@ class _AppShellState extends State<AppShell> {
               final desktopDestinations = <_DesktopNavDestination>[
                 _DesktopNavDestination(
                   Icons.power_settings_new_rounded,
-                  'Главная'.tr,
+                  'Home'.tr,
                 ),
-                _DesktopNavDestination(Icons.storage_rounded, 'Профили'.tr),
+                _DesktopNavDestination(Icons.storage_rounded, 'Profiles'.tr),
                 _DesktopNavDestination(
                   Icons.route_rounded,
-                  'Подключение'.tr,
+                  'Connection'.tr,
                 ),
                 if (!Platform.isWindows)
                   _DesktopNavDestination(
                     Icons.apps_rounded,
-                    'Приложения'.tr,
+                    'Apps'.tr,
                   ),
-                _DesktopNavDestination(Icons.public_rounded, 'Сеть'.tr),
+                _DesktopNavDestination(Icons.public_rounded, 'Network'.tr),
                 _DesktopNavDestination(
                   Icons.travel_explore_rounded,
                   'GeoData',
                 ),
                 _DesktopNavDestination(
                   Icons.battery_saver_rounded,
-                  'Фон'.tr,
+                  'Background'.tr,
                 ),
                 _DesktopNavDestination(
                   Icons.palette_outlined,
-                  'Интерфейс'.tr,
+                  'Interface'.tr,
                 ),
                 _DesktopNavDestination(
                   Icons.monitor_heart_outlined,
-                  'Диагностика'.tr,
+                  'Diagnostics'.tr,
                 ),
                 _DesktopNavDestination(
                   Icons.info_outline_rounded,
-                  'О приложении'.tr,
+                  'About'.tr,
                 ),
               ];
               final mobileSelected = _index <= 2 ? _index : 3;
@@ -370,11 +370,11 @@ class _AppShellState extends State<AppShell> {
                               child: ListTile(
                                 key: const ValueKey('orexray-update-banner'),
                                 leading: Icon(Icons.system_update_rounded, color: OrexPalette.of(context).accent),
-                                title: Text('Доступна новая версия OrexRay'.tr),
-                                subtitle: Text('Версия {} · GitHub Releases'.trf([updates.available!.tag])),
+                                title: Text('A new OrexRay version is available'.tr),
+                                subtitle: Text('Version {} · GitHub Releases'.trf([updates.available!.tag])),
                                 onTap: () => showOrexRayUpdateDialog(context, updates),
                                 trailing: IconButton(
-                                  tooltip: 'Скрыть уведомление'.tr,
+                                  tooltip: 'Hide notification'.tr,
                                   onPressed: updates.dismiss,
                                   icon: const Icon(Icons.close_rounded),
                                 ),
@@ -460,7 +460,7 @@ class _AppShellState extends State<AppShell> {
                                         Icons.power_settings_new_rounded,
                                         color: OrexPalette.of(context).accent,
                                       ),
-                                      label: 'Главная'.tr,
+                                      label: 'Home'.tr,
                                     ),
                                     NavigationDestination(
                                       icon: Icon(Icons.storage_rounded),
@@ -468,7 +468,7 @@ class _AppShellState extends State<AppShell> {
                                         Icons.storage_rounded,
                                         color: OrexPalette.of(context).accent,
                                       ),
-                                      label: 'Профили'.tr,
+                                      label: 'Profiles'.tr,
                                     ),
                                     NavigationDestination(
                                       icon: Icon(Icons.route_rounded),
@@ -476,7 +476,7 @@ class _AppShellState extends State<AppShell> {
                                         Icons.route_rounded,
                                         color: OrexPalette.of(context).accent,
                                       ),
-                                      label: 'Подключение'.tr,
+                                      label: 'Connection'.tr,
                                     ),
                                     NavigationDestination(
                                       icon: Icon(Icons.more_horiz_rounded),
@@ -484,7 +484,7 @@ class _AppShellState extends State<AppShell> {
                                         Icons.more_horiz_rounded,
                                         color: OrexPalette.of(context).accent,
                                       ),
-                                      label: 'Ещё'.tr,
+                                      label: 'More'.tr,
                                     ),
                                   ],
                                 ),

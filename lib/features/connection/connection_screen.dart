@@ -33,16 +33,16 @@ class ConnectionScreen extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           children: [
             SettingsPageHeader(
-              title: 'Подключение'.tr,
-              subtitle: 'Режим работы и локальные точки входа OrexRay'.tr,
+              title: 'Connection'.tr,
+              subtitle: 'Operating mode and OrexRay local entry points'.tr,
               icon: Icons.route_rounded,
             ),
             const SizedBox(height: 22),
             SettingsSection(
-              title: 'Режим'.tr,
+              title: 'Mode'.tr,
               subtitle: locked
-                  ? 'Сначала отключи OrexRay, чтобы сменить режим.'.tr
-                  : 'Выбери, какой трафик должен проходить через Xray.'.tr,
+                  ? 'Disconnect OrexRay first to change the mode.'.tr
+                  : 'Choose which traffic should go through Xray.'.tr,
               children: [
                 RadioGroup<ConnectionMode>(
                   groupValue: tunnel.mode,
@@ -71,8 +71,8 @@ class ConnectionScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             SettingsSection(
-              title: 'Сеть'.tr,
-              subtitle: 'Локальные порты SOCKS5/HTTP и параметры доступа.'.tr,
+              title: 'Network'.tr,
+              subtitle: 'Local SOCKS5/HTTP ports and access parameters.'.tr,
               children: [
                 ListTile(
                   enabled: !locked,
@@ -100,7 +100,7 @@ class ConnectionScreen extends StatelessWidget {
                       ? null
                       : () => _editNumber(
                             context,
-                            title: 'SOCKS5 порт'.tr,
+                            title: 'SOCKS5 port'.tr,
                             current: settings.socksPort,
                             min: 1,
                             max: 65535,
@@ -134,7 +134,7 @@ class ConnectionScreen extends StatelessWidget {
                       ? null
                       : () => _editNumber(
                             context,
-                            title: 'HTTP порт'.tr,
+                            title: 'HTTP port'.tr,
                             current: settings.httpPort,
                             min: 1,
                             max: 65535,
@@ -145,9 +145,9 @@ class ConnectionScreen extends StatelessWidget {
                 SwitchListTile(
                   secondary:
                       Icon(Icons.lan_rounded, color: OrexPalette.of(context).accent),
-                  title: Text('Доступ из локальной сети'.tr),
+                  title: Text('LAN access'.tr),
                   subtitle:
-                      Text('Слушать 0.0.0.0 вместо только localhost'.tr),
+                      Text('Listen on 0.0.0.0 instead of localhost only'.tr),
                   value: settings.allowLan,
                   onChanged: locked
                       ? null
@@ -157,9 +157,9 @@ class ConnectionScreen extends StatelessWidget {
                 SwitchListTile(
                   secondary: Icon(Icons.multiple_stop_rounded,
                       color: OrexPalette.of(context).accent),
-                  title: Text('Прокси параллельно VPN'.tr),
+                  title: Text('Proxy alongside VPN'.tr),
                   subtitle: Text(
-                    'Оставлять SOCKS5 и HTTP доступными, пока работает TUN/VPN'.tr,
+                    'Keep SOCKS5 and HTTP available while TUN/VPN is running'.tr,
                   ),
                   value: settings.localProxyInVpn,
                   onChanged: locked ? null : settings.setLocalProxyInVpn,
@@ -169,7 +169,7 @@ class ConnectionScreen extends StatelessWidget {
             const SizedBox(height: 16),
             SettingsSection(
               title: 'VPN',
-              subtitle: 'Применяется к TUN/VPN режиму на Android и Windows.'.tr,
+              subtitle: 'Applies to TUN/VPN mode on Android and Windows.'.tr,
               children: [
                 ListTile(
                   enabled: !locked,
@@ -178,7 +178,7 @@ class ConnectionScreen extends StatelessWidget {
                     color: editableIconColor,
                   ),
                   title: const Text('MTU'),
-                  subtitle: Text('{} байт'.trf([settings.mtu])),
+                  subtitle: Text('{} bytes'.trf([settings.mtu])),
                   trailing: Icon(
                     Icons.chevron_right_rounded,
                     color: chevronColor,
@@ -257,11 +257,11 @@ Future<void> _setAllowLan(
         context: context,
         builder: (dialogContext) => OrexConfirmDialog(
           icon: Icons.warning_amber_rounded,
-          title: 'Открыть прокси в локальную сеть?'.tr,
+          title: 'Expose the proxy to the LAN?'.tr,
           content: Text(
-            'SOCKS5 и HTTP-прокси OrexRay сейчас не требуют пароль. После включения другие устройства в этой локальной сети смогут использовать твой прокси, если соединение не блокирует firewall. Включай это только в доверенной сети.'.tr,
+            'OrexRay SOCKS5 and HTTP proxies currently require no password. Once enabled, other devices on this LAN will be able to use your proxy unless a firewall blocks the connection. Enable this only on a trusted network.'.tr,
           ),
-          confirmLabel: 'Открыть доступ'.tr,
+          confirmLabel: 'Allow access'.tr,
         ),
       ) ??
       false;

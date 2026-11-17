@@ -1,8 +1,8 @@
 {
   "format": "orexray-theme",
   "version": 1,
-  "name": "Серая тема Орешка",
-  "description": "Графитовые оттенки с медным акцентом и белочкой",
+  "name": "Oreshka Gray theme",
+  "description": "Graphite shades with a copper accent and a squirrel",
   "colors": {
     "accent": "#FFCB8552",
     "secondary": "#FFA46742",

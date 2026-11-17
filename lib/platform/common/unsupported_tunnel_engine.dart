@@ -32,7 +32,7 @@ class UnsupportedTunnelEngine implements TunnelEngine {
       profile: profile,
       stats: const TrafficStats(),
       errorMessage:
-          'VPN-движок для {} не поддерживается. OrexRay сейчас работает на Windows и Android.'.trf([platformName]),
+          'The VPN engine for {} is not supported. OrexRay currently runs on Windows and Android.'.trf([platformName]),
     );
     _controller.add(_current);
   }

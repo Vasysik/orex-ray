@@ -89,7 +89,7 @@ class ProfileRepository {
         final removed = await prefs.remove(_profilesKey);
         if (!removed && prefs.containsKey(_profilesKey)) {
           throw StateError(
-            'Защищённая копия профилей существует, но старая открытая копия не удалена'.tr,
+            'A protected copy of profiles exists, but the old plain copy was not deleted'.tr,
           );
         }
       }
@@ -99,7 +99,7 @@ class ProfileRepository {
         final removed = await prefs.remove(_subscriptionsKey);
         if (!removed && prefs.containsKey(_subscriptionsKey)) {
           throw StateError(
-            'Защищённая копия подписок существует, но старая открытая копия не удалена'.tr,
+            'A protected copy of subscriptions exists, but the old plain copy was not deleted'.tr,
           );
         }
       }
@@ -114,7 +114,7 @@ class ProfileRepository {
       return repository;
     } on PlatformException catch (error) {
       throw StateError(
-        'Не удалось открыть защищённое хранилище профилей: {}'.trf([error.message ?? error.code]),
+        'Failed to open the secure profile storage: {}'.trf([error.message ?? error.code]),
       );
     }
   }
@@ -215,7 +215,7 @@ class ProfileRepository {
       });
     } else {
       if (!await _prefs.setString(_subscriptionJournalKey, payload)) {
-        throw StateError('Не удалось сохранить журнал подписок'.tr);
+        throw StateError('Failed to save the subscription log'.tr);
       }
     }
     await saveProfiles(profiles);
@@ -253,7 +253,7 @@ class ProfileRepository {
       await _clearSubscriptionJournal();
     } on Object catch (error) {
       // Refuse partial state instead of silently discarding a saved profile.
-      throw StateError('Не удалось восстановить данные подписок: {}'.trf([error]));
+      throw StateError('Failed to restore subscription data: {}'.trf([error]));
     }
   }
 
@@ -263,7 +263,7 @@ class ProfileRepository {
         'delete', const {'key': _secureSubscriptionJournalKey});
     } else {
       if (!await _prefs.remove(_subscriptionJournalKey)) {
-        throw StateError('Не удалось очистить журнал подписок'.tr);
+        throw StateError('Failed to clear the subscription log'.tr);
       }
     }
   }
@@ -283,13 +283,13 @@ class ProfileRepository {
         final removed = await _prefs.remove(_profilesKey);
         if (!removed && _prefs.containsKey(_profilesKey)) {
           throw StateError(
-            'Профиль сохранён защищённо, но открытая копия не была удалена'.tr,
+            'The profile was saved securely, but the plain copy was not deleted'.tr,
           );
         }
         return;
       } on PlatformException catch (error) {
         throw StateError(
-          'Не удалось сохранить профиль в защищённом хранилище: {}'.trf([error.message ?? error.code]),
+          'Failed to save the profile to secure storage: {}'.trf([error.message ?? error.code]),
         );
       }
     }
@@ -312,13 +312,13 @@ class ProfileRepository {
         final removed = await _prefs.remove(_subscriptionsKey);
         if (!removed && _prefs.containsKey(_subscriptionsKey)) {
           throw StateError(
-            'Подписки сохранены защищённо, но открытая копия не была удалена'.tr,
+            'Subscriptions were saved securely, but the plain copy was not deleted'.tr,
           );
         }
         return;
       } on PlatformException catch (error) {
         throw StateError(
-          'Не удалось сохранить подписки в защищённом хранилище: {}'.trf([error.message ?? error.code]),
+          'Failed to save subscriptions to secure storage: {}'.trf([error.message ?? error.code]),
         );
       }
     }

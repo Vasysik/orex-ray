@@ -27,15 +27,15 @@ class SettingsScreen extends StatelessWidget {
       builder: (context, _) => ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Настройки'.tr, style: Theme.of(context).textTheme.headlineSmall),
+          Text('Settings'.tr, style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 4),
           Text(
-            'Поведение, оформление и режим подключения'.tr,
+            'Behavior, appearance and connection mode'.tr,
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 20),
           _Section(
-            title: 'Подключение'.tr,
+            title: 'Connection'.tr,
             children: [
               RadioGroup<ConnectionMode>(
                 groupValue: tunnel.mode,
@@ -64,26 +64,26 @@ class SettingsScreen extends StatelessWidget {
                 const Divider(height: 1),
                 ListTile(
                   leading: Icon(Icons.info_outline_rounded),
-                  title: Text('Режим заблокирован'.tr),
-                  subtitle: Text('Сначала отключите OrexRay.'.tr),
+                  title: Text('Mode locked'.tr),
+                  subtitle: Text('Disconnect OrexRay first.'.tr),
                 ),
               ],
             ],
           ),
           const SizedBox(height: 16),
            _Section(
-            title: 'Сеть'.tr,
+            title: 'Network'.tr,
             children: [
               ListTile(
                 leading: Icon(Icons.dns_outlined, color: OrexPalette.of(context).accent),
                 title: Text('DNS'),
-                subtitle: Text('Автоматически'.tr),
+                subtitle: Text('Automatically'.tr),
               ),
               Divider(height: 1),
               SwitchListTile(
                 secondary: Icon(Icons.power_rounded, color: OrexPalette.of(context).accent),
-                title: Text('Автоподключение'.tr),
-                subtitle: Text('Будет добавлено после стабилизации движков'.tr),
+                title: Text('Auto-connect'.tr),
+                subtitle: Text('Will be added once the engines stabilize'.tr),
                 value: false,
                 onChanged: null,
               ),
@@ -91,7 +91,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Section(
-            title: 'О приложении'.tr,
+            title: 'About'.tr,
             children: [
               ListTile(
                 leading: Icon(Icons.pets_rounded,

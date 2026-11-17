@@ -35,7 +35,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     } on Object catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка темы: {}'.trf([error]))),
+          SnackBar(content: Text('Theme error: {}'.trf([error]))),
         );
       }
     } finally {
@@ -55,8 +55,8 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
   Future<void> _create() => _run(() async {
     final created = await theme.createTheme(
       theme.selectedTheme == null
-          ? 'Моя тема Orex'.tr
-          : '{} — копия'.trf([theme.selectedTheme!.name]),
+          ? 'My Orex theme'.tr
+          : '{} — copy'.trf([theme.selectedTheme!.name.tr]),
     );
     _openEditor(created);
   });
@@ -64,7 +64,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
   Future<void> _duplicatePreset(OrexBuiltinPreset preset) => _run(() async {
     await theme.selectBuiltin(preset.id);
     final entry =
-        await theme.createTheme('{} — копия'.trf([theme.selectedTheme!.name]));
+        await theme.createTheme('{} — copy'.trf([theme.selectedTheme!.name.tr]));
     _openEditor(entry);
   });
 
@@ -79,12 +79,12 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     ]);
     if (file == null) return;
     if (await file.length() > ThemeController.maxThemeJsonBytes) {
-      throw FormatException('Файл темы слишком большой'.tr);
+      throw FormatException('The theme file is too large'.tr);
     }
     final entry = await theme.importThemeJson(await file.readAsString());
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Импортирована тема «{}»'.trf([entry.name]))),
+        SnackBar(content: Text('Theme "{}" imported'.trf([entry.name]))),
       );
     }
   });
@@ -100,7 +100,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     );
     if (mounted && saved) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Тема экспортирована вместе с маскотом'.tr)),
+        SnackBar(content: Text('Theme exported together with the mascot'.tr)),
       );
     }
   });
@@ -109,14 +109,14 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
-        title: Text('Удалить тему?'.tr),
+        title: Text('Delete theme?'.tr),
         content: Text(
-          'Тема «{}» будет удалена. Встроенные темы останутся.'.tr
+          'Theme "{}" will be deleted. Built-in themes will remain.'.tr
               .trf([entry.name]),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false), child: Text('Отмена'.tr)),
-          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: Text('Удалить'.tr)),
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: Text('Cancel'.tr)),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: Text('Delete'.tr)),
         ],
       ),
     );
@@ -205,10 +205,10 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
         ),
         // Built-in preset texts are app data, so they follow the app
         // language; user-created themes keep whatever name they entered.
-        title: Text(preview == null ? 'Загрузка темы…'.tr : preview.name.tr),
+        title: Text(preview == null ? 'Loading theme…'.tr : preview.name.tr),
         subtitle: Text(
           preview == null
-              ? (failed ? 'Не удалось прочитать JSON пресета'.tr : 'Загрузка описания…'.tr)
+              ? (failed ? 'Failed to read the preset JSON'.tr : 'Loading description…'.tr)
               : preview.description.tr,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
@@ -216,7 +216,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
         onTap: _busy || failed ? null : () => _run(() => theme.selectBuiltin(preset.id)),
         trailing: PopupMenuButton<String>(
           enabled: !_busy && !failed,
-          tooltip: 'Действия с темой'.tr,
+          tooltip: 'Theme actions'.tr,
           onSelected: (action) {
             switch (action) {
               case 'copy': _duplicatePreset(preset);
@@ -224,8 +224,8 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             }
           },
           itemBuilder: (_) => [
-            PopupMenuItem(value: 'copy', child: Text('Создать редактируемую копию'.tr)),
-            PopupMenuItem(value: 'export', child: Text('Экспорт JSON + маскот'.tr)),
+            PopupMenuItem(value: 'copy', child: Text('Create an editable copy'.tr)),
+            PopupMenuItem(value: 'export', child: Text('Export JSON + mascot'.tr)),
           ],
         ),
       );
@@ -242,8 +242,8 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
       padding: const EdgeInsets.all(20),
       children: [
         SettingsPageHeader(
-          title: 'Интерфейс'.tr,
-          subtitle: 'Темы, цвета, маскоты и стеклянные панели'.tr,
+          title: 'Interface'.tr,
+          subtitle: 'Themes, colors, mascots and glass panels'.tr,
           icon: Icons.palette_outlined,
         ),
         const SizedBox(height: 22),
@@ -254,7 +254,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
               key: const ValueKey('theme-editor-back'),
               onPressed: _busy ? null : _closeEditor,
               icon: const Icon(Icons.arrow_back_rounded),
-              label: Text('Назад к темам'.tr),
+              label: Text('Back to themes'.tr),
             ),
           ),
           const SizedBox(height: 8),
@@ -265,21 +265,21 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             onClose: _closeEditor,
           ),
         ] else ...[
-        SettingsSection(title: 'Стиль'.tr, children: [
+        SettingsSection(title: 'Style'.tr, children: [
           AnimatedBuilder(
             animation: OrexL10n.instance,
             builder: (context, _) {
               final languageNames = <String, String>{
-                'system': 'Как в системе'.tr,
+                'system': 'Same as system'.tr,
                 'ru': 'Русский'.tr,
                 'en': 'English',
               };
               return ListTile(
                 key: const ValueKey('appearance-language'),
                 leading: Icon(Icons.translate_rounded),
-                title: Text('Язык'.tr),
+                title: Text('Language'.tr),
                 subtitle: Text(
-                  'Применяется ко всему приложению'.tr,
+                  'Applies to the whole app'.tr,
                 ),
                 trailing: DropdownButton<String>(
                   value: OrexL10n.instance.language,
@@ -301,31 +301,31 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
           SwitchListTile(
             key: const ValueKey('appearance-glass-toggle'),
             secondary: const Icon(Icons.blur_on_rounded),
-            title: Text('Стеклянные панели'.tr),
-            subtitle: Text('Размытие и полупрозрачные поверхности'.tr),
+            title: Text('Glass panels'.tr),
+            subtitle: Text('Blur and translucent surfaces'.tr),
             value: theme.glassEnabled,
             onChanged: theme.setGlassEnabled,
           ),
         ]),
         const SizedBox(height: 16),
-        SettingsSection(title: 'Встроенные темы'.tr, children: [
+        SettingsSection(title: 'Built-in themes'.tr, children: [
           for (var i = 0; i < OrexBuiltinPreset.values.length; i++) ...[
             if (i > 0) const Divider(height: 1),
             _presetTile(OrexBuiltinPreset.values[i]),
           ],
         ]),
         const SizedBox(height: 16),
-        SettingsSection(title: 'Мои темы'.tr, children: [
+        SettingsSection(title: 'My themes'.tr, children: [
           for (final entry in theme.customThemes) ...[
             ListTile(
               key: ValueKey('theme-${entry.id}'),
               selected: theme.selectedId == entry.id,
               leading: _themeTileLeading(entry),
               title: Text(entry.name),
-              subtitle: Text('Настраиваемые цвета, маскот и стекло'.tr),
+              subtitle: Text('Customizable colors, mascot and glass'.tr),
               onTap: () => _run(() => theme.selectTheme(entry.id)),
               trailing: PopupMenuButton<String>(
-                tooltip: 'Действия с темой'.tr,
+                tooltip: 'Theme actions'.tr,
                 onSelected: (action) {
                   switch (action) {
                     case 'edit': _edit(entry);
@@ -334,9 +334,9 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
                   }
                 },
                 itemBuilder: (_) => [
-                  PopupMenuItem(value: 'edit', child: Text('Редактировать'.tr)),
-                  PopupMenuItem(value: 'export', child: Text('Экспорт JSON + маскот'.tr)),
-                  PopupMenuItem(value: 'delete', child: Text('Удалить тему'.tr)),
+                  PopupMenuItem(value: 'edit', child: Text('Edit'.tr)),
+                  PopupMenuItem(value: 'export', child: Text('Export JSON + mascot'.tr)),
+                  PopupMenuItem(value: 'delete', child: Text('Delete theme'.tr)),
                 ],
               ),
             ),
@@ -345,15 +345,15 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
           ListTile(
             key: const ValueKey('theme-create'),
             leading: const Icon(Icons.add_circle_outline),
-            title: Text('Создать собственную тему'.tr),
-            subtitle: Text('Копия текущего оформления'.tr),
+            title: Text('Create your own theme'.tr),
+            subtitle: Text('A copy of the current design'.tr),
             enabled: !_busy, onTap: _create,
           ),
           ListTile(
             key: const ValueKey('theme-import'),
             leading: const Icon(Icons.file_open_outlined),
-            title: Text('Импортировать JSON-тему'.tr),
-            subtitle: Text('Цвета, стекло и изображение маскота'.tr),
+            title: Text('Import a JSON theme'.tr),
+            subtitle: Text('Colors, glass and mascot image'.tr),
             enabled: !_busy, onTap: _import,
           ),
         ]),

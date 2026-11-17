@@ -39,12 +39,12 @@ class MoreScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Ещё'.tr, style: Theme.of(context).textTheme.headlineSmall),
+              Text('More'.tr, style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 4),
               Text(
                 showApps
-                    ? 'Приложения, сеть, GeoData и поведение OrexRay'.tr
-                    : 'Сеть, GeoData и поведение OrexRay'.tr,
+                    ? 'Apps, network, GeoData and OrexRay behavior'.tr
+                    : 'Network, GeoData and OrexRay behavior'.tr,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -54,51 +54,51 @@ class MoreScreen extends StatelessWidget {
         if (showApps) ...[
           _MoreTile(
             icon: Icons.apps_rounded,
-            title: 'Приложения'.tr,
-            subtitle: 'Split tunneling и исключения Android'.tr,
+            title: 'Apps'.tr,
+            subtitle: 'Split tunneling and Android exclusions'.tr,
             onTap: onOpenApps,
           ),
           const SizedBox(height: 12),
         ],
         _MoreTile(
           icon: Icons.public_rounded,
-          title: 'Сеть'.tr,
-          subtitle: 'DNS, маршрутизация и логи'.tr,
+          title: 'Network'.tr,
+          subtitle: 'DNS, routing and logs'.tr,
           onTap: onOpenNetwork,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.travel_explore_rounded,
           title: 'GeoData',
-          subtitle: 'GeoIP, GeoSite и обновления'.tr,
+          subtitle: 'GeoIP, GeoSite and updates'.tr,
           onTap: onOpenGeoData,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.battery_saver_rounded,
-          title: 'Фоновая работа'.tr,
-          subtitle: 'Уведомление, скорость и энергопотребление'.tr,
+          title: 'Background operation'.tr,
+          subtitle: 'Notification, speed and power consumption'.tr,
           onTap: onOpenBackground,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.palette_outlined,
-          title: 'Интерфейс'.tr,
-          subtitle: 'Тема и фирменный стиль Orex'.tr,
+          title: 'Interface'.tr,
+          subtitle: 'Theme and Orex brand style'.tr,
           onTap: onOpenAppearance,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.monitor_heart_outlined,
-          title: 'Диагностика'.tr,
-          subtitle: 'Xray, watchdog, порты и безопасный отчёт'.tr,
+          title: 'Diagnostics'.tr,
+          subtitle: 'Xray, watchdog, ports and safe report'.tr,
           onTap: onOpenDiagnostics,
         ),
         const SizedBox(height: 12),
         _MoreTile(
           icon: Icons.info_outline_rounded,
-          title: 'О приложении'.tr,
-          subtitle: 'Версия, движок и диагностика'.tr,
+          title: 'About'.tr,
+          subtitle: 'Version, engine and diagnostics'.tr,
           onTap: onOpenAbout,
         ),
       ],

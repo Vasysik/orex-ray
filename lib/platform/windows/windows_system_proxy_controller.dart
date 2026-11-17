@@ -56,7 +56,7 @@ class WindowsSystemProxyController {
   Future<WindowsProxyState> read() async {
     final raw = await _channel.invokeMapMethod<String, dynamic>('getState');
     if (raw == null) {
-      throw StateError('Windows не вернул состояние системного прокси.'.tr);
+      throw StateError('Windows did not return the system proxy state.'.tr);
     }
     return WindowsProxyState(
       enabled: raw['enabled'] as bool? ?? false,

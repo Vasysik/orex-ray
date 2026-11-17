@@ -13,23 +13,23 @@ enum ConnectionMode {
 
   String get title => switch (this) {
         ConnectionMode.vpnTun => 'VPN',
-        ConnectionMode.systemProxy => 'Системный прокси'.tr,
-        ConnectionMode.localProxy => 'Локальный прокси'.tr,
+        ConnectionMode.systemProxy => 'System proxy'.tr,
+        ConnectionMode.localProxy => 'Local proxy'.tr,
       };
 
   String get shortTitle => switch (this) {
         ConnectionMode.vpnTun => 'VPN',
-        ConnectionMode.systemProxy => 'Система'.tr,
-        ConnectionMode.localProxy => 'Прокси'.tr,
+        ConnectionMode.systemProxy => 'System'.tr,
+        ConnectionMode.localProxy => 'Proxy'.tr,
       };
 
   String get description => switch (this) {
         ConnectionMode.vpnTun =>
-          'Весь трафик устройства через защищённый туннель'.tr,
+          'All device traffic through the secure tunnel'.tr,
         ConnectionMode.systemProxy =>
-          'Приложения Windows, использующие системный прокси'.tr,
+          'Windows apps using the system proxy'.tr,
         ConnectionMode.localProxy =>
-          'Локальные SOCKS5 и HTTP точки входа для выбранных приложений'.tr,
+          'Local SOCKS5 and HTTP entry points for selected apps'.tr,
       };
 
   static ConnectionMode? fromStorageValue(String? value) => switch (value) {
@@ -60,17 +60,17 @@ enum BalancerStrategy {
       };
 
   String get title => switch (this) {
-        BalancerStrategy.random => 'Случайный'.tr,
-        BalancerStrategy.roundRobin => 'По очереди'.tr,
-        BalancerStrategy.leastPing => 'Минимальный пинг'.tr,
+        BalancerStrategy.random => 'Random'.tr,
+        BalancerStrategy.roundRobin => 'In order'.tr,
+        BalancerStrategy.leastPing => 'Lowest ping'.tr,
       };
 
   String get description => switch (this) {
         BalancerStrategy.random =>
-          'Каждое новое соединение получает случайный доступный сервер'.tr,
-        BalancerStrategy.roundRobin => 'Серверы используются по кругу'.tr,
+          'Each new connection gets a random available server'.tr,
+        BalancerStrategy.roundRobin => 'Servers are used in round-robin'.tr,
         BalancerStrategy.leastPing =>
-          'Xray выбирает сервер с минимальной измеренной задержкой'.tr,
+          'Xray picks the server with the lowest measured latency'.tr,
       };
 
   static BalancerStrategy fromStorageValue(String? value) => switch (value) {
@@ -366,7 +366,7 @@ class TunnelProfile {
         ? OutboundProtocol.vless
         : OutboundProtocol.fromStorageValue(storedOutboundProtocol);
     if (outboundProtocol == null) {
-      throw FormatException('Неподдерживаемый протокол профиля'.tr);
+      throw FormatException('Unsupported profile protocol'.tr);
     }
     final password = stringValue('password');
     final port = intValue('port');
@@ -378,10 +378,10 @@ class TunnelProfile {
         address.isEmpty ||
         (needsUserId && userId.isEmpty) ||
         (needsPassword && password.isEmpty)) {
-      throw FormatException('Профиль содержит пустые обязательные поля'.tr);
+      throw FormatException('The profile has empty required fields'.tr);
     }
     if (port < 1 || port > 65535) {
-      throw FormatException('Некорректный порт профиля'.tr);
+      throw FormatException('Invalid profile port'.tr);
     }
 
     final rawAlpn = json['alpn'];
@@ -534,7 +534,7 @@ class BalancerProfile {
     if (id.isEmpty ||
         name.isEmpty ||
         (members.isEmpty && memberGroupKeys.isEmpty)) {
-      throw FormatException('Некорректный балансировщик'.tr);
+      throw FormatException('Invalid balancer'.tr);
     }
     final fallbackTarget = (json['fallbackTarget'] as String?)?.trim();
     return BalancerProfile(
@@ -592,7 +592,7 @@ class TunnelTarget {
   TunnelProfile get primaryProfile => profiles.first;
   String get endpoint =>
       isBalancer ? '${profiles.length} серверов' : primaryProfile.endpoint;
-  String get protocol => isBalancer ? 'Балансировщик'.tr : primaryProfile.protocol;
+  String get protocol => isBalancer ? 'Balancer'.tr : primaryProfile.protocol;
   String get transportLabel =>
       isBalancer ? balancer!.strategy.title : primaryProfile.transportLabel;
   int? get latencyMs {

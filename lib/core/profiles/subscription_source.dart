@@ -64,9 +64,9 @@ class SubscriptionSource {
         userAgent: userAgent,
       ).timeout(const Duration(seconds: 30));
     } on TimeoutException {
-      throw FormatException('Таймаут загрузки подписки'.tr);
+      throw FormatException('Subscription download timeout'.tr);
     } on SocketException catch (error) {
-      throw FormatException('Не удалось загрузить подписку: {}'.trf([error.message]));
+      throw FormatException('Failed to load the subscription: {}'.trf([error.message]));
     } finally {
       client.close(force: true);
     }
@@ -88,9 +88,9 @@ class SubscriptionSource {
         userAgent: userAgent,
       ).timeout(const Duration(seconds: 12));
     } on TimeoutException {
-      throw FormatException('Таймаут проверки подписки'.tr);
+      throw FormatException('Subscription check timeout'.tr);
     } on SocketException catch (error) {
-      throw FormatException('Не удалось проверить подписку: {}'.trf([error.message]));
+      throw FormatException('Failed to check the subscription: {}'.trf([error.message]));
     } finally {
       client.close(force: true);
     }
@@ -106,16 +106,16 @@ class SubscriptionSource {
   Uri _parseUrl(String value) {
     final raw = value.trim();
     if (raw.isEmpty) {
-      throw FormatException('Укажи URL подписки'.tr);
+      throw FormatException('Provide the subscription URL'.tr);
     }
     if (raw.length > 8192) {
-      throw FormatException('URL подписки слишком длинный'.tr);
+      throw FormatException('Subscription URL is too long'.tr);
     }
     final uri = Uri.tryParse(raw);
     if (uri == null ||
         !uri.hasAuthority ||
         (uri.scheme != 'http' && uri.scheme != 'https')) {
-      throw FormatException('Нужен HTTP/HTTPS URL подписки'.tr);
+      throw FormatException('An HTTP/HTTPS subscription URL is required'.tr);
     }
     return uri;
   }
@@ -131,14 +131,14 @@ class SubscriptionSource {
     _validateResponse(response);
     final declaredLength = response.contentLength;
     if (declaredLength > XrayJsonCodec.maxPayloadBytes) {
-      throw FormatException('Подписка больше 5 МБ'.tr);
+      throw FormatException('The subscription is larger than 5 MB'.tr);
     }
 
     final metadata = _metadataFromHeaders(response);
     final bytes = <int>[];
     await for (final chunk in response.timeout(const Duration(seconds: 20))) {
       if (bytes.length + chunk.length > XrayJsonCodec.maxPayloadBytes) {
-        throw FormatException('Подписка больше 5 МБ'.tr);
+        throw FormatException('The subscription is larger than 5 MB'.tr);
       }
       bytes.addAll(chunk);
     }
@@ -147,7 +147,7 @@ class SubscriptionSource {
     try {
       body = utf8.decode(bytes);
     } on FormatException {
-      throw FormatException('Подписка не является UTF-8 текстом'.tr);
+      throw FormatException('The subscription is not UTF-8 text'.tr);
     }
 
     return SubscriptionFetchResult(
@@ -193,16 +193,16 @@ class SubscriptionSource {
 
   void _validateResponse(HttpClientResponse response) {
     if (_headerIsTrue(response, 'x-hwid-max-devices-reached')) {
-      throw FormatException('Лимит устройств этой подписки исчерпан'.tr);
+      throw FormatException('The device limit of this subscription is exhausted'.tr);
     }
     if (_headerIsTrue(response, 'x-hwid-not-supported')) {
       throw FormatException(
-        'Подписка требует HWID устройства; такой режим пока не поддерживается'.tr,
+        'The subscription requires a device HWID; this mode is not supported yet'.tr,
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw FormatException(
-        'Сервер подписки вернул HTTP {}'.trf([response.statusCode]),
+        'The subscription server returned HTTP {}'.trf([response.statusCode]),
       );
     }
   }

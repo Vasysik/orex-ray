@@ -64,7 +64,7 @@ class OrexConfirmDialog extends StatelessWidget {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: Text(cancelLabel ?? 'Отмена'.tr),
+                    child: Text(cancelLabel ?? 'Cancel'.tr),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(true),

@@ -16,21 +16,21 @@ enum DnsPreset {
   String get storageValue => name;
 
   String get title => switch (this) {
-        DnsPreset.system => 'Системный DNS'.tr,
-        DnsPreset.automatic => 'DNS через VPN'.tr,
+        DnsPreset.system => 'System DNS'.tr,
+        DnsPreset.automatic => 'DNS over VPN'.tr,
         DnsPreset.cloudflare => 'Cloudflare',
         DnsPreset.google => 'Google',
-        DnsPreset.custom => 'Свой DNS'.tr,
+        DnsPreset.custom => 'Custom DNS'.tr,
       };
 
   String get description => switch (this) {
         DnsPreset.system =>
-          'Не задавать DNS в VPN и использовать DNS текущей сети'.tr,
+          'Do not set DNS in the VPN and use the current network\'s DNS'.tr,
         DnsPreset.automatic =>
-          'DNS приложений: 1.1.1.1 и 8.8.8.8 через туннель'.tr,
-        DnsPreset.cloudflare => '1.1.1.1 и 1.0.0.1'.tr,
-        DnsPreset.google => '8.8.8.8 и 8.8.4.4'.tr,
-        DnsPreset.custom => 'Адреса, заданные вручную'.tr,
+          'App DNS: 1.1.1.1 and 8.8.8.8 through the tunnel'.tr,
+        DnsPreset.cloudflare => '1.1.1.1 and 1.0.0.1'.tr,
+        DnsPreset.google => '8.8.8.8 and 8.8.4.4'.tr,
+        DnsPreset.custom => 'Manually set addresses'.tr,
       };
 
   static DnsPreset fromStorageValue(String? value) => switch (value) {
@@ -56,13 +56,13 @@ enum LatencyProbePreset {
   String get title => switch (this) {
         LatencyProbePreset.cloudflare => 'Cloudflare',
         LatencyProbePreset.google => 'Google',
-        LatencyProbePreset.custom => 'Свой URL'.tr,
+        LatencyProbePreset.custom => 'Custom URL'.tr,
       };
 
   String get description => switch (this) {
         LatencyProbePreset.cloudflare => cloudflareUrl,
         LatencyProbePreset.google => googleUrl,
-        LatencyProbePreset.custom => 'Публичный HTTP(S) адрес'.tr,
+        LatencyProbePreset.custom => 'Public HTTP(S) address'.tr,
       };
 
   static LatencyProbePreset fromStorageValue(String? value) => switch (value) {
@@ -348,11 +348,11 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setSocksPort(int value) async {
     final port = _validPort(value);
     if (port == null) {
-      throw FormatException('Порт должен быть от 1 до 65535'.tr);
+      throw FormatException('The port must be between 1 and 65535'.tr);
     }
     if (port == _httpPort) {
       throw FormatException(
-          'SOCKS и HTTP должны использовать разные порты'.tr);
+          'SOCKS and HTTP must use different ports'.tr);
     }
     if (_socksPort == port) return;
     _socksPort = port;
@@ -363,11 +363,11 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setHttpPort(int value) async {
     final port = _validPort(value);
     if (port == null) {
-      throw FormatException('Порт должен быть от 1 до 65535'.tr);
+      throw FormatException('The port must be between 1 and 65535'.tr);
     }
     if (port == _socksPort) {
       throw FormatException(
-          'SOCKS и HTTP должны использовать разные порты'.tr);
+          'SOCKS and HTTP must use different ports'.tr);
     }
     if (_httpPort == port) return;
     _httpPort = port;
@@ -378,7 +378,7 @@ class ConnectionSettingsController extends ChangeNotifier {
   Future<void> setMtu(int value) async {
     final mtu = _validMtu(value);
     if (mtu == null) {
-      throw FormatException('MTU должен быть от 1280 до 9000'.tr);
+      throw FormatException('MTU must be between 1280 and 9000'.tr);
     }
     if (_mtu == mtu) return;
     _mtu = mtu;
@@ -433,7 +433,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     final normalized = value.trim();
     final parsed = _parseDnsList(normalized);
     if (normalized.isNotEmpty && parsed.isEmpty) {
-      throw FormatException('Укажи хотя бы один корректный DNS-адрес'.tr);
+      throw FormatException('Provide at least one valid DNS address'.tr);
     }
     if (_customDns == normalized) return;
     _customDns = normalized;
@@ -443,7 +443,7 @@ class ConnectionSettingsController extends ChangeNotifier {
 
   Future<void> setLatencyProbePreset(LatencyProbePreset value) async {
     if (value == LatencyProbePreset.custom && _customLatencyProbeUrl.isEmpty) {
-      throw FormatException('Сначала укажи публичный HTTP(S) URL'.tr);
+      throw FormatException('Provide a public HTTP(S) URL first'.tr);
     }
     if (_latencyProbePreset == value) return;
     _latencyProbePreset = value;
@@ -457,7 +457,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     final normalized = _normalizePublicProbeUrl(value);
     if (normalized == null) {
       throw FormatException(
-        'URL проверки должен быть публичным HTTP(S) адресом'.tr,
+        'The check URL must be a public HTTP(S) address'.tr,
       );
     }
     if (_customLatencyProbeUrl == normalized &&
@@ -476,10 +476,10 @@ class ConnectionSettingsController extends ChangeNotifier {
 
   static String? validateLatencyProbeUrl(String value) {
     final normalized = value.trim();
-    if (normalized.isEmpty) return 'Укажи URL проверки'.tr;
-    if (normalized.length > 8192) return 'URL проверки слишком длинный'.tr;
+    if (normalized.isEmpty) return 'Provide the check URL'.tr;
+    if (normalized.length > 8192) return 'Check URL is too long'.tr;
     if (!_isSafePublicHttpUri(Uri.tryParse(normalized))) {
-      return 'Нужен публичный HTTP(S) URL без учётных данных'.tr;
+      return 'A public HTTP(S) URL without credentials is required'.tr;
     }
     return null;
   }
@@ -517,7 +517,7 @@ class ConnectionSettingsController extends ChangeNotifier {
         .toList(growable: false);
     if (invalid.isNotEmpty) {
       throw FormatException(
-        'Правило «{}» должно начинаться с geoip: или geosite:'.trf([invalid.first]),
+        'The rule "{}" must start with geoip: or geosite:'.trf([invalid.first]),
       );
     }
     assign(normalized);
@@ -529,7 +529,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     final normalized = _validStatsInterval(value);
     if (normalized == null) {
       throw FormatException(
-        'Интервал интерфейса должен быть 1, 2, 3, 5, 10, 15 или 30 секунд'.tr,
+        'The interface interval must be 1, 2, 3, 5, 10, 15 or 30 seconds'.tr,
       );
     }
     if (_statsIntervalSeconds == normalized) return;
@@ -542,7 +542,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     final normalized = _validNotificationStatsInterval(value);
     if (normalized == null) {
       throw FormatException(
-        'Интервал уведомления должен быть 5, 10, 15, 30 или 60 секунд'.tr,
+        'The notification interval must be 5, 10, 15, 30 or 60 seconds'.tr,
       );
     }
     if (_notificationStatsIntervalSeconds == normalized) return;
@@ -555,7 +555,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     final normalized = _validPingInterval(value);
     if (normalized == null) {
       throw FormatException(
-        'Интервал пинга должен быть 15, 30, 60, 120 или 300 секунд'.tr,
+        'The ping interval must be 15, 30, 60, 120 or 300 seconds'.tr,
       );
     }
     if (_pingIntervalSeconds == normalized) return;
@@ -568,7 +568,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     final normalized = _validSubscriptionAutoUpdateHours(value);
     if (normalized == null) {
       throw FormatException(
-        'Автообновление подписок: 0, 1, 6, 12, 24 или 72 часа'.tr,
+        'Subscription auto-update: 0, 1, 6, 12, 24 or 72 hours'.tr,
       );
     }
     if (_subscriptionAutoUpdateHours == normalized) return;
@@ -581,7 +581,7 @@ class ConnectionSettingsController extends ChangeNotifier {
     final normalized = _validSubscriptionMetadataRefreshMinutes(value);
     if (normalized == null) {
       throw FormatException(
-        'Метаданные подписок: 0, 10, 30, 60, 360 или 720 минут'.tr,
+        'Subscription metadata: 0, 10, 30, 60, 360 or 720 minutes'.tr,
       );
     }
     if (_subscriptionMetadataRefreshMinutes == normalized) return;

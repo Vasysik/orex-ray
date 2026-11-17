@@ -33,17 +33,17 @@ class AboutScreen extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       children: [
         SettingsPageHeader(
-          title: 'О приложении'.tr,
-          subtitle: 'OrexRay — Xray-клиент для Android и Windows'.tr,
+          title: 'About'.tr,
+          subtitle: 'OrexRay — an Xray client for Android and Windows'.tr,
           icon: Icons.info_outline_rounded,
         ),
         const SizedBox(height: 22),
         Center(
-          child: SquirrelMascot(size: 128, caption: 'Белочка защищает маршрут'.tr),
+          child: SquirrelMascot(size: 128, caption: 'The squirrel guards the route'.tr),
         ),
         const SizedBox(height: 22),
         SettingsSection(
-          title: 'Версия'.tr,
+          title: 'Version'.tr,
           children: [
             ListTile(
               leading: Icon(Icons.apps_rounded, color: OrexPalette.of(context).accent),
@@ -59,13 +59,13 @@ class AboutScreen extends StatelessWidget {
                   return ListTile(
                     key: const ValueKey('orexray-check-updates'),
                     leading: Icon(Icons.system_update_rounded, color: OrexPalette.of(context).accent),
-                    title: Text(model.available != null ? 'Установить обновление'.tr : 'Проверить обновления'.tr),
+                    title: Text(model.available != null ? 'Install update'.tr : 'Check for updates'.tr),
                     subtitle: Text(switch (model.state) {
-                      OrexRayUpdateState.checking => 'Проверяем GitHub Releases…'.tr,
-                      OrexRayUpdateState.available => 'Доступна {}'.trf([model.available!.tag]),
-                      OrexRayUpdateState.upToDate => 'Установлена последняя версия'.tr,
-                      OrexRayUpdateState.error => model.error ?? 'Проверка не удалась'.tr,
-                      _ => 'Источник: GitHub Releases'.tr,
+                      OrexRayUpdateState.checking => 'Checking GitHub Releases…'.tr,
+                      OrexRayUpdateState.available => 'Available {}'.trf([model.available!.tag]),
+                      OrexRayUpdateState.upToDate => 'The latest version is installed'.tr,
+                      OrexRayUpdateState.error => model.error ?? 'Check failed'.tr,
+                      _ => 'Source: GitHub Releases'.tr,
                     }),
                     onTap: model.state == OrexRayUpdateState.checking ? null : () async {
                       if (model.available == null) await model.check();
@@ -74,7 +74,7 @@ class AboutScreen extends StatelessWidget {
                         await showOrexRayUpdateDialog(context, model);
                       } else {
                         OrexNotice.show(context, SnackBar(content: Text(
-                          model.error ?? 'Новых версий нет'.tr,
+                          model.error ?? 'No new versions'.tr,
                         )));
                       }
                     },
@@ -88,8 +88,8 @@ class AboutScreen extends StatelessWidget {
             const Divider(height: 1),
             ListTile(
               leading: Icon(Icons.copy_rounded, color: OrexPalette.of(context).accent),
-              title: Text('Скопировать информацию'.tr),
-              subtitle: Text('Для баг-репорта и диагностики'.tr),
+              title: Text('Copy information'.tr),
+              subtitle: Text('For bug reports and diagnostics'.tr),
               mouseCursor: SystemMouseCursors.click,
               onTap: () async {
                 await Clipboard.setData(
@@ -98,7 +98,7 @@ class AboutScreen extends StatelessWidget {
                 if (context.mounted) {
                   OrexNotice.show(
                     context,
-                    SnackBar(content: Text('Информация скопирована'.tr)),
+                    SnackBar(content: Text('Information copied'.tr)),
                   );
                 }
               },
@@ -107,8 +107,8 @@ class AboutScreen extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         SettingsSection(
-          title: 'Движок'.tr,
-          subtitle: 'Версия и обслуживание сетевого движка.'.tr,
+          title: 'Engine'.tr,
+          subtitle: 'Version and network engine maintenance.'.tr,
           children: [
              ListTile(
               leading: Icon(Icons.hub_rounded, color: OrexPalette.of(context).accent),
@@ -145,7 +145,7 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
     if (!widget.tunnel.canReinstallXrayCore) {
       OrexNotice.show(
         context,
-        SnackBar(content: Text('Сначала отключи активное соединение.'.tr)),
+        SnackBar(content: Text('Disconnect the active connection first.'.tr)),
       );
       return;
     }
@@ -157,11 +157,11 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
             context: context,
             builder: (dialogContext) => OrexConfirmDialog(
               icon: Icons.admin_panel_settings_outlined,
-              title: 'Нужны права администратора'.tr,
+              title: 'Administrator rights are required'.tr,
               content: Text(
-                'Xray Core установлен в Program Files. OrexRay перезапустится с правами администратора; после перезапуска снова открой «О приложении» и нажми «Переустановить Xray Core».'.tr,
+                'Xray Core is installed in Program Files. OrexRay will restart with administrator rights; after the restart, open "About" again and tap "Reinstall Xray Core".'.tr,
               ),
-              confirmLabel: 'Перезапустить'.tr,
+              confirmLabel: 'Restart'.tr,
             ),
           ) ??
           false;
@@ -184,13 +184,13 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
       if (!mounted) return;
       OrexNotice.show(
         context,
-        SnackBar(content: Text('Xray Core переустановлен и проверен.'.tr)),
+        SnackBar(content: Text('Xray Core reinstalled and verified.'.tr)),
       );
     } catch (error) {
       if (!mounted) return;
       OrexNotice.show(
         context,
-        SnackBar(content: Text('Не удалось переустановить Xray Core: {}'.trf([error]))),
+        SnackBar(content: Text('Failed to reinstall Xray Core: {}'.trf([error]))),
       );
     } finally {
       if (mounted) {
@@ -212,15 +212,15 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
           leading: Icon(Icons.system_update_alt_rounded,
             color: OrexPalette.of(context).accent,
           ),
-          title: Text('Переустановить Xray Core'.tr),
+          title: Text('Reinstall Xray Core'.tr),
           subtitle: Text(
             _repairing
                 ? _progress == null
-                    ? 'Подготавливаем восстановление…'.tr
-                    : 'Загрузка · {}%'.trf([(_progress! * 100).round()])
+                    ? 'Preparing restore…'.tr
+                    : 'Loading · {}%'.trf([(_progress! * 100).round()])
                 : canRepair
-                    ? 'Восстанавливает xray.exe, wintun.dll и встроенные GeoData из закреплённого архива с проверкой SHA-256.'.tr
-                    : 'Отключи активное соединение для обслуживания движка.'.tr,
+                    ? 'Restores xray.exe, wintun.dll and the bundled GeoData from the pinned archive with SHA-256 verification.'.tr
+                    : 'Disconnect the active connection for engine maintenance.'.tr,
           ),
           trailing: OutlinedButton.icon(
             onPressed: _repairing || !canRepair ? null : _reinstall,
@@ -230,7 +230,7 @@ class _XrayCoreMaintenanceTileState extends State<_XrayCoreMaintenanceTile> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.build_circle_outlined),
-            label: Text('Переустановить'.tr),
+            label: Text('Reinstall'.tr),
           ),
         );
       },
