@@ -591,7 +591,9 @@ class TunnelTarget {
   bool get isBalancer => balancer != null;
   TunnelProfile get primaryProfile => profiles.first;
   String get endpoint =>
-      isBalancer ? '${profiles.length} серверов' : primaryProfile.endpoint;
+      isBalancer
+          ? OrexL10n.instance.plural(profiles.length, 'server')
+          : primaryProfile.endpoint;
   String get protocol => isBalancer ? 'Balancer'.tr : primaryProfile.protocol;
   String get transportLabel =>
       isBalancer ? balancer!.strategy.title : primaryProfile.transportLabel;

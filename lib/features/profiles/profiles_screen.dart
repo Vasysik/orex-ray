@@ -170,7 +170,9 @@ class ProfilesScreen extends StatelessWidget {
         content: Text(
           parts.isEmpty
               ? 'Subscription "{}" updated'.trf([result.subscription.name])
-              : 'Подписка «${result.subscription.name}»: ${parts.join(', ')}',
+              : 'Subscription "{}": {}'.trf(
+                  [result.subscription.name, parts.join(', ')],
+                ),
         ),
       ),
     );

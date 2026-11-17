@@ -344,7 +344,11 @@ class OrexRayUpdates extends ChangeNotifier {
         '-NoProfile', '-NonInteractive', '-Command',
         "Start-Process -FilePath '$escaped' -Verb RunAs",
       ]);
-      if (result.exitCode != 0) throw StateError('Не удалось запустить установщик: ${result.stderr}');
+      if (result.exitCode != 0) {
+        throw StateError(
+          'Failed to launch the installer: {}'.trf([result.stderr]),
+        );
+      }
       return false;
     }
     throw UnsupportedError('Updates are only available on Android and Windows'.tr);

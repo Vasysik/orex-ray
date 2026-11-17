@@ -383,7 +383,7 @@ class _ConnectionHero extends StatelessWidget {
     final routeFailed = ConnectionVisualStatus.isRouteFailed(pingStatus);
     final fallbackMessage = snapshot.message ??
         (hasProfile
-            ? 'Готовы подключить ${profile.name}'
+            ? 'Ready to connect {}'.trf([profile.name])
             : 'Add a profile first'.tr);
     final secondaryText = !showStatusText && active
         ? routeFailed
@@ -980,7 +980,7 @@ class _QuickInfo extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                           child: Text(
-                            'Текущая группа: ${selectedGroup.title}',
+                            'Current group: {}'.trf([selectedGroup.title]),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(sheetContext).textTheme.bodySmall,
@@ -997,7 +997,12 @@ class _QuickInfo extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle: Text('${group.targets.length} серверов'),
+                          subtitle: Text(
+                            OrexL10n.instance.plural(
+                              group.targets.length,
+                              'server',
+                            ),
+                          ),
                           trailing: Icon(
                             expanded.contains(group.key)
                                 ? Icons.expand_less_rounded
@@ -1078,7 +1083,7 @@ class _QuickTargetTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '${target.endpoint} · ${latencyMs == null ? '- мс' : '{} ms'.trf([latencyMs])}',
+        '${target.endpoint} · ${latencyMs == null ? '- ms'.tr : '{} ms'.trf([latencyMs])}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -1338,7 +1343,7 @@ class _ProxyAddressChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final address = '$uriScheme://127.0.0.1:$port';
     return Tooltip(
-      message: 'Копировать $address',
+      message: 'Copy {}'.trf([address]),
       child: Material(
         color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(10),

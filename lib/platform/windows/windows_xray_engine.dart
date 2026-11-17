@@ -219,7 +219,8 @@ class WindowsXrayEngine implements
             TunnelStatus.connecting,
             mode: mode,
             profile: profile,
-            message: 'Скачиваем Xray Core · ${(progress * 100).round()}%',
+            message:
+                'Downloading Xray Core · {}%'.trf([(progress * 100).round()]),
             stats: const TrafficStats(),
           );
         },
@@ -359,7 +360,7 @@ class WindowsXrayEngine implements
         if (_process == startedProcess) _process = null;
         throw StateError(
           _bestError(
-            'Xray завершился с кодом $earlyExit',
+            'Xray exited with code {}'.trf([earlyExit]),
             logs: processLogs,
           ),
         );
@@ -550,8 +551,7 @@ class WindowsXrayEngine implements
       mode: mode,
       profile: profile,
       error: budgetExhausted
-          ? '$detail\nWatchdog остановлен: не больше '
-              '${_restartBudget.maxRestarts} перезапусков за минуту.'
+          ? '$detail\n${'Watchdog stopped: no more than {} restarts per minute.'.trf([_restartBudget.maxRestarts])}'
           : detail,
       stats: const TrafficStats(),
     );
@@ -814,7 +814,7 @@ class WindowsXrayEngine implements
       return 'Windows VPN mode requires administrator rights. System and local proxy work without them.'.tr;
     }
     if (text.contains('SocketException') || text.contains('HttpException')) {
-      return 'Не удалось скачать Xray Core. Проверь интернет и попробуй снова.\n$text';
+      return '${'Failed to download Xray Core. Check your internet connection and try again.'.tr}\n$text';
     }
     return text;
   }

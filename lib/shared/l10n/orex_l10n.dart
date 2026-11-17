@@ -85,6 +85,7 @@ class OrexL10n extends ChangeNotifier {
 
   /// Russian plural forms (one / few / many) for the units the UI counts.
   static const _ruPlurals = <String, (String, String, String)>{
+    'server': ('сервер', 'сервера', 'серверов'),
     'day': ('день', 'дня', 'дней'),
     'hour': ('час', 'часа', 'часов'),
     'minute': ('минута', 'минуты', 'минут'),

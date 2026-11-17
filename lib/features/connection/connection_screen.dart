@@ -225,7 +225,7 @@ class _ProxyCopyButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip: 'Копировать $protocol',
+      tooltip: 'Copy {}'.trf([protocol]),
       icon: const Icon(Icons.copy_rounded, size: 19),
       onPressed: () {
         final box = context.findRenderObject();
@@ -286,7 +286,7 @@ Future<void> _editNumber(
     validator: (rawValue) {
       final value = int.tryParse(rawValue.trim());
       if (value == null || value < min || value > max) {
-        return 'Допустимо от $min до $max';
+        return 'Allowed from {} to {}'.trf([min, max]);
       }
       return null;
     },
