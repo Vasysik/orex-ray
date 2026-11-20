@@ -165,6 +165,10 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
+        getByName("profile") {
+            applicationIdSuffix = ".profile"
+            versionNameSuffix = "-profile"
+        }
         release {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")

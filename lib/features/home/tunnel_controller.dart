@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' show Timeline;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/diagnostics/tunnel_diagnostics.dart';
@@ -52,6 +54,7 @@ class TunnelController extends ChangeNotifier {
         return;
       }
       final previous = _engineSnapshot;
+      _traceStatusChange(previous, value);
       final profileUiChanged = _profileUiStateChanged(previous, value);
       final becameConnected = value.isConnected && !previous.isConnected;
       if (_latencyContextChanged(previous, value)) {
@@ -547,6 +550,9 @@ class TunnelController extends ChangeNotifier {
 
   Future<void> toggle() async {
     if (_closing) return;
+    if (kProfileMode) {
+      Timeline.instantSync('OrexRay tunnel control tapped');
+    }
     await waitForInitialState();
     if (_closing) return;
     final current = snapshot;
@@ -839,6 +845,12 @@ class TunnelController extends ChangeNotifier {
     }
     _activeRouteLatencyTargetId = targetId;
     _activeRouteLatency = result;
+    if (kProfileMode) {
+      Timeline.instantSync(
+        'OrexRay route check finished',
+        arguments: {'status': result.status.name},
+      );
+    }
     // Keep native foreground UI aligned with the value in the home screen.
     // Do not mutate the saved profile: its latency is the direct TCP metric
     // used in profile lists, whereas this is the current end-to-end route.
@@ -1125,6 +1137,7 @@ class TunnelController extends ChangeNotifier {
   void _syncFromEngine() {
     final next = _engine.current;
     final previous = _engineSnapshot;
+    _traceStatusChange(previous, next);
     final profileUiChanged = _profileUiStateChanged(previous, next);
     final becameConnected = next.isConnected && !previous.isConnected;
     if (_latencyContextChanged(previous, next)) {
@@ -1153,6 +1166,21 @@ class TunnelController extends ChangeNotifier {
     if (!_closing) {
       if (profileUiChanged) _profileUiRevision.value++;
       notifyListeners();
+    }
+  }
+
+  void _traceStatusChange(TunnelSnapshot previous, TunnelSnapshot next) {
+    if (!kProfileMode || previous.status == next.status) return;
+    Timeline.instantSync(
+      'OrexRay tunnel status',
+      arguments: {'status': next.status.name, 'mode': next.mode.storageValue},
+    );
+    if (next.status == TunnelStatus.connecting) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (!_closing && _engineSnapshot.status == TunnelStatus.connecting) {
+          Timeline.instantSync('OrexRay connecting frame completed');
+        }
+      });
     }
   }
 
