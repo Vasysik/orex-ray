@@ -270,6 +270,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             animation: OrexL10n.instance,
             builder: (context, _) {
               final languageNames = OrexL10n.languageNames;
+              final palette = OrexPalette.of(context);
               return ListTile(
                 key: const ValueKey('appearance-language'),
                 leading: Icon(Icons.translate_rounded),
@@ -279,6 +280,10 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
                 ),
                 trailing: DropdownButton<String>(
                   value: OrexL10n.instance.language,
+                  dropdownColor: palette.surface,
+                  style: Theme.of(context)
+                      .textTheme.bodyMedium
+                      ?.copyWith(color: palette.text),
                   underline: const SizedBox.shrink(),
                   onChanged: (value) {
                     if (value != null) OrexL10n.instance.setLanguage(value);

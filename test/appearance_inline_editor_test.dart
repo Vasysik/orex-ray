@@ -11,6 +11,29 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('language menu uses the active theme surface and text colors',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final theme = await ThemeController.load();
+    addTearDown(theme.dispose);
+    const surface = Color(0xFF374654);
+    const text = Color(0xFFF9E7CD);
+    final colors = {'surface': surface, 'text': text};
+    await tester.pumpWidget(MaterialApp(
+      theme: OrexTheme.dark.copyWith(
+        extensions: [OrexPalette.resolve(Brightness.dark, colors)],
+      ),
+      home: Scaffold(body: AppearanceScreen(theme: theme)),
+    ));
+    final dropdown = find.descendant(
+      of: find.byKey(const ValueKey('appearance-language')),
+      matching: find.byType(DropdownButton<String>),
+    );
+    final menu = tester.widget<DropdownButton<String>>(dropdown);
+    expect(menu.dropdownColor, surface);
+    expect(menu.style?.color, text);
+  });
+
   testWidgets('creating and editing a theme stays inside Interface page',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
