@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('Debug', 'Release')]
+  [ValidateSet('Debug', 'Profile', 'Release')]
   [string]$Configuration = 'Release'
 )
 
