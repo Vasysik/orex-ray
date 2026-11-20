@@ -30,10 +30,13 @@ class _AppsScreenState extends State<AppsScreen> {
         if (!widget.controller.supported) return const _UnsupportedAppsScreen();
 
         final query = _query.trim().toLowerCase();
+        final selectedPackages = widget.controller.selectedPackages;
         final apps = widget.controller.apps.where((app) {
-          if (!widget.controller.showSystemApps && app.isSystem) return false;
-          if (_selectedOnly &&
-              !widget.controller.selectedPackages.contains(app.packageName)) {
+          final selected = selectedPackages.contains(app.packageName);
+          if (_selectedOnly && !selected) return false;
+          if (!widget.controller.showSystemApps &&
+              app.isSystemComponent &&
+              !selected) {
             return false;
           }
           if (query.isEmpty) return true;
@@ -122,7 +125,7 @@ class _AppsScreenState extends State<AppsScreen> {
                                 Icons.settings_suggest_rounded,
                                 size: 18,
                               ),
-                              label: Text('System apps'.tr),
+                              label: Text('System components'.tr),
                               onSelected: (value) => unawaited(
                                 widget.controller.setShowSystemApps(value),
                               ),
@@ -208,11 +211,13 @@ class _AppsScreenState extends State<AppsScreen> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                if (app.isSystem)
+                                if (app.isSystemComponent)
                                   Padding(
-                                    padding: const EdgeInsets.only(left: 8),
+                                    padding: const EdgeInsetsDirectional.only(
+                                      start: 8,
+                                    ),
                                     child: Tooltip(
-                                      message: 'System app'.tr,
+                                      message: 'System component'.tr,
                                       child: Icon(
                                         Icons.settings_rounded,
                                         size: 16,

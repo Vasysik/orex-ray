@@ -48,6 +48,9 @@ class AndroidAppInfo {
   final String label;
   final bool isSystem;
   final bool hasLauncher;
+
+  /// Preinstalled apps with a launcher entry belong in the main app list.
+  bool get isSystemComponent => isSystem && !hasLauncher;
 }
 
 class AppRoutingController extends ChangeNotifier {
