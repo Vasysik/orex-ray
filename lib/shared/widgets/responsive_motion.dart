@@ -38,7 +38,7 @@ class OrexResponsiveReveal extends StatefulWidget {
 
   final Object layoutKey;
   final Widget child;
-  final Alignment alignment;
+  final AlignmentGeometry alignment;
 
   @override
   State<OrexResponsiveReveal> createState() => _OrexResponsiveRevealState();

@@ -390,7 +390,7 @@ class AndroidXrayEngine
         effectivePingStatus: effectivePingStatus,
         activeBalancerMemberId:
             (event['activeBalancerMemberId'] as String?)?.trim(),
-        message: event['message'] as String?,
+        message: (event['message'] as String?)?.tr,
         errorMessage: event['errorMessage'] as String?,
       ),
     );

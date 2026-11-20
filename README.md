@@ -67,6 +67,7 @@ without them.
 ## Documentation
 
 - [Release builds](docs/release-builds.md) · [Android release](docs/release-android.md) · [Windows release](docs/release-windows.md)
+- [Contribute translations](docs/localization.md)
 - [In-app updates via GitHub Releases](docs/github-app-updates.md)
 - [Android debugging / ADB](docs/android-debugging.md)
 

@@ -207,7 +207,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                     status = "disconnected",
                     mode = restoredIntent.getStringExtra(EXTRA_MODE) ?: MODE_VPN,
                     targetId = restoredIntent.getStringExtra(EXTRA_TARGET_ID),
-                    message = "Подтверди системное разрешение VPN",
+                    message = "Confirm the system VPN permission",
                 ),
             )
             stopSelf()
@@ -606,7 +606,7 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                         status = "connecting",
                         mode = mode,
                         targetId = targetId,
-                        message = "Восстанавливаем VPN после перезапуска процесса…",
+                        message = "Restoring VPN after the process restarted…",
                     ),
                 ),
             )
@@ -685,9 +685,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 mode = activeMode,
                 targetId = activeTargetId,
                 message = if (activeMode == MODE_VPN) {
-                    "OrexRay VPN работает"
+                    "OrexRay VPN is running"
                 } else {
-                    "Локальный прокси работает"
+                    "The local proxy is running"
                 },
                 downloadBytes = downloadBytes,
                 uploadBytes = uploadBytes,
@@ -754,16 +754,16 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
             lastStatsSampleElapsedMs = SystemClock.elapsedRealtime()
 
             val tunFd = if (mode == MODE_VPN) {
-                emitConnecting("Создаём Android VPN…", mode)
+                emitConnecting("Creating the Android VPN interface…", mode)
                 vpnInterface = buildVpnInterface()
                     ?: error("Android не смог создать VPN-интерфейс")
                 vpnInterface!!.fd
             } else {
-                emitConnecting("Запускаем локальный SOCKS/HTTP прокси…", mode)
+                emitConnecting("Starting the local SOCKS/HTTP proxy…", mode)
                 0
             }
 
-            emitConnecting("Запускаем Xray Core…", mode)
+            emitConnecting("Starting Xray Core…", mode)
             debugInfo("Starting Xray mode=$mode tunFd=$tunFd")
             controller.startLoop(config, tunFd)
             if (!controller.isRunning) {
@@ -1090,9 +1090,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 mode = activeMode,
                 targetId = activeTargetId,
                 message = if (activeMode == MODE_VPN) {
-                    "OrexRay VPN работает"
+                    "OrexRay VPN is running"
                 } else {
-                    "Локальный прокси работает"
+                    "The local proxy is running"
                 },
                 downloadBytes = downloadBytes,
                 uploadBytes = uploadBytes,
@@ -1125,9 +1125,9 @@ class OrexRayVpnService : VpnService(), CoreCallbackHandler {
                 mode = activeMode,
                 targetId = activeTargetId,
                 message = if (activeMode == MODE_VPN) {
-                    "Останавливаем VPN…"
+                    "Stopping VPN…"
                 } else {
-                    "Останавливаем локальный прокси…"
+                    "Stopping the local proxy…"
                 },
                 downloadBytes = downloadBytes,
                 uploadBytes = uploadBytes,

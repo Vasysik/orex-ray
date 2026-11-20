@@ -203,6 +203,11 @@ class _OrexRayAppState extends State<OrexRayApp> with WidgetsBindingObserver {
     unawaited(_tunnel.setStatsUiActive(active));
   }
 
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    if (OrexL10n.instance.language == 'system') _refresh();
+  }
+
   void _refresh() => setState(() {});
 
   @override

@@ -69,6 +69,7 @@ TUN/VPN требует прав администратора; системный
 ## Документация
 
 - [Схема сборок](docs/release-builds.md) · [Android release](docs/release-android.md) · [Windows release](docs/release-windows.md)
+- [Как добавить перевод](docs/localization.md)
 - [Обновление приложения через GitHub Releases](docs/github-app-updates.md)
 - [Android debug / ADB](docs/android-debugging.md)
 

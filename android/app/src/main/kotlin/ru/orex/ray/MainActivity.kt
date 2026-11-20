@@ -593,7 +593,7 @@ class MainActivity : FlutterActivity() {
                     status = "connecting",
                     mode = request.mode,
                     targetId = request.targetId,
-                    message = "Подтверди системное разрешение VPN",
+                    message = "Confirm the system VPN permission",
                 ),
             )
             startActivityForResult(permissionIntent, VPN_PERMISSION_REQUEST)

@@ -218,10 +218,10 @@ class _Header extends StatelessWidget {
         return AnimatedSize(
           duration: OrexMotion.duration(context, OrexMotion.compact),
           curve: OrexMotion.curve,
-          alignment: Alignment.centerLeft,
+          alignment: AlignmentDirectional.centerStart,
           child: OrexResponsiveReveal(
             layoutKey: fitsStatus ? 'header-status' : 'header-brand',
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: content,
           ),
         );
@@ -682,7 +682,10 @@ class _MobileTrafficRow extends StatelessWidget {
               ? Stack(
                   alignment: Alignment.center,
                   children: [
-                    Align(alignment: Alignment.centerLeft, child: label),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: label,
+                    ),
                     Text(
                       value,
                       maxLines: 1,

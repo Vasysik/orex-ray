@@ -269,11 +269,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
           AnimatedBuilder(
             animation: OrexL10n.instance,
             builder: (context, _) {
-              final languageNames = <String, String>{
-                'system': 'Same as system'.tr,
-                'ru': 'Русский'.tr,
-                'en': 'English',
-              };
+              final languageNames = OrexL10n.languageNames;
               return ListTile(
                 key: const ValueKey('appearance-language'),
                 leading: Icon(Icons.translate_rounded),
