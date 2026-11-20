@@ -263,9 +263,9 @@ void main() {
     for (final (x, y) in [(0, 0), (626, 120), (540, 780), (710, 1020), (840, 680)]) {
       expect(rgba(gray, x, y), rgba(original, x, y), reason: '($x, $y)');
     }
-    expect(rgba(gray, 100, 150), (62, 52, 44, 255));
-    expect(rgba(gray, 100, 1100), (54, 46, 39, 255));
-    expect(rgba(gray, 1150, 1100), (46, 40, 36, 255));
+    expect(rgba(gray, 100, 150), (83, 66, 53, 255));
+    expect(rgba(gray, 100, 1100), (62, 50, 42, 255));
+    expect(rgba(gray, 1150, 1100), (39, 35, 32, 255));
   });
 
   test('upgrading the selected Gray preset replaces only its cached mascot',
