@@ -81,6 +81,9 @@ class WindowsXrayEngine implements
   late final Future<void> _proxyRecovery;
   Future<void>? _systemProxyEnableFuture;
   Future<void>? _stopFuture;
+  Future<void>? _startFuture;
+  Future<XrayCoreInstall>? _coreInstallFuture;
+  Completer<void>? _startCancellation;
   Process? _process;
   Timer? _statsTimer;
   Timer? _durationTimer;
@@ -155,6 +158,13 @@ class WindowsXrayEngine implements
 
   @override
   Future<void> start(TunnelTarget profile, ConnectionMode mode) async {
+    if (_disposed ||
+        _startFuture != null ||
+        _stopFuture != null ||
+        _current.isBusy ||
+        _current.isConnected) {
+      return;
+    }
     _desiredTarget = profile;
     _desiredMode = mode;
     _restartBudget.reset();
@@ -166,8 +176,27 @@ class WindowsXrayEngine implements
     TunnelTarget profile,
     ConnectionMode mode, {
     bool recovery = false,
+  }) {
+    final pending = _startFuture;
+    if (pending != null) return pending;
+    late final Future<void> future;
+    future = _runStart(profile, mode, recovery: recovery).whenComplete(() {
+      if (_startFuture == future) {
+        _startFuture = null;
+        _startCancellation = null;
+      }
+    });
+    _startFuture = future;
+    return future;
+  }
+
+  Future<void> _runStart(
+    TunnelTarget profile,
+    ConnectionMode mode, {
+    required bool recovery,
   }) async {
     if (_disposed ||
+        _stopFuture != null ||
         _process != null ||
         (!recovery && (_current.isBusy || _current.isConnected))) {
       return;
@@ -183,6 +212,8 @@ class WindowsXrayEngine implements
     }
 
     final operationId = ++_operationId;
+    final cancellation = Completer<void>();
+    _startCancellation = cancellation;
     Process? startedProcess;
     _stopping = false;
     if (recovery) {
@@ -212,20 +243,11 @@ class WindowsXrayEngine implements
       await _proxyRecovery;
       if (!_isCurrentOperation(operationId)) return;
 
-      final install = await _coreManager.ensureInstalled(
-        onProgress: (progress) {
-          if (!_isCurrentOperation(operationId)) return;
-          _status(
-            TunnelStatus.connecting,
-            mode: mode,
-            profile: profile,
-            message:
-                'Downloading Xray Core · {}%'.trf([(progress * 100).round()]),
-            stats: const TrafficStats(),
-          );
-        },
-      );
-      if (!_isCurrentOperation(operationId)) return;
+      final install = await Future.any<XrayCoreInstall?>([
+        _ensureCoreInstalled(),
+        cancellation.future.then((_) => null),
+      ]);
+      if (install == null || !_isCurrentOperation(operationId)) return;
       _managedExecutablePath = install.executable.path;
       _appendAppLog('Xray Core ${XrayCoreManager.version} verified.');
 
@@ -246,6 +268,7 @@ class WindowsXrayEngine implements
       final outboundInterface = mode == ConnectionMode.vpnTun
           ? await _waitForOutboundInterface()
           : null;
+      if (!_isCurrentOperation(operationId)) return;
       _lastOutboundInterface = outboundInterface;
       if (mode == ConnectionMode.vpnTun && outboundInterface == null) {
         throw StateError(
@@ -259,6 +282,7 @@ class WindowsXrayEngine implements
         install: install,
         elevated: elevated,
       );
+      if (!_isCurrentOperation(operationId)) return;
       _configFile = configFile;
       final config = switch (mode) {
         ConnectionMode.vpnTun => _configBuilder.buildWindowsTun(
@@ -306,7 +330,7 @@ class WindowsXrayEngine implements
         profile: profile,
         message: 'Checking the configuration…'.tr,
       );
-      await _validateConfig(install, configFile, assetDirectory);
+      await _validateConfig(install, configFile, assetDirectory, operationId);
       if (!_isCurrentOperation(operationId)) return;
       _appendAppLog('Xray configuration validation passed.');
 
@@ -347,43 +371,19 @@ class WindowsXrayEngine implements
         return;
       }
 
-      final earlyExit = await Future.any<int?>([
-        startedProcess.exitCode.then<int?>((value) => value),
-        Future<int?>.delayed(const Duration(milliseconds: 900), () => null),
-      ]);
-      if (!_isCurrentOperation(operationId)) {
+      final ready = await _waitForCoreListener(
+        startedProcess,
+        statsApiPort,
+        operationId,
+        processLogs,
+      );
+      if (!ready || !_isCurrentOperation(operationId)) {
         await _terminateProcessTree(startedProcess, install.executable.path);
         if (_process == startedProcess) _process = null;
         return;
       }
-      if (earlyExit != null) {
-        if (_process == startedProcess) _process = null;
-        throw StateError(
-          _bestError(
-            'Xray exited with code {}'.trf([earlyExit]),
-            logs: processLogs,
-          ),
-        );
-      }
-
       if (mode == ConnectionMode.vpnTun) {
-        try {
-          final routeStatus = await WindowsNetworkController.tunRouteStatus();
-          _lastTunRouteSummary = 'advisory · ${routeStatus.summary}';
-          _appendAppLog(
-            'TUN route observation (advisory): ${routeStatus.summary}.',
-          );
-          if (!routeStatus.fullyCaptured) {
-            _appendAppLog(
-              'Windows best-route API does not identify OrexRay as the best '
-              'public route. Continuing because this API is not a reliable '
-              'health check for Xray TUN traffic.',
-            );
-          }
-        } catch (error) {
-          _lastTunRouteSummary = 'advisory check unavailable';
-          _appendAppLog('TUN route observation failed: $error');
-        }
+        unawaited(_observeTunRoute(operationId));
       } else {
         _lastTunRouteSummary = 'not applicable';
       }
@@ -461,6 +461,7 @@ class WindowsXrayEngine implements
         );
         if (_process == process) _process = null;
       }
+      if (canceled || !_isCurrentOperation(operationId)) return;
       _statsTimer?.cancel();
       _durationTimer?.cancel();
       await _closeStatsClient();
@@ -469,7 +470,7 @@ class WindowsXrayEngine implements
       }
       _resetRuntimeState();
 
-      if (!canceled && !_disposed) {
+      if (_isCurrentOperation(operationId)) {
         _lastError = _friendlyError(error, mode);
         _appendAppLog('Connection start failed: $_lastError');
         _status(
@@ -494,13 +495,16 @@ class WindowsXrayEngine implements
     if (_process != process || _stopping || _disposed || _snapshots.isClosed) {
       return;
     }
+    final operationId = _operationId;
     _process = null;
     _lastExitCode = code;
     _appendAppLog('Xray PID ${process.pid} exited unexpectedly with code $code.');
     _statsTimer?.cancel();
     _durationTimer?.cancel();
     await _closeStatsClient();
+    if (!_isCurrentOperation(operationId)) return;
     if (_activeMode == ConnectionMode.systemProxy) await _restoreSystemProxy();
+    if (!_isCurrentOperation(operationId)) return;
     _resetRuntimeState();
 
     final decision = XrayExitClassifier.classify(
@@ -537,7 +541,12 @@ class WindowsXrayEngine implements
         stats: const TrafficStats(),
       );
       await Future<void>.delayed(delay);
-      if (_disposed || _stopping || _desiredTarget?.id != profile.id) return;
+      if (!_isCurrentOperation(operationId) ||
+          _stopping ||
+          _desiredTarget?.id != profile.id ||
+          _desiredMode != mode) {
+        return;
+      }
       await _startInternal(profile, mode, recovery: true);
       return;
     }
@@ -581,6 +590,7 @@ class WindowsXrayEngine implements
     ConnectionMode mode,
     TunnelRecoveryReason reason,
   ) async {
+    final previousOperation = _operationId;
     _appendAppLog('Recovery event received: ${reason.name}.');
 
     if (reason == TunnelRecoveryReason.networkChanged) {
@@ -597,6 +607,7 @@ class WindowsXrayEngine implements
         previousInterface: _lastOutboundInterface,
         waitForChange: true,
       );
+      if (!_isCurrentOperation(previousOperation)) return;
       if (candidate == null) {
         _appendAppLog(
           'Network event deferred: no usable physical interface is ready yet.',
@@ -617,12 +628,13 @@ class WindowsXrayEngine implements
       _appendAppLog('System resumed; rebuilding the active connection once.');
     }
 
-    ++_operationId;
-    await _stopInternal();
-    if (_disposed || _desiredTarget?.id != target.id || _desiredMode != mode) {
+    final operationId = ++_operationId;
+    await _stopCurrentOperation();
+    if (!_isCurrentOperation(operationId) ||
+        _desiredTarget?.id != target.id ||
+        _desiredMode != mode) {
       return;
     }
-    await Future<void>.delayed(const Duration(milliseconds: 900));
     await _startInternal(target, mode, recovery: true);
   }
 
@@ -630,7 +642,10 @@ class WindowsXrayEngine implements
   Future<void> reinstallCore({
     void Function(double progress)? onProgress,
   }) async {
-    if (_process != null || _current.isBusy || _current.isConnected) {
+    if (_process != null ||
+        _coreInstallFuture != null ||
+        _current.isBusy ||
+        _current.isConnected) {
       throw StateError('Disconnect the active connection first.'.tr);
     }
     final protectedInstall = await WindowsElevationController.isProtectedInstall();
@@ -643,6 +658,24 @@ class WindowsXrayEngine implements
     await _coreManager.reinstall(onProgress: onProgress);
     _appendAppLog('Xray Core ${XrayCoreManager.version} reinstalled and verified.');
     _lastError = null;
+  }
+
+  Future<XrayCoreInstall> _ensureCoreInstalled() {
+    final pending = _coreInstallFuture;
+    if (pending != null) return pending;
+    final future = _coreManager.ensureInstalled(onProgress: (progress) {
+      if (_disposed || _stopping || _current.status != TunnelStatus.connecting) {
+        return;
+      }
+      _status(
+        TunnelStatus.connecting,
+        mode: _current.mode,
+        message: 'Downloading Xray Core · {}%'.trf([(progress * 100).round()]),
+        stats: const TrafficStats(),
+      );
+    }).whenComplete(() => _coreInstallFuture = null);
+    _coreInstallFuture = future;
+    return future;
   }
 
   @override
@@ -691,6 +724,7 @@ class WindowsXrayEngine implements
     XrayCoreInstall install,
     File configFile,
     Directory assetDirectory,
+    int operationId,
   ) async {
     final process = await Process.start(
       install.executable.path,
@@ -701,6 +735,10 @@ class WindowsXrayEngine implements
         'XRAY_LOCATION_ASSET': assetDirectory.path,
       },
     );
+    if (!_isCurrentOperation(operationId)) {
+      await _terminateProcessTree(process, install.executable.path);
+      return;
+    }
     _process = process;
 
     try {
@@ -715,7 +753,7 @@ class WindowsXrayEngine implements
 
       int exitCode;
       if (attachError == null) {
-        exitCode = await process.exitCode;
+        exitCode = await process.exitCode.timeout(const Duration(seconds: 10));
       } else {
         // `run -test` can finish before the platform channel manages to open
         // its PID. In that harmless race, trust the completed validation. A
@@ -732,7 +770,9 @@ class WindowsXrayEngine implements
         exitCode = earlyExit;
       }
 
-      final output = '${await stderr}\n${await stdout}'.trim();
+      final streams = await Future.wait([stderr, stdout])
+          .timeout(const Duration(seconds: 2));
+      final output = streams.join('\n').trim();
       if (exitCode != 0) {
         throw FormatException(
           output.isEmpty ? 'Xray rejected the configuration.'.tr : output,
@@ -743,6 +783,59 @@ class WindowsXrayEngine implements
       rethrow;
     } finally {
       if (_process == process) _process = null;
+    }
+  }
+
+  Future<bool> _waitForCoreListener(
+    Process process,
+    int port,
+    int operationId,
+    List<String> processLogs,
+  ) async {
+    int? exitCode;
+    unawaited(process.exitCode.then<void>((code) {
+      exitCode = code;
+    }));
+    final elapsed = Stopwatch()..start();
+    while (_isCurrentOperation(operationId)) {
+      final code = exitCode;
+      if (code != null) {
+        throw StateError(_bestError(
+          'Xray exited with code {}'.trf([code]),
+          logs: processLogs,
+        ));
+      }
+      if (elapsed.elapsed >= const Duration(seconds: 6)) {
+        throw StateError(_bestError(
+          'Timed out waiting for Xray to start.'.tr,
+          logs: processLogs,
+        ));
+      }
+      try {
+        final socket = await Socket.connect(
+          InternetAddress.loopbackIPv4,
+          port,
+          timeout: const Duration(milliseconds: 150),
+        );
+        socket.destroy();
+        if (exitCode == null) return _isCurrentOperation(operationId);
+      } on SocketException {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
+    return false;
+  }
+
+  Future<void> _observeTunRoute(int operationId) async {
+    try {
+      final routeStatus = await WindowsNetworkController.tunRouteStatus();
+      if (!_isCurrentOperation(operationId)) return;
+      _lastTunRouteSummary = 'advisory · ${routeStatus.summary}';
+      _appendAppLog('TUN route observation (advisory): ${routeStatus.summary}.');
+    } catch (error) {
+      if (!_isCurrentOperation(operationId)) return;
+      _lastTunRouteSummary = 'advisory check unavailable';
+      _appendAppLog('TUN route observation failed: $error');
     }
   }
 
@@ -1053,6 +1146,14 @@ class WindowsXrayEngine implements
     _desiredMode = null;
     _restartBudget.reset();
     ++_operationId;
+    return _stopCurrentOperation();
+  }
+
+  Future<void> _stopCurrentOperation() {
+    final cancellation = _startCancellation;
+    if (cancellation != null && !cancellation.isCompleted) {
+      cancellation.complete();
+    }
     final pending = _stopFuture;
     if (pending != null) return pending;
 
@@ -1126,6 +1227,7 @@ class WindowsXrayEngine implements
         if (_process == process) _process = null;
       }
 
+      await _startFuture;
       _resetRuntimeState();
       _status(
         TunnelStatus.disconnected,

@@ -31,6 +31,7 @@ const orexL10nRu = <String, String>{
   'Subscription "{}": {}': 'Подписка «{}»: {}',
   'Watchdog stopped: no more than {} restarts per minute.': 'Watchdog остановлен: не больше {} перезапусков за минуту.',
   'Xray exited with code {}': 'Xray завершился с кодом {}',
+  'Timed out waiting for Xray to start.': 'Не удалось дождаться запуска Xray.',
   '"{}" and {} servers of this subscription will be deleted.': '«{}» и {} серверов этой подписки будут удалены.',
   '"{}" updated: {} servers': '«{}» обновлена: {} серверов',
   '"{}" will be removed from this device.': '«{}» будет удалён с этого устройства.',
