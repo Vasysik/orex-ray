@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as images;
 import 'package:orex_ray/shared/theme/orex_builtin_presets.dart';
 import 'package:orex_ray/shared/theme/orex_theme.dart';
 import 'package:orex_ray/shared/theme/orex_palette.dart';
@@ -35,13 +37,13 @@ void main() {
       expect(preview.accent,
           SimpleThemeProfile.parseColors(parsed['colors'])['accent']);
       // Presets without a mascot (classic) fall back to the default
-      // squirrel; presets with one must embed self-contained webp bytes.
+      // squirrel; presets with one embed the image bytes.
       final mascot = parsed['mascot'];
       if (mascot == null) {
         expect(preview.mascotBytes, isNull);
       } else {
         expect(preview.mascotBytes, isNotEmpty);
-        expect(mascot as String, startsWith('data:image/webp;base64,'));
+        expect(mascot as String, startsWith('data:image/'));
         expect(base64Decode(mascot.split(';base64,').last), isNotEmpty);
       }
       expect(parsed['colors'], isA<Map>());
@@ -238,7 +240,82 @@ void main() {
     expect((noir['glass'] as Map)['blur'], 18);
     // A self-contained preset must still carry its own mascot bytes.
     expect(lime['mascot'], startsWith('data:image/webp;base64,'));
-    expect(noir['mascot'], startsWith('data:image/webp;base64,'));
+    expect(noir['mascot'], startsWith('data:image/png;base64,'));
+  });
+
+  test('Gray mascot keeps the original squirrel, shell and globe colors',
+      () async {
+    final originalData = await rootBundle.load('assets/images/orexray_logo.png');
+    final original = images.decodePng(originalData.buffer.asUint8List(
+      originalData.offsetInBytes,
+      originalData.lengthInBytes,
+    ))!;
+    const preset = OrexBuiltinPreset(OrexBuiltinPreset.defaultId);
+    final preview = (await preset.loadPreview())!;
+    final gray = images.decodePng(preview.mascotBytes!)!;
+    expect((gray.width, gray.height), (original.width, original.height));
+
+    (num, num, num, num) rgba(images.Image image, int x, int y) {
+      final pixel = image.getPixel(x, y);
+      return (pixel.r, pixel.g, pixel.b, pixel.a);
+    }
+
+    for (final (x, y) in [(0, 0), (626, 120), (540, 780), (710, 1020), (840, 680)]) {
+      expect(rgba(gray, x, y), rgba(original, x, y), reason: '($x, $y)');
+    }
+    expect(rgba(gray, 100, 150), (51, 43, 37, 255));
+    expect(rgba(gray, 100, 1100), (42, 37, 34, 255));
+    expect(rgba(gray, 1150, 1100), (35, 33, 33, 255));
+  });
+
+  test('upgrading the selected Gray preset replaces only its cached mascot',
+      () async {
+    final folder = await Directory.systemTemp.createTemp('orex-gray-test');
+    const pathChannel = MethodChannel('plugins.flutter.io/path_provider');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(pathChannel, (call) async {
+      expect(call.method, 'getApplicationSupportDirectory');
+      return folder.path;
+    });
+    addTearDown(() async {
+      messenger.setMockMethodCallHandler(pathChannel, null);
+      await folder.delete(recursive: true);
+    });
+
+    final cached = File(
+      '${folder.path}${Platform.pathSeparator}orexray_theme_gray_graphite_old.png',
+    );
+    await cached.writeAsBytes([1, 2, 3]);
+    const grayId = 'preset_noir';
+    final old = SimpleThemeProfile(
+      id: grayId,
+      name: 'Old Gray',
+      builtin: true,
+      colors: const {},
+      mascotPath: cached.path,
+    );
+    final copy = SimpleThemeProfile(
+      id: 'user_gray',
+      name: 'My Gray',
+      colors: const {},
+      mascotPath: cached.path,
+    );
+    SharedPreferences.setMockInitialValues({
+      'orex_ray_simple_themes_v1':
+          jsonEncode([old.toStoredJson(), copy.toStoredJson()]),
+      'orex_ray_simple_selected_theme_v1': grayId,
+    });
+    final theme = await ThemeController.load();
+    addTearDown(theme.dispose);
+    await theme.ensureDefaultBuiltin();
+    final currentPath = theme.selectedTheme!.mascotPath;
+    expect(currentPath, isNot(cached.path));
+    expect(theme.customThemes.single.mascotPath, cached.path);
+    expect(await cached.readAsBytes(), [1, 2, 3]);
+    expect(images.decodePng(await File(currentPath).readAsBytes()), isNotNull);
+    await theme.ensureDefaultBuiltin();
+    expect(theme.selectedTheme!.mascotPath, currentPath);
   });
 
   test('old built-in colors migrate without modifying user copies', () async {

@@ -26,6 +26,7 @@ class ThemeController extends ChangeNotifier {
   static const _glassKey = 'orex_ray_glass_enabled';
   static const _themesKey = 'orex_ray_simple_themes_v1';
   static const _selectedKey = 'orex_ray_simple_selected_theme_v1';
+  static const _grayMascotFilePrefix = 'orexray_theme_gray_corners_';
   static const maxMascotBytes = 6 * 1024 * 1024;
   static const maxThemeJsonBytes = 9 * 1024 * 1024;
 
@@ -269,8 +270,23 @@ class ThemeController extends ChangeNotifier {
     await _saveThemes();
   }
 
-  /// Presets are portable, self-contained JSON files. Their large mascot
-  /// is decoded only when this preset is first selected, never on startup.
+  /// Applies the default on first launch and refreshes the old Gray mascot
+  /// when Gray is already selected. Custom themes may still use the old file.
+  Future<void> ensureDefaultBuiltin() async {
+    final selected = selectedTheme;
+    if (selected == null ||
+        (selected.builtin &&
+            selected.id == 'preset_${OrexBuiltinPreset.defaultId}' &&
+            !(await _hasCurrentGrayMascot(selected.mascotPath)))) {
+      await selectBuiltin(OrexBuiltinPreset.defaultId);
+    }
+  }
+
+  static Future<bool> _hasCurrentGrayMascot(String path) async =>
+      path.split(Platform.pathSeparator).last.startsWith(_grayMascotFilePrefix) &&
+      await File(path).exists();
+
+  /// Presets are portable JSON files. The mascot is cached in app storage.
   Future<void> selectBuiltin(String id) async {
     final preset = OrexBuiltinPreset.values.where((p) => p.id == id).firstOrNull;
     if (preset == null) throw FormatException('Built-in theme not found'.tr);
@@ -313,11 +329,19 @@ class ThemeController extends ChangeNotifier {
     final previousPath = existingIndex >= 0
         ? _themes[existingIndex].mascotPath
         : '';
-    final path = mascotBytes == null
-        ? ''
-        : previousPath.isNotEmpty && await File(previousPath).exists()
-            ? previousPath
-            : await _storeMascot(mascotBytes);
+    String path = '';
+    if (mascotBytes != null) {
+      final isGray = id == OrexBuiltinPreset.defaultId;
+      final canReuseMascot = isGray
+          ? await _hasCurrentGrayMascot(previousPath)
+          : previousPath.isNotEmpty && await File(previousPath).exists();
+      path = canReuseMascot
+          ? previousPath
+          : await _storeMascot(
+              mascotBytes,
+              filePrefix: isGray ? _grayMascotFilePrefix : 'orexray_theme_',
+            );
+    }
     final entry = SimpleThemeProfile(
       id: preset.storageId,
       name: (data['name'] as String).trim(),
@@ -493,12 +517,15 @@ class ThemeController extends ChangeNotifier {
     await _saveThemes();
   }
 
-  Future<String> _storeMascot(Uint8List bytes) async {
+  Future<String> _storeMascot(
+    Uint8List bytes, {
+    String filePrefix = 'orexray_theme_',
+  }) async {
     final mime = _mimeType(bytes);
     final dir = await getApplicationSupportDirectory();
     final extension = mime == 'image/png' ? 'png' : mime == 'image/jpeg' ? 'jpg' : 'webp';
     final path = '${dir.path}${Platform.pathSeparator}'
-        'orexray_theme_${DateTime.now().microsecondsSinceEpoch}.$extension';
+        '$filePrefix${DateTime.now().microsecondsSinceEpoch}.$extension';
     await File(path).writeAsBytes(bytes, flush: true);
     return path;
   }

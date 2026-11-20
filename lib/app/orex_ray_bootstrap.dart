@@ -13,7 +13,6 @@ import '../core/settings/connection_settings_controller.dart';
 import '../platform/windows/windows_direct_latency_probe.dart';
 import '../platform/windows/windows_elevation_controller.dart';
 import '../shared/theme/glass.dart';
-import '../shared/theme/orex_builtin_presets.dart';
 import '../shared/theme/orex_palette.dart';
 import '../shared/theme/orex_theme.dart';
 import '../shared/theme/theme_controller.dart';
@@ -57,16 +56,11 @@ class _OrexRayBootstrapState extends State<OrexRayBootstrap> {
 
   Future<ThemeController> _loadTheme() async {
     final theme = await ThemeController.load();
-    if (theme.selectedId == null) {
-      // No explicit choice yet (fresh install or a legacy "null = default"
-      // selection): the default is a regular built-in preset, not a special
-      // hardwired theme, so it supports the same copy/export actions.
-      try {
-        await theme.selectBuiltin(OrexBuiltinPreset.defaultId);
-      } on Object {
-        // A missing preset asset must never block startup; the palette
-        // fallbacks keep the app fully usable.
-      }
+    try {
+      await theme.ensureDefaultBuiltin();
+    } on Object {
+      // A missing preset asset must never block startup; the palette
+      // fallbacks keep the app fully usable.
     }
     return theme;
   }
