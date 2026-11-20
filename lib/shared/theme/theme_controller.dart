@@ -26,7 +26,7 @@ class ThemeController extends ChangeNotifier {
   static const _glassKey = 'orex_ray_glass_enabled';
   static const _themesKey = 'orex_ray_simple_themes_v1';
   static const _selectedKey = 'orex_ray_simple_selected_theme_v1';
-  static const _grayMascotFilePrefix = 'orexray_theme_gray_screen_';
+  static const _grayMascotFilePrefix = 'orexray_theme_gray_mixed_';
   static const maxMascotBytes = 6 * 1024 * 1024;
   static const maxThemeJsonBytes = 9 * 1024 * 1024;
 

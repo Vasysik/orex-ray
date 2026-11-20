@@ -263,9 +263,9 @@ void main() {
     for (final (x, y) in [(0, 0), (626, 120), (540, 780), (710, 1020), (840, 680)]) {
       expect(rgba(gray, x, y), rgba(original, x, y), reason: '($x, $y)');
     }
-    expect(rgba(gray, 100, 150), (50, 43, 37, 255));
-    expect(rgba(gray, 100, 1100), (42, 37, 34, 255));
-    expect(rgba(gray, 1150, 1100), (34, 33, 32, 255));
+    expect(rgba(gray, 100, 150), (56, 46, 40, 255));
+    expect(rgba(gray, 100, 1100), (55, 46, 39, 255));
+    expect(rgba(gray, 1150, 1100), (48, 42, 37, 255));
   });
 
   test('upgrading the selected Gray preset replaces only its cached mascot',
@@ -284,7 +284,7 @@ void main() {
     });
 
     final cached = File(
-      '${folder.path}${Platform.pathSeparator}orexray_theme_gray_corners_old.png',
+      '${folder.path}${Platform.pathSeparator}orexray_theme_gray_screen_old.png',
     );
     await cached.writeAsBytes([1, 2, 3]);
     const grayId = 'preset_noir';
