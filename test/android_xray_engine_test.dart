@@ -239,6 +239,54 @@ void main() {
     expect(engine.current.effectivePingStatus, PingStatus.timeout);
   });
 
+  test('cancel before native dispatch discards the local start', () async {
+    final calls = <String>[];
+    await _mockStatus(
+      messenger,
+      targetId: '',
+      status: 'disconnected',
+      onMethodCall: (call) async {
+        calls.add(call.method);
+        return null;
+      },
+    );
+    final settings = await ConnectionSettingsController.load(
+      operatingSystem: 'android',
+    );
+    final routing = await AppRoutingController.load();
+    final engine = AndroidXrayEngine(settings: settings, appRouting: routing);
+    addTearDown(() async {
+      await engine.dispose();
+      routing.dispose();
+      settings.dispose();
+    });
+    final target = TunnelTarget.single(
+      TunnelProfile(
+        id: 'cancel-start',
+        name: 'Test VPN',
+        address: '127.0.0.1',
+        port: 443,
+        userId: '11111111-1111-4111-8111-111111111111',
+      ),
+    );
+
+    await engine.waitForInitialState();
+    final connecting = engine.snapshots.firstWhere(
+      (snapshot) => snapshot.status == TunnelStatus.connecting,
+    );
+    final start = engine.start(target, ConnectionMode.vpnTun);
+    await connecting;
+    await engine.stop();
+    await start;
+
+    expect(calls, isEmpty);
+    expect(engine.current.status, TunnelStatus.disconnected);
+
+    await engine.start(target, ConnectionMode.vpnTun);
+    await engine.stop();
+    expect(calls, ['start', 'stop']);
+  });
+
   test('does not seed a new route with saved direct TCP latency', () async {
     final calls = <MethodCall>[];
     final target = TunnelTarget.single(

@@ -49,6 +49,8 @@ class AndroidXrayEngine
   TunnelTarget? _activeTarget;
   ConnectionMode _activeMode = ConnectionMode.vpnTun;
   bool _statsUiActive = true;
+  int _operationId = 0;
+  bool _preparingStart = false;
   TunnelSnapshot _current = const TunnelSnapshot(
     status: TunnelStatus.disconnected,
     stats: TrafficStats(),
@@ -81,6 +83,8 @@ class AndroidXrayEngine
       return;
     }
 
+    final operationId = ++_operationId;
+    _preparingStart = true;
     _activeTarget = target;
     _activeMode = mode;
     _emit(
@@ -97,6 +101,7 @@ class AndroidXrayEngine
     // Let Flutter present the connecting frame before synchronous config
     // generation. This matters most during in-app profile reconnects.
     await Future<void>.delayed(Duration.zero);
+    if (operationId != _operationId) return;
 
     try {
       final config = mode == ConnectionMode.vpnTun
@@ -131,6 +136,7 @@ class AndroidXrayEngine
               balancerProbeUrl: _settings.latencyProbeUrl,
               enableInboundStats: false,
             );
+      _preparingStart = false;
       await _channel.invokeMethod<void>('start', <String, Object?>{
         'config': config,
         'mode': mode.storageValue,
@@ -173,8 +179,12 @@ class AndroidXrayEngine
         'appPackages': _appRouting.selectedPackages.toList(growable: false),
       });
     } on PlatformException catch (error) {
+      if (operationId != _operationId) return;
+      _preparingStart = false;
       _emitError(error.message ?? error.code, mode: mode);
     } catch (error) {
+      if (operationId != _operationId) return;
+      _preparingStart = false;
       _emitError(error.toString(), mode: mode);
     }
   }
@@ -299,11 +309,23 @@ class AndroidXrayEngine
 
   @override
   Future<void> stop() async {
+    if (_preparingStart) {
+      ++_operationId;
+      _preparingStart = false;
+      _activeTarget = null;
+      _emit(TunnelSnapshot(
+        status: TunnelStatus.disconnected,
+        mode: _activeMode,
+        stats: const TrafficStats(),
+      ));
+      return;
+    }
     if (_current.status == TunnelStatus.disconnected ||
         _current.status == TunnelStatus.disconnecting) {
       return;
     }
 
+    final operationId = ++_operationId;
     _emit(
       _current.copyWith(
         status: TunnelStatus.disconnecting,
@@ -315,8 +337,10 @@ class AndroidXrayEngine
     try {
       await _channel.invokeMethod<void>('stop');
     } on PlatformException catch (error) {
+      if (operationId != _operationId) return;
       _emitError(error.message ?? error.code, mode: _current.mode);
     } catch (error) {
+      if (operationId != _operationId) return;
       _emitError(error.toString(), mode: _current.mode);
     }
   }
@@ -421,6 +445,7 @@ class AndroidXrayEngine
 
   @override
   Future<void> dispose() async {
+    ++_operationId;
     await _eventSubscription.cancel();
     await _snapshots.close();
   }
